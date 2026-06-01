@@ -4,6 +4,10 @@
 
 Клиент API — [`Encx.xcframework`](https://github.com/skrashevich/encx-cli) (gomobile-обёртка над пакетом `encx` из репозитория [encx-cli](https://github.com/skrashevich/encx-cli)).
 
+## Скачать
+
+[Последний билд (unsigned IPA)](https://nightly.link/skrashevich/enkapp/workflows/iOS%20unsigned%20IPA/main/encx-cli-unsigned-ipa.zip)
+
 ## Требования
 
 - macOS с Xcode 16+
