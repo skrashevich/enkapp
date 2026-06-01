@@ -1,5 +1,9 @@
 # enkapp
 
+[![iOS unsigned IPA](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml/badge.svg)](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml)
+[![Download nightly IPA](https://img.shields.io/badge/nightly.link-download%20IPA-0A84FF)](https://nightly.link/skrashevich/enkapp/workflows/iOS%20unsigned%20IPA/main/encx-cli-unsigned-ipa.zip)
+[![License](https://img.shields.io/github/license/skrashevich/enkapp)](LICENSE)
+
 Нативное iOS-приложение для [Encounter](https://en.cx): очередь кодов, уровни, Live Activity, уведомления.
 
 Клиент API — [`Encx.xcframework`](https://github.com/skrashevich/encx-cli) (gomobile-обёртка над пакетом `encx` из репозитория [encx-cli](https://github.com/skrashevich/encx-cli)).
