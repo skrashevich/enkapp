@@ -1,0 +1,14 @@
+.DS_Store
+*.swp
+
+# Xcode user state
+**/xcuserdata/
+*.xcuserstate
+
+# Local builds
+build/
+*.ipa
+*.dSYM.zip
+
+# Optional: uncomment to always rebuild Encx from encx-cli
+# encx-cli/Frameworks/Encx.xcframework/

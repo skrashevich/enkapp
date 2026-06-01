@@ -1,0 +1,8 @@
+framework module "Encx" {
+	header "ref.h"
+    header "Encxmobile.objc.h"
+    header "Universe.objc.h"
+    header "Encx.h"
+
+    export *
+}
