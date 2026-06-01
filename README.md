@@ -8,6 +8,8 @@
 
 [Последний билд (unsigned IPA)](https://nightly.link/skrashevich/enkapp/workflows/iOS%20unsigned%20IPA/main/encx-cli-unsigned-ipa.zip)
 
+Учти: скачивание через `nightly.link` может не открываться или работать криво без "специальных сетевых сервисов".
+
 ## Требования
 
 - macOS с Xcode 16+
