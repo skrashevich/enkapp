@@ -1,0 +1,32 @@
+name: iOS unsigned IPA
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-unsigned-ipa-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Build unsigned IPA
+        run: make unsigned-ipa SKIP_FRAMEWORK=1
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: encx-cli-unsigned-ipa
+          path: build/*-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14

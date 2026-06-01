@@ -19,6 +19,8 @@ endif
 
 # Checkout of github.com/skrashevich/encx-cli (gomobile bind). Override if elsewhere:
 #   make framework ENCX_CLI_ROOT=/path/to/encx-cli
+# CI / vendored xcframework: make unsigned-ipa SKIP_FRAMEWORK=1
+SKIP_FRAMEWORK ?= 0
 ENCX_CLI_ROOT ?= $(abspath ../encx-cli)
 IOS_DIR := $(abspath .)
 PROJECT := encx-cli.xcodeproj
@@ -75,6 +77,7 @@ help:
 	@echo "  DEVELOPMENT_TEAM=$(DEVELOPMENT_TEAM)"
 	@echo "  EXPORT_METHOD=$(EXPORT_METHOD)  (signed export only)"
 	@echo "  BUILD_DIR=$(BUILD_DIR)"
+	@echo "  SKIP_FRAMEWORK=$(SKIP_FRAMEWORK)  (1 = use vendored Encx.xcframework)"
 	@echo ""
 	@echo "Signed export methods (Xcode 16+):"
 	@echo "  debugging          install on devices in your team (default)"
@@ -115,7 +118,12 @@ $(EXPORT_OPTIONS): $(EXPORT_OPTIONS_TEMPLATE) | $(BUILD_DIR)
 		plutil -insert teamID -string "$(DEVELOPMENT_TEAM)" "$(EXPORT_OPTIONS)"; \
 	fi
 
+ifeq ($(SKIP_FRAMEWORK),1)
+$(APP_PRODUCT): | $(BUILD_DIR)
+else
 $(APP_PRODUCT): framework | $(BUILD_DIR)
+endif
+	@test -d "$(ENCX_FRAMEWORK)" || { echo "missing $(ENCX_FRAMEWORK); run make framework or set SKIP_FRAMEWORK=0"; exit 1; }
 	$(XCODEBUILD) build \
 		-project "$(PROJECT)" \
 		-scheme "$(SCHEME)" \
