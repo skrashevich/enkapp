@@ -1,7 +1,7 @@
 # enkapp
 
 [![iOS unsigned IPA](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml/badge.svg)](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml)
-[![Download nightly IPA](https://img.shields.io/badge/nightly.link-download%20IPA-0A84FF)](https://nightly.link/skrashevich/enkapp/workflows/ios-unsigned-ipa/main/encx-cli-unsigned-ipa)
+[![Download nightly IPA](https://img.shields.io/badge/dawnl.ink-download%20IPA-0A84FF)](https://dawnl.ink/skrashevich/enkapp/workflows/ios-unsigned-ipa/main/encx-cli-unsigned-ipa)
 [![License](https://img.shields.io/github/license/skrashevich/enkapp)](LICENSE)
 
 Нативное iOS-приложение для [Encounter](https://en.cx): очередь кодов, уровни, Live Activity, уведомления.
@@ -10,9 +10,9 @@
 
 ## Скачать
 
-[Последний билд (unsigned IPA)](https://nightly.link/skrashevich/enkapp/workflows/ios-unsigned-ipa/main/encx-cli-unsigned-ipa)
+[Последний билд (unsigned IPA)](https://dawnl.ink/skrashevich/enkapp/workflows/ios-unsigned-ipa/main/encx-cli-unsigned-ipa)
 
-Учти: скачивание через `nightly.link` может не открываться или работать криво без "специальных сетевых сервисов".
+Учти: скачивание через `dawnl.ink` может не открываться или работать криво без "специальных сетевых сервисов".
 
 ## Как установить на iPhone
 
@@ -31,7 +31,7 @@
 
 - На бесплатном Apple ID такая установка обычно живёт 7 дней, потом приложение надо переустановить или переподписать.
 - Название artifact и bundle местами ещё могут содержать старое имя `encx-cli`; это нормально.
-- Если ссылка на `nightly.link` не открывается, виноват обычно не iPhone, а сеть между тобой и `nightly.link`.
+- Если ссылка на `dawnl.ink` не открывается, виноват обычно не iPhone, а сеть между тобой и `dawnl.ink`.
 
 ## Требования
 
