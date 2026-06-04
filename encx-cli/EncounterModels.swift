@@ -1,6 +1,54 @@
 import Foundation
 import UIKit
 
+enum GameEvent {
+    static let normal = 0
+    static let gameFinished = 6
+    static let gameEnded = 17
+}
+
+struct FlexString: Decodable, Hashable {
+    let value: String
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            value = ""
+            return
+        }
+        if let string = try? container.decode(String.self) {
+            value = string
+            return
+        }
+        if let number = try? container.decode(Int.self) {
+            value = String(number)
+            return
+        }
+        if let number = try? container.decode(Double.self) {
+            value = String(number)
+            return
+        }
+        if let flag = try? container.decode(Bool.self) {
+            value = flag ? "true" : "false"
+            return
+        }
+        struct AnswerObject: Decodable {
+            let answer: String?
+            let answ: String?
+
+            enum CodingKeys: String, CodingKey {
+                case answer = "Answer"
+                case answ = "Answ"
+            }
+        }
+        if let object = try? container.decode(AnswerObject.self) {
+            value = object.answer ?? object.answ ?? ""
+            return
+        }
+        value = ""
+    }
+}
+
 struct SyncedSecondsCountdown: Equatable {
     let remainSeconds: Int
     let syncedAt: Date
@@ -81,6 +129,7 @@ struct GameInfo: Decodable, Identifiable, Hashable {
 }
 
 struct GameModel: Decodable {
+    let event: Int
     let gameID: Int
     let gameTitle: String
     let login: String
@@ -89,7 +138,13 @@ struct GameModel: Decodable {
     let level: Level?
     let engineAction: EngineAction?
 
+    var isPlayable: Bool { event == GameEvent.normal }
+    var isGameFinished: Bool { event == GameEvent.gameFinished }
+    var isGameEnded: Bool { event == GameEvent.gameEnded }
+    var isGameComplete: Bool { isGameFinished || isGameEnded }
+
     enum CodingKeys: String, CodingKey {
+        case event = "Event"
         case gameID = "GameId"
         case gameTitle = "GameTitle"
         case login = "Login"
@@ -101,6 +156,14 @@ struct GameModel: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let intEvent = try container.decodeIfPresent(Int.self, forKey: .event) {
+            event = intEvent
+        } else if let stringEvent = try container.decodeIfPresent(String.self, forKey: .event),
+                  let parsed = Int(stringEvent) {
+            event = parsed
+        } else {
+            event = GameEvent.normal
+        }
         gameID = try container.decode(Int.self, forKey: .gameID)
         gameTitle = try container.decodeIfPresent(String.self, forKey: .gameTitle) ?? ""
         login = try container.decodeIfPresent(String.self, forKey: .login) ?? ""
@@ -253,6 +316,15 @@ struct Sector: Decodable, Identifiable, Hashable {
 
     var id: Int { sectorID }
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sectorID = try container.decode(Int.self, forKey: .sectorID)
+        order = try container.decodeIfPresent(Int.self, forKey: .order) ?? 0
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        isAnswered = try container.decodeIfPresent(Bool.self, forKey: .isAnswered) ?? false
+        answer = try container.decodeIfPresent(FlexString.self, forKey: .answer)?.value ?? ""
+    }
+
     /// Player-facing sector number (from «Сектор 18» in `name`). API `Order` is often closure sequence, not this index.
     var displayOrder: Int {
         Self.sectorNumber(from: name) ?? order
@@ -310,6 +382,22 @@ struct Bonus: Decodable, Identifiable, Hashable {
     let negative: Bool
 
     var id: Int { bonusID }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        bonusID = try container.decode(Int.self, forKey: .bonusID)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        number = try container.decodeIfPresent(Int.self, forKey: .number) ?? 0
+        task = try container.decodeIfPresent(String.self, forKey: .task) ?? ""
+        help = try container.decodeIfPresent(String.self, forKey: .help) ?? ""
+        isAnswered = try container.decodeIfPresent(Bool.self, forKey: .isAnswered) ?? false
+        answer = try container.decodeIfPresent(FlexString.self, forKey: .answer)?.value ?? ""
+        expired = try container.decodeIfPresent(Bool.self, forKey: .expired) ?? false
+        secondsToStart = try container.decodeIfPresent(Int.self, forKey: .secondsToStart) ?? 0
+        secondsLeft = try container.decodeIfPresent(Int.self, forKey: .secondsLeft) ?? 0
+        awardTime = try container.decodeIfPresent(Int.self, forKey: .awardTime) ?? 0
+        negative = try container.decodeIfPresent(Bool.self, forKey: .negative) ?? false
+    }
 
     enum CodingKeys: String, CodingKey {
         case bonusID = "BonusId"

@@ -158,6 +158,10 @@ final class EncounterViewModel {
         games.first { $0.id == Int(gameID) }.map(isGameActive) ?? false
     }
 
+    var isCurrentGameComplete: Bool {
+        currentModel?.isGameComplete == true
+    }
+
     var hasStoredSession: Bool {
         loadSessionCookies() != nil || hasStoredCredentials
     }
@@ -261,13 +265,16 @@ final class EncounterViewModel {
             await self.pollActiveGameIfNeeded(force: true, skipWhenQueuePending: true)
             return self.queue.pending.isEmpty
         }
-        if selectedGameID != nil, settings.pushOnNewLevel || settings.pushOnNewHint {
+        if selectedGameID != nil,
+           settings.pushOnNewLevel || settings.pushOnNewHint || currentModel?.isGameFinished == true {
             Task { await pollActiveGameWhileInBackground() }
         }
     }
 
     func updateScreenWakeLock() {
-        let shouldStayAwake = selectedScreen == .game && selectedGameID != nil
+        let shouldStayAwake = selectedScreen == .game
+            && selectedGameID != nil
+            && !isCurrentGameComplete
         guard shouldStayAwake != keepScreenAwake else { return }
         keepScreenAwake = shouldStayAwake
         UIApplication.shared.isIdleTimerDisabled = shouldStayAwake
@@ -500,7 +507,7 @@ final class EncounterViewModel {
     }
 
     func submitCode(_ text: String) {
-        guard let model = currentModel, let level = model.level else { return }
+        guard let model = currentModel, model.isPlayable, let level = model.level else { return }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -541,6 +548,7 @@ final class EncounterViewModel {
             markEngineReachable()
             statusMessage = resultMessage(from: currentModel)
             lastCodeResult = feedback(from: currentModel)
+            updateScreenWakeLock()
             if let gameID = selectedGameID {
                 await processGameEvents(for: gameID)
             }
@@ -659,12 +667,16 @@ final class EncounterViewModel {
 
     private func pollActiveGameIfNeeded(force: Bool = false, skipWhenQueuePending: Bool = false) async {
         guard let gameID = selectedGameID else { return }
-        guard settings.pushOnNewLevel || settings.pushOnNewHint || settings.liveActivityEnabled else { return }
+        let waitingForFinishTransition = currentModel?.isGameFinished == true
+        guard settings.pushOnNewLevel || settings.pushOnNewHint || settings.liveActivityEnabled || waitingForFinishTransition else {
+            return
+        }
         guard queue.isOnline, !isFlushingQueue else { return }
         if skipWhenQueuePending, !queue.pending.isEmpty { return }
 
+        let pollInterval = waitingForFinishTransition ? 5.0 : gamePollInterval
         if !force, let lastGamePollDate,
-           Date().timeIntervalSince(lastGamePollDate) < gamePollInterval {
+           Date().timeIntervalSince(lastGamePollDate) < pollInterval {
             return
         }
         lastGamePollDate = Date()
@@ -815,15 +827,28 @@ final class EncounterViewModel {
     }
 
     private func setCurrentModel(_ model: GameModel) {
+        let wasPlayable = currentModel?.isPlayable ?? true
         currentModel = model
         liveActivityModelAnchor = Date()
         lastSyncedLiveActivityState = nil
+
+        if model.isGameComplete {
+            if wasPlayable {
+                statusMessage = EncounterClient.eventText(for: model.event)
+                Task { try? await refreshGamesNow() }
+            }
+            if model.isGameEnded {
+                GameEventNotificationService.shared.clearSnapshot(gameID: Int64(model.gameID))
+            }
+            updateScreenWakeLock()
+        }
     }
 
     private func liveActivityContentState() -> QueueActivityAttributes.ContentState? {
         guard selectedGameID != nil, let model = currentModel, let level = model.level else {
             return nil
         }
+        guard model.isPlayable else { return nil }
 
         let display = settings.liveActivityDisplay
 

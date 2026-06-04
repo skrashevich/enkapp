@@ -10,7 +10,9 @@ struct LevelPlayView: View {
 
     var body: some View {
         Group {
-            if let game = model.currentModel, let level = game.level {
+            if let game = model.currentModel, game.isGameComplete {
+                finishedState(game: game)
+            } else if let game = model.currentModel, let level = game.level {
                 gameScreen(game: game, level: level)
             } else if let game = model.currentModel {
                 waitingState(game: game)
@@ -115,6 +117,94 @@ struct LevelPlayView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(GameTheme.background)
+    }
+
+    private func finishedState(game: GameModel) -> some View {
+        let title = game.gameTitle.isEmpty ? "Игра #\(game.gameID)" : game.gameTitle
+        let status = EncounterClient.eventText(for: game.event)
+        let level = game.level
+        let passedLevels = game.levels.filter(\.isPassed).count
+        let totalLevels = max(game.levels.count, level?.number ?? 0)
+
+        return VStack(spacing: 16) {
+            Spacer()
+
+            Image(systemName: game.isGameEnded ? "flag.checkered" : "trophy.fill")
+                .font(.system(size: 52))
+                .foregroundStyle(GameTheme.accent)
+
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(GameTheme.text)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+
+            Text(status)
+                .font(.headline)
+                .foregroundStyle(GameTheme.accent)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            if let level {
+                Text(level.name.isEmpty ? "Уровень \(level.number)" : level.name)
+                    .font(.subheadline)
+                    .foregroundStyle(GameTheme.muted)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+
+                if totalLevels > 0 {
+                    Text("Пройдено уровней: \(passedLevels) из \(totalLevels)")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(GameTheme.muted)
+                }
+
+                if game.isGameFinished, level.timeoutSecondsRemain > 0 {
+                    FinishTransitionCountdown(remainSeconds: level.timeoutSecondsRemain)
+                        .padding(.top, 4)
+                }
+            }
+
+            if !model.statusMessage.isEmpty {
+                Text(model.statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(GameTheme.muted)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            NavigationLink {
+                GameStatisticsView(model: model, gameID: Int64(game.gameID))
+            } label: {
+                Text("Статистика")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(GameTheme.accent)
+            .padding(.horizontal, 32)
+
+            Button("Обновить") {
+                Task { await model.refreshLevel() }
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isBusy)
+
+            Button("К списку игр") {
+                model.selectedScreen = .games
+            }
+            .buttonStyle(.bordered)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(GameTheme.background)
+        .task(id: game.isGameFinished ? game.gameID : -1) {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                await model.refreshLevel()
+                guard model.currentModel?.isGameFinished == true else { return }
+            }
+        }
     }
 
     private func gameScreen(game: GameModel, level: Level) -> some View {
@@ -327,6 +417,34 @@ struct LevelPlayView: View {
             return "Осталось закрыть: \(level.sectorsLeftToClose) \(LevelPlayWordForms.sector(level.sectorsLeftToClose))"
         }
         return nil
+    }
+}
+
+private struct FinishTransitionCountdown: View {
+    let remainSeconds: Int
+    @State private var syncedAt = Date()
+
+    var body: some View {
+        if remainSeconds > 0 {
+            VStack(spacing: 4) {
+                Text("Автопереход")
+                    .font(.caption)
+                    .foregroundStyle(GameTheme.muted)
+                TickingCountdownText(
+                    countdown: SyncedSecondsCountdown(
+                        remainSeconds: remainSeconds,
+                        syncedAt: syncedAt
+                    ),
+                    label: GameDurationFormatter.levelDrainLabel
+                )
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(GameTheme.accent)
+            }
+            .onAppear { syncedAt = Date() }
+            .onChange(of: remainSeconds) { _, _ in
+                syncedAt = Date()
+            }
+        }
     }
 }
 

@@ -355,6 +355,19 @@ final class EncounterClient {
         return error.localizedDescription
     }
 
+    static func eventText(for code: Int) -> String {
+        #if canImport(Encx)
+        return EncxmobileEventText(Int64(code))
+        #else
+        switch code {
+        case GameEvent.normal: return "Игра в процессе"
+        case GameEvent.gameFinished: return "Игра завершена"
+        case GameEvent.gameEnded: return "Игра окончена"
+        default: return "Неизвестный статус"
+        }
+        #endif
+    }
+
     private func decode<T: Decodable>(_ type: T.Type, from json: String) throws -> T {
         guard let data = json.data(using: .utf8) else {
             throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Invalid UTF-8 JSON"))
