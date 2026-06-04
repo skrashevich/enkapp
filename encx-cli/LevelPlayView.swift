@@ -5,6 +5,8 @@ struct LevelPlayView: View {
     @Bindable var model: EncounterViewModel
     @State private var codeDraft = ""
     @FocusState private var codeFieldFocused: Bool
+    @State private var codeResultToast: CodeResultFeedback?
+    @State private var codeResultDismissTask: Task<Void, Never>?
 
     var body: some View {
         Group {
@@ -122,7 +124,6 @@ struct LevelPlayView: View {
 
             LevelPlayScrollBody(
                 statusMessage: model.statusMessage,
-                lastCodeResult: model.lastCodeResult,
                 level: level
             )
         }
@@ -135,6 +136,50 @@ struct LevelPlayView: View {
                 onSubmit: submitCodeDraft
             )
         }
+        .overlay(alignment: .bottom) {
+            if let result = codeResultToast {
+                codeResultToastView(result)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 64)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.25), value: codeResultToast)
+        .onChange(of: model.lastCodeResult) { _, newValue in
+            if let newValue {
+                showCodeResultToast(newValue)
+            } else {
+                dismissCodeResultToast()
+            }
+        }
+    }
+
+    private func showCodeResultToast(_ result: CodeResultFeedback) {
+        codeResultDismissTask?.cancel()
+        codeResultToast = result
+        codeResultDismissTask = Task {
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            dismissCodeResultToast()
+        }
+    }
+
+    private func dismissCodeResultToast() {
+        codeResultDismissTask?.cancel()
+        codeResultDismissTask = nil
+        codeResultToast = nil
+    }
+
+    private func codeResultToastView(_ result: CodeResultFeedback) -> some View {
+        Text(result.message)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(result.isCorrect ? GameTheme.accent : .orange)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 10))
+            .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
     }
 
     private func submitCodeDraft() {
@@ -317,7 +362,7 @@ private struct LevelCodeInputBar: View {
     var body: some View {
         HStack(spacing: 10) {
             TextField("Введите ответ или код и нажмите Enter", text: $text)
-                .textInputAutocapitalization(.characters)
+                .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.send)
                 .focused(isFocused)
@@ -347,7 +392,6 @@ private struct LevelCodeInputBar: View {
 
 private struct LevelPlayScrollBody: View {
     let statusMessage: String
-    let lastCodeResult: CodeResultFeedback?
     let level: Level
 
     var body: some View {
@@ -358,10 +402,6 @@ private struct LevelPlayScrollBody: View {
                         .font(.caption)
                         .foregroundStyle(GameTheme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if let result = lastCodeResult {
-                    codeResultBanner(result)
                 }
 
                 if !level.sectors.isEmpty {
@@ -485,15 +525,6 @@ private struct LevelPlayScrollBody: View {
 
     private var helpsSection: some View {
         LevelHelpsSection(helps: level.helps, penaltyHelps: level.penaltyHelps)
-    }
-
-    private func codeResultBanner(_ result: CodeResultFeedback) -> some View {
-        Text(result.message)
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(result.isCorrect ? GameTheme.accent : .orange)
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var sectorsSectionTitle: String {

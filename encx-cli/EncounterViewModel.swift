@@ -17,6 +17,7 @@ enum AppScreen: Hashable {
 struct CodeResultFeedback: Equatable {
     let message: String
     let isCorrect: Bool
+    let id: UUID
 }
 
 enum SessionRecoveryError: LocalizedError {
@@ -1083,12 +1084,15 @@ final class EncounterViewModel {
     }
 
     private func feedback(from model: GameModel?) -> CodeResultFeedback? {
-        let result = model?.engineAction?.levelAction ?? model?.engineAction?.bonusAction
-        guard let answer = result?.answer, let isCorrect = result?.isCorrectAnswer else {
+        guard let engineAction = model?.engineAction else { return nil }
+        let result = [engineAction.levelAction, engineAction.bonusAction]
+            .compactMap { $0 }
+            .first { $0.answer != nil && $0.isCorrectAnswer != nil }
+        guard let result, let answer = result.answer, let isCorrect = result.isCorrectAnswer else {
             return nil
         }
         let message = isCorrect ? "Код принят: \(answer)" : "Код не подошёл: \(answer)"
-        return CodeResultFeedback(message: message, isCorrect: isCorrect)
+        return CodeResultFeedback(message: message, isCorrect: isCorrect, id: UUID())
     }
 
     private func resultMessage(from model: GameModel?) -> String {

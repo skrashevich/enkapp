@@ -7,6 +7,10 @@ struct CodesView: View {
     let sentActions: [CodeAction]
     @State private var copiedActionID: Int?
 
+    private var sentActionsNewestFirst: [CodeAction] {
+        sentActions.sorted { $0.actionID > $1.actionID }
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
@@ -118,9 +122,9 @@ struct CodesView: View {
 
     private var sentSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            GameSectionHeader(title: "Отправленные на уровне (\(sentActions.count))")
+            GameSectionHeader(title: "Отправленные на уровне (\(sentActionsNewestFirst.count))")
 
-            ForEach(sentActions) { action in
+            ForEach(sentActionsNewestFirst) { action in
                 sentCodeRow(action)
             }
         }
