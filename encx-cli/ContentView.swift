@@ -57,6 +57,10 @@ struct ContentView: View {
             .onChange(of: model.settings.pushOnNewHint) {
                 model.persistAuthorizationSettings()
             }
+            .onChange(of: model.settings.harRecordingEnabled) {
+                model.applyHARRecordingSetting()
+                model.persistAuthorizationSettings()
+            }
             .onChange(of: model.login) {
                 model.persistAuthorizationSettings()
             }

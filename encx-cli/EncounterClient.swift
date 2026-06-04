@@ -52,6 +52,8 @@ struct DomainSettings: Codable, Equatable {
     var liveActivityDisplay = LiveActivityDisplayOptions()
     var pushOnNewLevel = true
     var pushOnNewHint = true
+    /// Records Encounter HTTP traffic as HAR 1.2 for debugging and mock-server development.
+    var harRecordingEnabled = false
 }
 
 final class EncounterClient {
@@ -76,6 +78,7 @@ final class EncounterClient {
             throw EncounterClientError.clientCreationFailed
         }
         client.setCodeSendTimeoutSeconds(EncounterTimeouts.codeSendSeconds)
+        client.setHARRecordingEnabled(settings.harRecordingEnabled)
         self.client = client
         #else
         throw EncounterClientError.bindingsUnavailable
@@ -108,6 +111,37 @@ final class EncounterClient {
     func importCookies(_ data: Data) throws {
         #if canImport(Encx)
         try client.importCookies(data)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func setHARRecordingEnabled(_ enabled: Bool) {
+        #if canImport(Encx)
+        client.setHARRecordingEnabled(enabled)
+        #endif
+    }
+
+    func harEntryCount() -> Int {
+        #if canImport(Encx)
+        return Int(client.harEntryCount())
+        #else
+        return 0
+        #endif
+    }
+
+    func clearHAR() {
+        #if canImport(Encx)
+        client.clearHAR()
+        #endif
+    }
+
+    func exportHAR() throws -> String {
+        #if canImport(Encx)
+        var error: NSError?
+        let json = client.exportHAR(&error)
+        if let error { throw error }
+        return json
         #else
         throw EncounterClientError.bindingsUnavailable
         #endif

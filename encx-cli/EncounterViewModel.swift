@@ -74,6 +74,8 @@ final class EncounterViewModel {
     var knownDomains: [String] = []
     /// Last successful engine round-trip (ping or code send), for the Codes tab.
     var serverRoundTripMs: Int?
+    /// Number of captured HAR entries (updated from settings/debug actions).
+    var harEntryCount = 0
 
     let queue = CodeQueueStore()
     private let liveActivity = QueueLiveActivityManager()
@@ -568,6 +570,42 @@ final class EncounterViewModel {
         UserDefaults.standard.set(login, forKey: loginKey)
     }
 
+    func applyHARRecordingSetting() {
+        do {
+            try ensureClient().setHARRecordingEnabled(settings.harRecordingEnabled)
+            refreshHAREntryCount()
+        } catch {
+            // Client is created on first login or session restore.
+        }
+    }
+
+    func refreshHAREntryCount() {
+        harEntryCount = client?.harEntryCount() ?? 0
+    }
+
+    func clearHARCapture() {
+        client?.clearHAR()
+        refreshHAREntryCount()
+        statusMessage = "HAR очищен"
+    }
+
+    func exportHARFileURL() throws -> URL {
+        let client = try ensureClient()
+        let json = try client.exportHAR()
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let timestamp = formatter.string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        let safeDomain = settings.domain
+            .lowercased()
+            .replacingOccurrences(of: "/", with: "-")
+        let filename = "encounter-\(safeDomain)-\(timestamp).har"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        try json.write(to: url, atomically: true, encoding: .utf8)
+        refreshHAREntryCount()
+        return url
+    }
+
     private func startQueueProcessor() {
         queueProcessorTask?.cancel()
         queueProcessorTask = Task { [weak self] in
@@ -862,6 +900,7 @@ final class EncounterViewModel {
             try? newClient.importCookies(cookies)
         }
         client = newClient
+        refreshHAREntryCount()
         return newClient
     }
 
@@ -959,11 +998,19 @@ final class EncounterViewModel {
         _ operation: (EncounterClient) async throws -> T
     ) async throws -> T {
         do {
-            return try await operation(try ensureClient())
+            let result = try await operation(try ensureClient())
+            if settings.harRecordingEnabled {
+                refreshHAREntryCount()
+            }
+            return result
         } catch {
             guard EncounterClient.isSessionExpiredError(error) else { throw error }
             try await reloginSilently()
-            return try await operation(try ensureClient())
+            let result = try await operation(try ensureClient())
+            if settings.harRecordingEnabled {
+                refreshHAREntryCount()
+            }
+            return result
         }
     }
 

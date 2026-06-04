@@ -13,6 +13,9 @@ struct SettingsView: View {
     @State private var notificationDenied = false
     @State private var liveActivitySystemStatus: PermissionCheckStatus = .pending
     @State private var liveActivityPushStatus: PermissionCheckStatus = .pending
+    @State private var showHARShareSheet = false
+    @State private var harShareURL: URL?
+    @State private var harExportError: String?
     @Environment(\.scenePhase) private var scenePhase
 
     private var appVersion: String {
@@ -26,6 +29,38 @@ struct SettingsView: View {
             Section("Подключение") {
                 Toggle("Использовать HTTP", isOn: $model.settings.useHTTP)
                 Toggle("Отключить проверку TLS", isOn: $model.settings.insecureTLS)
+            }
+
+            Section {
+                Toggle("Запись HAR", isOn: $model.settings.harRecordingEnabled)
+
+                if model.settings.harRecordingEnabled {
+                    LabeledContent("Записей", value: "\(model.harEntryCount)")
+
+                    Button {
+                        exportHAR()
+                    } label: {
+                        Label("Экспорт HAR", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(model.harEntryCount == 0 || model.isBusy)
+
+                    Button("Очистить запись", role: .destructive) {
+                        model.clearHARCapture()
+                    }
+                    .disabled(model.harEntryCount == 0 || model.isBusy)
+                }
+            } header: {
+                Text("Отладка")
+            } footer: {
+                Text("HAR — дамп HTTP-запросов к серверу Encounter (HAR 1.2). Экспортируйте и отправьте для отладки или создания mock-сервера. Пароли в login-запросах скрываются; cookies и коды остаются в файле.")
+            }
+
+            if let harExportError {
+                Section {
+                    Label(harExportError, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section {
@@ -142,6 +177,16 @@ struct SettingsView: View {
         }
         .navigationTitle("Настройки")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showHARShareSheet, onDismiss: {
+            if let harShareURL {
+                try? FileManager.default.removeItem(at: harShareURL)
+            }
+            harShareURL = nil
+        }) {
+            if let harShareURL {
+                ShareSheet(items: [harShareURL])
+            }
+        }
         .task {
             if model.settings.liveActivityEnabled {
                 liveActivitySystemStatus = .pending
@@ -150,12 +195,14 @@ struct SettingsView: View {
             }
             await refreshNotificationStatus()
             await refreshLiveActivityPermissions()
+            model.refreshHAREntryCount()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 Task {
                     await refreshNotificationStatus()
                     await refreshLiveActivityPermissions()
+                    model.refreshHAREntryCount()
                 }
             }
         }
@@ -301,5 +348,16 @@ struct SettingsView: View {
         liveActivitySystemStatus = QueueLiveActivityManager.areActivitiesEnabled ? .granted : .denied
         let status = await GameEventNotificationService.shared.authorizationStatus()
         liveActivityPushStatus = GameEventNotificationService.isAuthorized(status) ? .granted : .denied
+    }
+
+    private func exportHAR() {
+        harExportError = nil
+        do {
+            let url = try model.exportHARFileURL()
+            harShareURL = url
+            showHARShareSheet = true
+        } catch {
+            harExportError = error.localizedDescription
+        }
     }
 }

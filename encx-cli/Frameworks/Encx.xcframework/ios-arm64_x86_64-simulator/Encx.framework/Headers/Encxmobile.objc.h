@@ -27,6 +27,10 @@
  */
 - (BOOL)acceptTeamInvitation:(int64_t)teamID error:(NSError* _Nullable* _Nullable)error;
 /**
+ * ClearHAR removes all captured HAR entries.
+ */
+- (void)clearHAR;
+/**
  * Domain returns the configured Encounter domain.
  */
 - (NSString* _Nonnull)domain;
@@ -38,6 +42,10 @@
  * ExportCookies serializes session cookies to JSON bytes for persistent storage.
  */
 - (NSData* _Nullable)exportCookies:(NSError* _Nullable* _Nullable)error;
+/**
+ * ExportHAR returns captured traffic as a HAR 1.2 JSON document.
+ */
+- (NSString* _Nonnull)exportHAR:(NSError* _Nullable* _Nullable)error;
 /**
  * GetDomainGames returns games parsed from the domain main page as JSON array.
  */
@@ -75,6 +83,10 @@
  */
 - (BOOL)getTimeoutToGame:(int64_t)gameID ret0_:(int64_t* _Nullable)ret0_ error:(NSError* _Nullable* _Nullable)error;
 /**
+ * HAREntryCount returns the number of captured HAR entries.
+ */
+- (int64_t)harEntryCount;
+/**
  * ImportCookies restores session cookies from JSON bytes produced by ExportCookies.
  */
 - (BOOL)importCookies:(NSData* _Nullable)data error:(NSError* _Nullable* _Nullable)error;
@@ -99,6 +111,10 @@
 Zero or negative values reset to the default (1 second).
  */
 - (void)setCodeSendTimeoutSeconds:(int64_t)seconds;
+/**
+ * SetHARRecordingEnabled toggles HAR 1.2 capture for Encounter HTTP traffic.
+ */
+- (void)setHARRecordingEnabled:(BOOL)enabled;
 @end
 
 /**
