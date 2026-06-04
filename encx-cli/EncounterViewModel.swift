@@ -94,6 +94,12 @@ final class EncounterViewModel {
     private var reloginTask: Task<Void, Error>?
     private var lastGamePollDate: Date?
     private let gamePollInterval: TimeInterval = 20
+    /// Backoff for queue retries while the engine is unreachable (cap keeps UI responsive).
+    private var queueRetryBackoffSeconds: TimeInterval = 0.4
+    /// Anchor for Live Activity countdowns; updated when `currentModel` changes, not on every sync.
+    private var liveActivityModelAnchor = Date()
+    private var lastSyncedLiveActivityState: QueueActivityAttributes.ContentState?
+    private var harEntryCountRefreshTask: Task<Void, Never>?
 
     var shouldKeepScreenAwake: Bool {
         get { keepScreenAwake }
@@ -191,6 +197,7 @@ final class EncounterViewModel {
             Task { @MainActor in
                 await self?.syncLiveActivity()
                 BackgroundQueueService.shared.scheduleProcessing()
+                guard self?.engineReachable == true else { return }
                 await self?.flushQueueNow(silent: true)
             }
         }
@@ -391,7 +398,7 @@ final class EncounterViewModel {
 
             selectedGameID = gameID
             gameStartCountdown = nil
-            currentModel = try await withSessionRecovery { try await $0.gameModel(gameID: gameID) }
+            setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: gameID) })
             try saveCookies(from: try ensureClient())
             markEngineReachable()
             statusMessage = ""
@@ -409,7 +416,7 @@ final class EncounterViewModel {
         await runBusy("Загрузка уровня...", presentErrors: presentErrors) {
             selectedGameID = gameID
             gameStartCountdown = nil
-            currentModel = try await withSessionRecovery { try await $0.gameModel(gameID: gameID) }
+            setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: gameID) })
             try saveCookies(from: try ensureClient())
             markEngineReachable()
             statusMessage = ""
@@ -441,7 +448,7 @@ final class EncounterViewModel {
             "Обновление уровня...",
             presentErrors: !hadCachedLevel
         ) {
-            currentModel = try await withSessionRecovery { try await $0.gameModel(gameID: selectedGameID) }
+            setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: selectedGameID) })
             try saveCookies(from: try ensureClient())
             markEngineReachable()
             statusMessage = ""
@@ -513,13 +520,22 @@ final class EncounterViewModel {
             return
         }
 
+        // Skip a 1s network attempt when we already know the engine is down — enqueue immediately.
+        if !engineReachable {
+            queue.enqueue(submission)
+            statusMessage = queueAddedMessage(engineUnreachable: true)
+            Task { await syncLiveActivity() }
+            BackgroundQueueService.shared.scheduleProcessing()
+            return
+        }
+
         Task { await sendCodeNow(submission) }
     }
 
     private func sendCodeNow(_ submission: CodeSubmission) async {
         do {
             let started = DispatchTime.now()
-            currentModel = try await withSessionRecovery { try await $0.sendCode(submission) }
+            setCurrentModel(try await withSessionRecovery { try await $0.sendCode(submission) })
             recordServerRoundTrip(since: started)
             try saveCookies(from: try ensureClient())
             markEngineReachable()
@@ -613,11 +629,24 @@ final class EncounterViewModel {
             while !Task.isCancelled {
                 await self?.processQueueIfNeeded()
                 let delay = await MainActor.run {
-                    (self?.queue.pending.isEmpty == false) ? 0.4 : 6.0
+                    self?.queueProcessorDelay() ?? 6.0
                 }
                 try? await Task.sleep(for: .seconds(delay))
             }
         }
+    }
+
+    private func queueProcessorDelay() -> TimeInterval {
+        guard !queue.pending.isEmpty else { return 6.0 }
+        return engineReachable ? 0.4 : queueRetryBackoffSeconds
+    }
+
+    private func recordQueueRetryFailure() {
+        queueRetryBackoffSeconds = min(max(queueRetryBackoffSeconds * 1.5, 1.0), 8.0)
+    }
+
+    private func resetQueueRetryBackoff() {
+        queueRetryBackoffSeconds = 0.4
     }
 
     private func processQueueIfNeeded() async {
@@ -642,7 +671,7 @@ final class EncounterViewModel {
 
         do {
             let model = try await withSessionRecovery { try await $0.gameModel(gameID: gameID) }
-            currentModel = model
+            setCurrentModel(model)
             try saveCookies(from: try ensureClient())
             markEngineReachable()
             await processGameEvents(for: gameID)
@@ -684,12 +713,15 @@ final class EncounterViewModel {
         isFlushingQueue = true
         defer { isFlushingQueue = false }
 
+        let pendingBefore = queue.pending.count
+        var shouldSyncLiveActivity = false
+
         do {
             // When codes are queued, send them immediately (1s timeout each). A pre-flush ping only
             // blocked real code attempts after the first timeout (e.g. mock PZDC network drop).
             if !engineReachable, queue.pending.isEmpty, let probeGameID = selectedGameID {
                 let started = DispatchTime.now()
-                currentModel = try await withSessionRecovery { try await $0.pingGame(gameID: probeGameID) }
+                setCurrentModel(try await withSessionRecovery { try await $0.pingGame(gameID: probeGameID) })
                 recordServerRoundTrip(since: started)
                 try saveCookies(from: try ensureClient())
                 markEngineReachable()
@@ -704,9 +736,10 @@ final class EncounterViewModel {
                 self.recordServerRoundTrip(since: started)
                 return updated
             }) {
-                currentModel = model
+                setCurrentModel(model)
                 try saveCookies(from: try ensureClient())
                 markEngineReachable()
+                resetQueueRetryBackoff()
                 if let gameID = selectedGameID {
                     await processGameEvents(for: gameID)
                 }
@@ -717,24 +750,32 @@ final class EncounterViewModel {
                     statusMessage = message
                 }
                 lastCodeResult = feedback(from: model)
+                shouldSyncLiveActivity = true
             } else if !queue.pending.isEmpty {
                 markEngineUnreachable()
+                recordQueueRetryFailure()
                 if !silent {
                     statusMessage = "Движок недоступен, очередь сохранена"
+                    shouldSyncLiveActivity = true
                 }
             }
         } catch {
             markEngineUnreachable()
+            recordQueueRetryFailure()
             if !silent {
                 presentError(error)
+                shouldSyncLiveActivity = true
             } else if EncounterClient.isAntiSpamError(error) {
                 antiSpamVerificationURL = EncounterClient.antiSpamURL(from: error, settings: settings)
                     ?? EncounterClient.defaultAntiSpamURL(settings: settings)
                 showAntiSpamVerification = true
+                shouldSyncLiveActivity = true
             }
         }
 
-        await syncLiveActivity()
+        if shouldSyncLiveActivity || queue.pending.count != pendingBefore {
+            await syncLiveActivity()
+        }
         return queue.pending.isEmpty
     }
 
@@ -749,19 +790,34 @@ final class EncounterViewModel {
 
     private func syncLiveActivity() async {
         guard settings.liveActivityEnabled else {
+            lastSyncedLiveActivityState = nil
             await liveActivity.end()
             return
         }
+
+        guard let state = liveActivityContentState() else {
+            lastSyncedLiveActivityState = nil
+            await liveActivity.end()
+            return
+        }
+
+        if state == lastSyncedLiveActivityState {
+            return
+        }
+        lastSyncedLiveActivityState = state
 
         let display = settings.liveActivityDisplay
         let rawTitle = currentModel?.gameTitle
             ?? games.first { $0.id == selectedGameID.map(Int.init) }?.title
             ?? "Encounter"
         let gameTitle = display.showGameTitle ? rawTitle : ""
-        await liveActivity.sync(
-            state: liveActivityContentState(),
-            gameTitle: gameTitle
-        )
+        await liveActivity.sync(state: state, gameTitle: gameTitle)
+    }
+
+    private func setCurrentModel(_ model: GameModel) {
+        currentModel = model
+        liveActivityModelAnchor = Date()
+        lastSyncedLiveActivityState = nil
     }
 
     private func liveActivityContentState() -> QueueActivityAttributes.ContentState? {
@@ -792,7 +848,7 @@ final class EncounterViewModel {
 
         let status = display.showStatus ? liveActivityStatus(for: level) : ""
 
-        let syncedAt = Date()
+        let syncedAt = liveActivityModelAnchor
         let levelEndsAt: Date? = level.timeoutSecondsRemain > 0
             ? syncedAt.addingTimeInterval(TimeInterval(level.timeoutSecondsRemain))
             : nil
@@ -1000,18 +1056,24 @@ final class EncounterViewModel {
     ) async throws -> T {
         do {
             let result = try await operation(try ensureClient())
-            if settings.harRecordingEnabled {
-                refreshHAREntryCount()
-            }
+            scheduleHAREntryCountRefresh()
             return result
         } catch {
             guard EncounterClient.isSessionExpiredError(error) else { throw error }
             try await reloginSilently()
             let result = try await operation(try ensureClient())
-            if settings.harRecordingEnabled {
-                refreshHAREntryCount()
-            }
+            scheduleHAREntryCountRefresh()
             return result
+        }
+    }
+
+    private func scheduleHAREntryCountRefresh() {
+        guard settings.harRecordingEnabled else { return }
+        harEntryCountRefreshTask?.cancel()
+        harEntryCountRefreshTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            refreshHAREntryCount()
         }
     }
 
@@ -1055,8 +1117,11 @@ final class EncounterViewModel {
         )
     }
 
-    private func queueAddedMessage(error: Error? = nil) -> String {
+    private func queueAddedMessage(error: Error? = nil, engineUnreachable: Bool = false) -> String {
         let count = queue.pending.count
+        if engineUnreachable {
+            return "Движок недоступен. В очереди: \(count)"
+        }
         if let error {
             if EncounterClient.isTimeoutError(error) {
                 return "Нет ответа за 1 сек. В очереди: \(count)"
