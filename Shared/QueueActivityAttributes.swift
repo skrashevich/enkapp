@@ -22,6 +22,10 @@ struct QueueActivityAttributes: ActivityAttributes {
         var bonusesTotal: Int
         var recentCodes: [String]
         var hints: [String]
+        /// When the current level ends (from `TimeoutSecondsRemain` at last sync).
+        var levelEndsAt: Date?
+        /// When the nearest locked hint unlocks (minimum `RemainSeconds` among locked helps).
+        var nextHintUnlocksAt: Date?
     }
 
     var gameTitle: String
@@ -40,7 +44,9 @@ extension QueueActivityAttributes.ContentState {
         bonusesPassed: 1,
         bonusesTotal: 3,
         recentCodes: ["ответ1", "сектор2", "бонус"],
-        hints: ["Посмотрите на табличку у входа", "Код спрятан в координатах"]
+        hints: ["Посмотрите на табличку у входа", "Код спрятан в координатах"],
+        levelEndsAt: Date().addingTimeInterval(42 * 60 + 18),
+        nextHintUnlocksAt: Date().addingTimeInterval(7 * 60 + 5)
     )
 
     var levelTitle: String {

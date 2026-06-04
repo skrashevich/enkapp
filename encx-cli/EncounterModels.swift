@@ -203,6 +203,14 @@ struct Level: Decodable {
         penaltyHelps = try container.decodeIfPresent([Help].self, forKey: .penaltyHelps) ?? []
         mixedActions = try container.decodeIfPresent([CodeAction].self, forKey: .mixedActions) ?? []
     }
+
+    /// Seconds until the nearest hint that is still locked (`RemainSeconds` > 0, no text yet).
+    var nearestLockedHintRemainSeconds: Int {
+        (helps + penaltyHelps)
+            .filter { $0.remainSeconds > 0 && $0.unlockedText == nil }
+            .map(\.remainSeconds)
+            .min() ?? 0
+    }
 }
 
 struct LevelTask: Decodable, Hashable {

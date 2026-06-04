@@ -753,6 +753,15 @@ final class EncounterViewModel {
 
         let status = display.showStatus ? liveActivityStatus(for: level) : ""
 
+        let syncedAt = Date()
+        let levelEndsAt: Date? = level.timeoutSecondsRemain > 0
+            ? syncedAt.addingTimeInterval(TimeInterval(level.timeoutSecondsRemain))
+            : nil
+        let nearestHintRemain = level.nearestLockedHintRemainSeconds
+        let nextHintUnlocksAt: Date? = nearestHintRemain > 0
+            ? syncedAt.addingTimeInterval(TimeInterval(nearestHintRemain))
+            : nil
+
         return QueueActivityAttributes.ContentState(
             pendingCount: display.showQueue ? queue.pending.count : 0,
             status: status,
@@ -765,7 +774,9 @@ final class EncounterViewModel {
             bonusesPassed: display.showProgress ? level.passedBonusesCount : 0,
             bonusesTotal: display.showProgress ? level.bonuses.count : 0,
             recentCodes: Array(recentCodes),
-            hints: Array(hints)
+            hints: Array(hints),
+            levelEndsAt: levelEndsAt,
+            nextHintUnlocksAt: nextHintUnlocksAt
         )
     }
 
@@ -793,7 +804,7 @@ final class EncounterViewModel {
             return "Бонусы \(level.passedBonusesCount)/\(level.bonuses.count)"
         }
         if level.timeoutSecondsRemain > 0 {
-            return "До перехода: \(GameDurationFormatter.minutesAndSeconds(level.timeoutSecondsRemain))"
+            return GameDurationFormatter.levelDrainLabel(seconds: level.timeoutSecondsRemain)
         }
         return queueConnectionStatus.label
     }

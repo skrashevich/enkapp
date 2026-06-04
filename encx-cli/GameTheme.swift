@@ -33,6 +33,13 @@ enum GameDurationFormatter {
         return parts.joined(separator: " ")
     }
 
+    static func levelDrainLabel(seconds: Int) -> String {
+        if seconds <= 0 {
+            return "Слив…"
+        }
+        return "До слива: \(minutesAndSeconds(seconds))"
+    }
+
     static func helpUnlockLabel(seconds: Int) -> String {
         if seconds <= 0 {
             return "Открывается…"

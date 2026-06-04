@@ -238,19 +238,23 @@ struct LevelPlayView: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                HStack(spacing: 4) {
-                    Text("Уровень")
-                        .foregroundStyle(GameTheme.muted)
-                    Text("\(level.number)")
-                        .fontWeight(.bold)
-                        .foregroundStyle(GameTheme.accent)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(GameTheme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-                    Text("из \(max(game.levels.count, level.number))")
-                        .foregroundStyle(GameTheme.muted)
+                VStack(alignment: .trailing, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Text("Уровень")
+                            .foregroundStyle(GameTheme.muted)
+                        Text("\(level.number)")
+                            .fontWeight(.bold)
+                            .foregroundStyle(GameTheme.accent)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(GameTheme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                        Text("из \(max(game.levels.count, level.number))")
+                            .foregroundStyle(GameTheme.muted)
+                    }
+                    .font(.subheadline)
+
+                    LevelDrainCountdown(remainSeconds: level.timeoutSecondsRemain)
                 }
-                .font(.subheadline)
             }
 
             if let progress = sectorsProgressCaption(level: level) {
@@ -278,6 +282,29 @@ struct LevelPlayView: View {
             return "Осталось закрыть: \(level.sectorsLeftToClose) \(LevelPlayWordForms.sector(level.sectorsLeftToClose))"
         }
         return nil
+    }
+}
+
+private struct LevelDrainCountdown: View {
+    let remainSeconds: Int
+    @State private var syncedAt = Date()
+
+    var body: some View {
+        if remainSeconds > 0 {
+            TickingCountdownText(
+                countdown: SyncedSecondsCountdown(
+                    remainSeconds: remainSeconds,
+                    syncedAt: syncedAt
+                ),
+                label: GameDurationFormatter.levelDrainLabel
+            )
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(GameTheme.accent)
+            .onAppear { syncedAt = Date() }
+            .onChange(of: remainSeconds) { _, _ in
+                syncedAt = Date()
+            }
+        }
     }
 }
 

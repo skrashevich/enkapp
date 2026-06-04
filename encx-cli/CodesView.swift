@@ -1,9 +1,11 @@
 import SwiftUI
 import Observation
+import UIKit
 
 struct CodesView: View {
     @Bindable var model: EncounterViewModel
     let sentActions: [CodeAction]
+    @State private var copiedActionID: Int?
 
     var body: some View {
         ScrollView {
@@ -119,21 +121,55 @@ struct CodesView: View {
             GameSectionHeader(title: "Отправленные на уровне (\(sentActions.count))")
 
             ForEach(sentActions) { action in
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: action.isCorrect ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(action.isCorrect ? GameTheme.accent : GameTheme.muted)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(action.answer)
-                            .font(.body.monospaced())
-                            .foregroundStyle(GameTheme.text)
-                        Text("\(action.login), \(action.locDateTime)")
-                            .font(.caption)
-                            .foregroundStyle(GameTheme.muted)
-                    }
+                sentCodeRow(action)
+            }
+        }
+    }
+
+    private func sentCodeRow(_ action: CodeAction) -> some View {
+        Button {
+            copyCode(action.answer, actionID: action.id)
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: action.isCorrect ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(action.isCorrect ? GameTheme.accent : GameTheme.muted)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(action.answer)
+                        .font(.body.monospaced())
+                        .foregroundStyle(GameTheme.text)
+                    Text("\(action.login), \(action.locDateTime)")
+                        .font(.caption)
+                        .foregroundStyle(GameTheme.muted)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 8))
+                Spacer(minLength: 0)
+                Image(systemName: copiedActionID == action.id ? "checkmark" : "doc.on.doc")
+                    .font(.subheadline)
+                    .foregroundStyle(copiedActionID == action.id ? GameTheme.accent : GameTheme.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                copyCode(action.answer, actionID: action.id)
+            } label: {
+                Label("Копировать", systemImage: "doc.on.doc")
+            }
+        }
+        .sensoryFeedback(.success, trigger: copiedActionID)
+    }
+
+    private func copyCode(_ code: String, actionID: Int) {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        UIPasteboard.general.string = trimmed
+        copiedActionID = actionID
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            if copiedActionID == actionID {
+                copiedActionID = nil
             }
         }
     }

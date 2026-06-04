@@ -22,6 +22,12 @@ struct QueueLiveActivityWidget: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(alignment: .trailing, spacing: 2) {
+                        LiveActivityTimersRow(
+                            levelEndsAt: context.state.levelEndsAt,
+                            nextHintUnlocksAt: context.state.nextHintUnlocksAt,
+                            compact: true,
+                            vertical: true
+                        )
                         if context.state.sectorsRequired > 0 {
                             Text(context.state.sectorsSummary)
                                 .font(.caption.bold())
@@ -117,6 +123,11 @@ struct QueueLiveActivityWidget: Widget {
         VStack(alignment: .leading, spacing: compact ? 4 : 6) {
             headerRow(context: context, compact: compact)
             progressRow(context: context, compact: compact)
+            LiveActivityTimersRow(
+                levelEndsAt: context.state.levelEndsAt,
+                nextHintUnlocksAt: context.state.nextHintUnlocksAt,
+                compact: compact
+            )
 
             if !codes.isEmpty {
                 codesSection(codes: codes, compact: compact)
