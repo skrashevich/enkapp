@@ -232,6 +232,23 @@ final class EncounterClient {
         }.value
     }
 
+    /// Seconds until game start, or `-1` when the server provides no countdown.
+    func timeoutToGame(gameID: Int64) throws -> Int64 {
+        #if canImport(Encx)
+        var seconds: Int64 = -1
+        try client.getTimeoutToGame(gameID, ret0_: &seconds)
+        return seconds
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func timeoutToGame(gameID: Int64) async throws -> Int64 {
+        try await Task.detached(priority: .userInitiated) {
+            try self.timeoutToGame(gameID: gameID)
+        }.value
+    }
+
     static func isTimeoutError(_ error: Error) -> Bool {
         let ns = error as NSError
         if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorTimedOut {

@@ -5,8 +5,12 @@ import Foundation
 final class QueueLiveActivityManager {
     private var activity: Activity<QueueActivityAttributes>?
 
+    static var areActivitiesEnabled: Bool {
+        ActivityAuthorizationInfo().areActivitiesEnabled
+    }
+
     func sync(state: QueueActivityAttributes.ContentState?, gameTitle: String) async {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard Self.areActivitiesEnabled else { return }
 
         guard let state else {
             await end()

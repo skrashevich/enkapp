@@ -12,6 +12,65 @@ enum GameTheme {
     static let inputBackground = Color(white: 0.12)
 }
 
+enum GameDurationFormatter {
+    /// Examples: `45 сек.`, `56 мин. 54 сек.`, `1 ч. 10 мин. 5 сек.`
+    static func minutesAndSeconds(_ seconds: Int) -> String {
+        let total = max(0, seconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let secs = total % 60
+
+        var parts: [String] = []
+        if hours > 0 {
+            parts.append("\(hours) ч.")
+        }
+        if minutes > 0 {
+            parts.append("\(minutes) мин.")
+        }
+        if secs > 0 || parts.isEmpty {
+            parts.append("\(secs) сек.")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    static func helpUnlockLabel(seconds: Int) -> String {
+        if seconds <= 0 {
+            return "Открывается…"
+        }
+        return "Откроется через \(minutesAndSeconds(seconds))"
+    }
+
+    static func gameStartLabel(seconds: Int) -> String {
+        if seconds <= 0 {
+            return "Игра начинается…"
+        }
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let remainder = seconds % 60
+        if hours > 0 {
+            return String(format: "До начала: %d:%02d:%02d", hours, minutes, remainder)
+        }
+        if minutes > 0 {
+            return String(format: "До начала: %d:%02d", minutes, remainder)
+        }
+        return "До начала: \(remainder) сек."
+    }
+}
+
+struct TickingCountdownText: View {
+    let countdown: SyncedSecondsCountdown
+    let label: (Int) -> String
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            let elapsed = max(0, Int(timeline.date.timeIntervalSince(countdown.syncedAt)))
+            let remaining = max(0, countdown.remainSeconds - elapsed)
+            Text(label(remaining))
+                .monospacedDigit()
+        }
+    }
+}
+
 struct GameSectionHeader: View {
     let title: String
 

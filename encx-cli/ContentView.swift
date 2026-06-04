@@ -6,50 +6,13 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            TabView(selection: $model.selectedScreen) {
-                AccountGamesView(model: model)
-                    .tag(AppScreen.games)
-                    .tabItem {
-                        Label("Игры", systemImage: "list.bullet.rectangle")
-                    }
+            mainContent
+        }
+        .preferredColorScheme(model.selectedScreen == .game ? .dark : nil)
+    }
 
-                LevelPlayView(model: model)
-                    .tag(AppScreen.game)
-                    .tabItem {
-                        Label("Игра", systemImage: "gamecontroller.fill")
-                    }
-            }
-            .navigationTitle(model.selectedScreen.title)
-            .toolbar(model.selectedScreen == .game ? .hidden : .visible, for: .navigationBar)
-            .toolbar {
-                if model.selectedScreen != .game {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        HStack(spacing: 16) {
-                            Button {
-                                Task { await refreshCurrentTab() }
-                            } label: {
-                                Image(systemName: "arrow.clockwise")
-                            }
-                            .disabled(model.isBusy)
-
-                            NavigationLink {
-                                SettingsView(model: model)
-                            } label: {
-                                Image(systemName: "gearshape")
-                            }
-                        }
-                    }
-                }
-            }
-            .overlay(alignment: .bottom) {
-                if model.isBusy {
-                    ProgressView()
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(.regularMaterial, in: Capsule())
-                        .padding(.bottom, 8)
-                }
-            }
+    private var mainContent: some View {
+        screenContent
             .task {
                 await model.restoreSession()
                 await model.flushQueueOnResume()
@@ -99,10 +62,7 @@ struct ContentView: View {
             }
             .alert(
                 "Ошибка",
-                isPresented: Binding(
-                    get: { model.errorMessage != nil && !model.showAntiSpamVerification },
-                    set: { if !$0 { model.errorMessage = nil } }
-                )
+                isPresented: isErrorPresented
             ) {
                 if model.antiSpamVerificationURL != nil {
                     Button("Пройти проверку") {
@@ -116,8 +76,100 @@ struct ContentView: View {
             .sheet(isPresented: $model.showAntiSpamVerification) {
                 AntiSpamVerificationView(model: model)
             }
+    }
+
+    private var screenContent: some View {
+        VStack(spacing: 0) {
+            screenNavigation
+
+            Group {
+                switch model.selectedScreen {
+                case .games:
+                AccountGamesView(model: model)
+                case .game:
+                LevelPlayView(model: model)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .preferredColorScheme(model.selectedScreen == .game ? .dark : nil)
+        .background(model.selectedScreen == .game ? GameTheme.background : Color(uiColor: .systemBackground))
+        .navigationTitle(model.selectedScreen.title)
+        .toolbar(model.selectedScreen == .game ? .hidden : .visible, for: .navigationBar)
+        .toolbar {
+            if model.selectedScreen != .game {
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 16) {
+                        Button {
+                            Task { await refreshCurrentTab() }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .disabled(model.isBusy)
+
+                        NavigationLink {
+                            SettingsView(model: model)
+                        } label: {
+                            Image(systemName: "gearshape")
+                        }
+                    }
+                }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if model.isBusy {
+                ProgressView()
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.bottom, 8)
+            }
+        }
+    }
+
+    private var isErrorPresented: Binding<Bool> {
+        Binding(
+            get: { model.errorMessage != nil && !model.showAntiSpamVerification },
+            set: { if !$0 { model.errorMessage = nil } }
+        )
+    }
+
+    private var screenNavigation: some View {
+        HStack(spacing: 8) {
+            screenNavigationButton(
+                screen: .games,
+                title: "Игры",
+                systemImage: "list.bullet.rectangle"
+            )
+            screenNavigationButton(
+                screen: .game,
+                title: "Игра",
+                systemImage: "gamecontroller.fill"
+            )
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(model.selectedScreen == .game ? GameTheme.panel : Color(uiColor: .secondarySystemBackground))
+    }
+
+    private func screenNavigationButton(
+        screen: AppScreen,
+        title: String,
+        systemImage: String
+    ) -> some View {
+        Button {
+            model.selectedScreen = screen
+        } label: {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .foregroundStyle(model.selectedScreen == screen ? .white : GameTheme.muted)
+                .background(
+                    model.selectedScreen == screen ? GameTheme.accent : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8)
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     private func refreshCurrentTab() async {

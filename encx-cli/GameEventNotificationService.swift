@@ -19,6 +19,15 @@ final class GameEventNotificationService {
         await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
     }
 
+    static func isAuthorized(_ status: UNAuthorizationStatus) -> Bool {
+        switch status {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        default:
+            return false
+        }
+    }
+
     @discardableResult
     func requestAuthorizationIfNeeded() async -> Bool {
         let center = UNUserNotificationCenter.current()

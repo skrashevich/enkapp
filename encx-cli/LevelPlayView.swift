@@ -3,6 +3,7 @@ import Observation
 
 struct LevelPlayView: View {
     @Bindable var model: EncounterViewModel
+    @State private var codeDraft = ""
     @FocusState private var codeFieldFocused: Bool
 
     var body: some View {
@@ -18,6 +19,9 @@ struct LevelPlayView: View {
         .background(GameTheme.background)
         .refreshable {
             await model.refreshLevel()
+        }
+        .onChange(of: model.selectedGameID) { _, _ in
+            codeDraft = ""
         }
     }
 
@@ -67,6 +71,17 @@ struct LevelPlayView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
+            if !isActive, let countdown = model.gameStartCountdown {
+                TickingCountdownText(
+                    countdown: countdown,
+                    label: GameDurationFormatter.gameStartLabel
+                )
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(GameTheme.accent)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            }
+
             if !model.statusMessage.isEmpty {
                 Text(model.statusMessage)
                     .font(.caption)
@@ -103,45 +118,30 @@ struct LevelPlayView: View {
     private func gameScreen(game: GameModel, level: Level) -> some View {
         VStack(spacing: 0) {
             gameHeader(game: game)
-            codeBar
             levelProgress(game: game, level: level)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    if !model.statusMessage.isEmpty {
-                        Text(model.statusMessage)
-                            .font(.caption)
-                            .foregroundStyle(GameTheme.muted)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    if let result = model.lastCodeResult {
-                        codeResultBanner(result)
-                    }
-
-                    if !level.sectors.isEmpty {
-                        sectorsSection(level: level)
-                    }
-
-                    taskSection(level: level)
-
-                    if !level.messages.isEmpty {
-                        messagesSection(level: level)
-                    }
-
-                    if !level.bonuses.isEmpty {
-                        bonusesSection(level: level)
-                    }
-
-                    if !level.helps.isEmpty || !level.penaltyHelps.isEmpty {
-                        helpsSection(level: level)
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-            }
+            LevelPlayScrollBody(
+                statusMessage: model.statusMessage,
+                lastCodeResult: model.lastCodeResult,
+                level: level
+            )
         }
         .background(GameTheme.background)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            LevelCodeInputBar(
+                text: $codeDraft,
+                canSubmit: model.currentModel?.level != nil && !codeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                isFocused: $codeFieldFocused,
+                onSubmit: submitCodeDraft
+            )
+        }
+    }
+
+    private func submitCodeDraft() {
+        let trimmed = codeDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        codeDraft = ""
+        model.submitCode(trimmed)
     }
 
     private func gameHeader(game: GameModel) -> some View {
@@ -228,16 +228,73 @@ struct LevelPlayView: View {
         .frame(minWidth: 44)
     }
 
-    private var codeBar: some View {
+    private func levelProgress(game: GameModel, level: Level) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                if !game.teamName.isEmpty || !game.login.isEmpty {
+                    Text([game.login, game.teamName].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(GameTheme.muted)
+                        .lineLimit(1)
+                }
+                Spacer()
+                HStack(spacing: 4) {
+                    Text("Уровень")
+                        .foregroundStyle(GameTheme.muted)
+                    Text("\(level.number)")
+                        .fontWeight(.bold)
+                        .foregroundStyle(GameTheme.accent)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(GameTheme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                    Text("из \(max(game.levels.count, level.number))")
+                        .foregroundStyle(GameTheme.muted)
+                }
+                .font(.subheadline)
+            }
+
+            if let progress = sectorsProgressCaption(level: level) {
+                Text(progress)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(GameTheme.accent)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 8)
+    }
+
+    private func sectorsProgressCaption(level: Level) -> String? {
+        if level.requiredSectorsCount > 0 {
+            let remaining = level.sectorsLeftToClose > 0
+                ? level.sectorsLeftToClose
+                : max(0, level.requiredSectorsCount - level.passedSectorsCount)
+            if remaining > 0 {
+                return "Для прохождения: \(level.passedSectorsCount) из \(level.requiredSectorsCount) · осталось \(remaining)"
+            }
+            return "Для прохождения: \(level.passedSectorsCount) из \(level.requiredSectorsCount)"
+        }
+        if level.sectorsLeftToClose > 0 {
+            return "Осталось закрыть: \(level.sectorsLeftToClose) \(LevelPlayWordForms.sector(level.sectorsLeftToClose))"
+        }
+        return nil
+    }
+}
+
+private struct LevelCodeInputBar: View {
+    @Binding var text: String
+    var canSubmit: Bool
+    var isFocused: FocusState<Bool>.Binding
+    var onSubmit: () -> Void
+
+    var body: some View {
         HStack(spacing: 10) {
-            TextField("Введите ответ или код и нажмите Enter", text: $model.code)
+            TextField("Введите ответ или код и нажмите Enter", text: $text)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
                 .submitLabel(.send)
-                .focused($codeFieldFocused)
-                .onSubmit {
-                    model.submitCode()
-                }
+                .focused(isFocused)
+                .onSubmit(onSubmit)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
@@ -247,62 +304,76 @@ struct LevelPlayView: View {
                 }
                 .foregroundStyle(GameTheme.text)
 
-            Button {
-                model.submitCode()
-            } label: {
+            Button(action: onSubmit) {
                 Image(systemName: "paperplane.fill")
                     .frame(width: 40, height: 40)
-                    .background(model.canSubmitCode ? GameTheme.accent : GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
+                    .background(canSubmit ? GameTheme.accent : GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
                     .foregroundStyle(.white)
             }
-            .disabled(!model.canSubmitCode)
+            .disabled(!canSubmit)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(GameTheme.background)
     }
+}
 
-    private func levelProgress(game: GameModel, level: Level) -> some View {
-        HStack {
-            if !game.teamName.isEmpty || !game.login.isEmpty {
-                Text([game.login, game.teamName].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.caption)
-                    .foregroundStyle(GameTheme.muted)
-                    .lineLimit(1)
+private struct LevelPlayScrollBody: View {
+    let statusMessage: String
+    let lastCodeResult: CodeResultFeedback?
+    let level: Level
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if !statusMessage.isEmpty {
+                    Text(statusMessage)
+                        .font(.caption)
+                        .foregroundStyle(GameTheme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if let result = lastCodeResult {
+                    codeResultBanner(result)
+                }
+
+                if !level.sectors.isEmpty {
+                    sectorsSection
+                }
+
+                taskSection
+
+                if !level.helps.isEmpty || !level.penaltyHelps.isEmpty {
+                    helpsSection
+                }
+
+                if !level.messages.isEmpty {
+                    messagesSection
+                }
+
+                if !level.bonuses.isEmpty {
+                    bonusesSection
+                }
             }
-            Spacer()
-            HStack(spacing: 4) {
-                Text("Уровень")
-                    .foregroundStyle(GameTheme.muted)
-                Text("\(level.number)")
-                    .fontWeight(.bold)
-                    .foregroundStyle(GameTheme.accent)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(GameTheme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-                Text("из \(max(game.levels.count, level.number))")
-                    .foregroundStyle(GameTheme.muted)
-            }
-            .font(.subheadline)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
         }
-        .padding(.horizontal, 14)
-        .padding(.bottom, 8)
     }
 
-    private func sectorsSection(level: Level) -> some View {
+    private var sectorsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            GameSectionHeader(title: "На уровне \(level.sectors.count) \(sectorWord(level.sectors.count))")
+            GameSectionHeader(title: sectorsSectionTitle)
 
-            ForEach(level.sectors.sorted(by: { $0.order < $1.order })) { sector in
+            ForEach(level.sectors.sortedForDisplay) { sector in
                 Text(sectorLine(sector))
                     .font(.body)
-                    .foregroundStyle(GameTheme.text)
+                    .foregroundStyle(sector.isAnswered ? GameTheme.accent : GameTheme.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
 
-    private func taskSection(level: Level) -> some View {
+    private var taskSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             GameSectionHeader(title: "Задание")
 
@@ -335,7 +406,7 @@ struct LevelPlayView: View {
         }
     }
 
-    private func messagesSection(level: Level) -> some View {
+    private var messagesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             GameSectionHeader(title: "Сообщения")
             ForEach(level.messages) { message in
@@ -351,10 +422,10 @@ struct LevelPlayView: View {
         }
     }
 
-    private func bonusesSection(level: Level) -> some View {
+    private var bonusesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             GameSectionHeader(
-                title: "На уровне \(level.bonuses.count) \(bonusWord(level.bonuses.count)) (Выполненные — \(level.passedBonusesCount))"
+                title: "На уровне \(level.bonuses.count) \(LevelPlayWordForms.bonus(level.bonuses.count)) (Выполненные — \(level.passedBonusesCount))"
             )
 
             ForEach(level.bonuses.sorted(by: { $0.number < $1.number })) { bonus in
@@ -385,18 +456,8 @@ struct LevelPlayView: View {
         }
     }
 
-    private func helpsSection(level: Level) -> some View {
-        NavigationLink {
-            LevelHelpsScreen(helps: level.helps, penaltyHelps: level.penaltyHelps)
-        } label: {
-            HStack {
-                GameSectionHeader(title: "Подсказки (\(level.helps.count + level.penaltyHelps.count))")
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(GameTheme.muted)
-            }
-        }
-        .buttonStyle(.plain)
+    private var helpsSection: some View {
+        LevelHelpsSection(helps: level.helps, penaltyHelps: level.penaltyHelps)
     }
 
     private func codeResultBanner(_ result: CodeResultFeedback) -> some View {
@@ -408,15 +469,28 @@ struct LevelPlayView: View {
             .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 8))
     }
 
+    private var sectorsSectionTitle: String {
+        let total = level.sectors.count
+        var title = "На уровне \(total) \(LevelPlayWordForms.sector(total))"
+        if level.requiredSectorsCount > 0 {
+            title += " · для прохождения \(level.passedSectorsCount) из \(level.requiredSectorsCount)"
+        } else if level.sectorsLeftToClose > 0 {
+            title += " · осталось \(level.sectorsLeftToClose)"
+        }
+        return title
+    }
+
     private func sectorLine(_ sector: Sector) -> String {
-        let name = sector.name.isEmpty ? "Сектор \(sector.order)" : sector.name
+        let name = sector.name.isEmpty ? "Сектор \(sector.displayOrder)" : sector.name
         if sector.isAnswered {
             return "\(name): \(sector.answer)"
         }
         return "\(name): код не введён"
     }
+}
 
-    private func sectorWord(_ count: Int) -> String {
+private enum LevelPlayWordForms {
+    static func sector(_ count: Int) -> String {
         let mod10 = count % 10
         let mod100 = count % 100
         if mod100 >= 11 && mod100 <= 14 { return "секторов" }
@@ -427,7 +501,7 @@ struct LevelPlayView: View {
         }
     }
 
-    private func bonusWord(_ count: Int) -> String {
+    static func bonus(_ count: Int) -> String {
         let mod10 = count % 10
         let mod100 = count % 100
         if mod100 >= 11 && mod100 <= 14 { return "бонусов" }

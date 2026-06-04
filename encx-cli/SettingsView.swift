@@ -1,10 +1,19 @@
 import SwiftUI
 
+private enum PermissionCheckStatus: Equatable {
+    case pending
+    case granted
+    case denied
+}
+
 struct SettingsView: View {
     @Bindable var model: EncounterViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var notificationDenied = false
+    @State private var liveActivitySystemStatus: PermissionCheckStatus = .pending
+    @State private var liveActivityPushStatus: PermissionCheckStatus = .pending
+    @Environment(\.scenePhase) private var scenePhase
 
     private var appVersion: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
@@ -21,8 +30,33 @@ struct SettingsView: View {
 
             Section {
                 Toggle("Live Activity", isOn: $model.settings.liveActivityEnabled)
+
+                if model.settings.liveActivityEnabled {
+                    liveActivityPermissionRow(
+                        title: "Разрешение Live Activity",
+                        status: liveActivitySystemStatus
+                    ) {
+                        Task { await requestLiveActivityPermission() }
+                    }
+                    liveActivityPermissionRow(
+                        title: "Уведомления",
+                        status: liveActivityPushStatus
+                    ) {
+                        Task { await requestPushPermission() }
+                    }
+                }
             } footer: {
-                Text("Показывает игру на экране блокировки и в Dynamic Island.")
+                Text(liveActivityFooterText)
+            }
+
+            if liveActivityPermissionsNeedSettings {
+                Section {
+                    Button("Открыть настройки iOS") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            openURL(url)
+                        }
+                    }
+                }
             }
 
             if model.settings.liveActivityEnabled {
@@ -109,7 +143,33 @@ struct SettingsView: View {
         .navigationTitle("Настройки")
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            if model.settings.liveActivityEnabled {
+                liveActivitySystemStatus = .pending
+                liveActivityPushStatus = .pending
+                await model.requestNotificationAuthorizationIfNeeded()
+            }
             await refreshNotificationStatus()
+            await refreshLiveActivityPermissions()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task {
+                    await refreshNotificationStatus()
+                    await refreshLiveActivityPermissions()
+                }
+            }
+        }
+        .onChange(of: model.settings.liveActivityEnabled) { _, enabled in
+            if enabled {
+                liveActivitySystemStatus = .pending
+                liveActivityPushStatus = .pending
+                Task {
+                    await model.requestNotificationAuthorizationIfNeeded()
+                    await refreshLiveActivityPermissions()
+                }
+            } else {
+                Task { await refreshLiveActivityPermissions() }
+            }
         }
         .onChange(of: model.settings.pushOnNewLevel) { _, enabled in
             if enabled {
@@ -129,6 +189,66 @@ struct SettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private func liveActivityPermissionRow(
+        title: String,
+        status: PermissionCheckStatus,
+        onRequest: @escaping () -> Void
+    ) -> some View {
+        let label = HStack {
+            Text(title)
+            Spacer()
+            switch status {
+            case .pending:
+                ProgressView()
+                    .controlSize(.small)
+            case .granted:
+                Label("Разрешено", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            case .denied:
+                Label("Нет доступа", systemImage: "xmark.circle.fill")
+                    .foregroundStyle(.orange)
+            }
+        }
+        .font(.subheadline)
+
+        if status == .denied {
+            Button(action: onRequest) {
+                label
+            }
+            .buttonStyle(.plain)
+        } else {
+            label
+        }
+    }
+
+    private func openAppSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            openURL(url)
+        }
+    }
+
+    private func requestPushPermission() async {
+        liveActivityPushStatus = .pending
+        let granted = await GameEventNotificationService.shared.requestAuthorizationIfNeeded()
+        await refreshLiveActivityPermissions()
+        await refreshNotificationStatus()
+        if !granted {
+            let status = await GameEventNotificationService.shared.authorizationStatus()
+            if status == .denied {
+                openAppSettings()
+            }
+        }
+    }
+
+    private func requestLiveActivityPermission() async {
+        liveActivitySystemStatus = .pending
+        await model.applyLiveActivitySetting()
+        await refreshLiveActivityPermissions()
+        guard liveActivitySystemStatus == .denied else { return }
+        openAppSettings()
+    }
+
     private func liveActivityToggle(
         _ title: String,
         keyPath: WritableKeyPath<LiveActivityDisplayOptions, Bool>
@@ -142,5 +262,44 @@ struct SettingsView: View {
     private func refreshNotificationStatus() async {
         let status = await GameEventNotificationService.shared.authorizationStatus()
         notificationDenied = status == .denied
+    }
+
+    private var liveActivityPermissionsNeedSettings: Bool {
+        model.settings.liveActivityEnabled
+            && (liveActivitySystemStatus == .denied || liveActivityPushStatus == .denied)
+    }
+
+    private var liveActivityPermissionTapHint: String {
+        " Нажмите на строку с «Нет доступа», чтобы запросить разрешение."
+    }
+
+    private var liveActivityFooterText: String {
+        let systemDenied = liveActivitySystemStatus == .denied
+        let pushDenied = liveActivityPushStatus == .denied
+        switch (systemDenied, pushDenied) {
+        case (true, true):
+            return "Разрешите Live Activity и уведомления в настройках iOS, чтобы видеть игру на экране блокировки и получать обновления в фоне."
+                + liveActivityPermissionTapHint
+        case (true, false):
+            return "Разрешите отображение Live Activity в настройках iOS, чтобы видеть игру на экране блокировки и в Dynamic Island."
+                + liveActivityPermissionTapHint
+        case (false, true):
+            return "Разрешите уведомления в настройках iOS, чтобы приложение могло обновлять Live Activity в фоне."
+                + liveActivityPermissionTapHint
+        default:
+            return "Показывает игру на экране блокировки и в Dynamic Island."
+        }
+    }
+
+    private func refreshLiveActivityPermissions() async {
+        guard model.settings.liveActivityEnabled else {
+            liveActivitySystemStatus = .pending
+            liveActivityPushStatus = .pending
+            return
+        }
+
+        liveActivitySystemStatus = QueueLiveActivityManager.areActivitiesEnabled ? .granted : .denied
+        let status = await GameEventNotificationService.shared.authorizationStatus()
+        liveActivityPushStatus = GameEventNotificationService.isAuthorized(status) ? .granted : .denied
     }
 }

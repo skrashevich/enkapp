@@ -53,9 +53,9 @@ struct LevelSectorsScreen: View {
                     .font(.subheadline)
                     .foregroundStyle(GameTheme.muted)
 
-                ForEach(level.sectors) { sector in
+                ForEach(level.sectors.sortedForDisplay) { sector in
                     StatusRow(
-                        title: sector.name.isEmpty ? "Сектор \(sector.order)" : sector.name,
+                        title: sector.name.isEmpty ? "Сектор \(sector.displayOrder)" : sector.name,
                         value: sector.isAnswered ? sector.answer : "код не введён",
                         isDone: sector.isAnswered
                     )
@@ -70,40 +70,102 @@ struct LevelSectorsScreen: View {
     }
 }
 
-struct LevelHelpsScreen: View {
+struct LevelHelpsSection: View {
     let helps: [Help]
     let penaltyHelps: [Help]
 
+    @State private var syncedAt = Date()
+
+    private var syncKey: String {
+        (helps + penaltyHelps)
+            .sorted { $0.helpID < $1.helpID }
+            .map { "\($0.helpID):\($0.remainSeconds):\($0.helpText ?? "")" }
+            .joined(separator: "|")
+    }
+
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
+            GameSectionHeader(
+                title: "Подсказки (\(helps.count + penaltyHelps.count))"
+            )
+
+            ForEach(helps.sorted(by: { $0.number < $1.number })) { help in
+                HelpRow(help: help, title: "Подсказка \(help.number)", syncedAt: syncedAt)
+                    .sectionPanel()
+            }
+
+            if !penaltyHelps.isEmpty {
                 if !helps.isEmpty {
-                    GameSectionHeader(title: "Подсказки")
-                    ForEach(helps) { help in
-                        DetailBlock(
-                            title: "Подсказка \(help.number)",
-                            text: help.helpText?.strippingHTML() ?? "Откроется через \(help.remainSeconds) сек."
-                        )
-                        .sectionPanel()
-                    }
+                    Text("Штрафные подсказки")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GameTheme.muted)
+                        .padding(.top, 4)
                 }
 
-                if !penaltyHelps.isEmpty {
-                    GameSectionHeader(title: "Штрафные подсказки")
-                    ForEach(penaltyHelps) { help in
-                        DetailBlock(
-                            title: "Штраф \(help.penalty) сек.",
-                            text: help.helpText?.strippingHTML() ?? help.penaltyMessage ?? "Требуется запрос"
-                        )
-                        .sectionPanel()
-                    }
+                ForEach(penaltyHelps.sorted(by: { $0.number < $1.number })) { help in
+                    HelpRow(
+                        help: help,
+                        title: "Штраф \(GameDurationFormatter.minutesAndSeconds(help.penalty))",
+                        syncedAt: syncedAt,
+                        fallbackText: help.penaltyMessage ?? "Требуется запрос"
+                    )
+                    .sectionPanel()
                 }
             }
-            .padding()
         }
-        .background(GameTheme.background)
-        .navigationTitle("Подсказки")
-        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { syncedAt = Date() }
+        .onChange(of: syncKey) { _, _ in
+            syncedAt = Date()
+        }
+    }
+}
+
+private struct HelpRow: View {
+    let help: Help
+    let title: String
+    let syncedAt: Date
+    var fallbackText: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(GameTheme.bonusTitle)
+
+            if let text = help.unlockedText {
+                helpContent(text)
+            } else if help.remainSeconds > 0 {
+                TickingCountdownText(
+                    countdown: SyncedSecondsCountdown(
+                        remainSeconds: help.remainSeconds,
+                        syncedAt: syncedAt
+                    ),
+                    label: GameDurationFormatter.helpUnlockLabel
+                )
+                .font(.body)
+                .foregroundStyle(GameTheme.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let fallbackText, !fallbackText.isEmpty {
+                helpContent(fallbackText)
+            } else {
+                Text("Открывается…")
+                    .font(.body)
+                    .foregroundStyle(GameTheme.muted)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func helpContent(_ text: String) -> some View {
+        if text.contains("<") {
+            EncounterHTMLView(html: text)
+        } else {
+            Text(text.strippingHTML())
+                .font(.body)
+                .foregroundStyle(GameTheme.text)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 

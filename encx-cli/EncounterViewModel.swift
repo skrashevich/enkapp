@@ -62,8 +62,9 @@ final class EncounterViewModel {
     var domainGames: [DomainGame] = []
     var selectedGameID: Int64?
     var currentModel: GameModel?
+    /// Countdown until game start from `GetTimeoutToGame`, when the game has not begun yet.
+    var gameStartCountdown: SyncedSecondsCountdown?
     var selectedScreen: AppScreen = .games
-    var code = ""
     var isBusy = false
     var statusMessage = ""
     var errorMessage: String?
@@ -94,10 +95,6 @@ final class EncounterViewModel {
     var shouldKeepScreenAwake: Bool {
         get { keepScreenAwake }
         set { keepScreenAwake = newValue }
-    }
-
-    var canSubmitCode: Bool {
-        currentModel?.level != nil && !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var queueConnectionStatus: QueueConnectionStatus {
@@ -242,7 +239,7 @@ final class EncounterViewModel {
     }
 
     func requestNotificationAuthorizationIfNeeded() async {
-        guard settings.pushOnNewLevel || settings.pushOnNewHint else { return }
+        guard settings.pushOnNewLevel || settings.pushOnNewHint || settings.liveActivityEnabled else { return }
         _ = await GameEventNotificationService.shared.requestAuthorizationIfNeeded()
     }
 
@@ -390,6 +387,7 @@ final class EncounterViewModel {
             }
 
             selectedGameID = gameID
+            gameStartCountdown = nil
             currentModel = try await withSessionRecovery { try await $0.gameModel(gameID: gameID) }
             try saveCookies(from: try ensureClient())
             markEngineReachable()
@@ -397,6 +395,7 @@ final class EncounterViewModel {
             lastCodeResult = nil
             selectedScreen = .game
             updateScreenWakeLock()
+            await updateGameStartCountdown(for: gameID)
             await processGameEvents(for: gameID)
             await flushQueueNow(silent: true)
             await syncLiveActivity()
@@ -406,6 +405,7 @@ final class EncounterViewModel {
     func openGame(_ gameID: Int64, presentErrors: Bool = true) async -> Bool {
         await runBusy("Загрузка уровня...", presentErrors: presentErrors) {
             selectedGameID = gameID
+            gameStartCountdown = nil
             currentModel = try await withSessionRecovery { try await $0.gameModel(gameID: gameID) }
             try saveCookies(from: try ensureClient())
             markEngineReachable()
@@ -413,6 +413,7 @@ final class EncounterViewModel {
             lastCodeResult = nil
             selectedScreen = .game
             updateScreenWakeLock()
+            await updateGameStartCountdown(for: gameID)
             await processGameEvents(for: gameID)
             await flushQueueNow(silent: true)
             await syncLiveActivity()
@@ -441,6 +442,7 @@ final class EncounterViewModel {
             try saveCookies(from: try ensureClient())
             markEngineReachable()
             statusMessage = ""
+            await updateGameStartCountdown(for: selectedGameID)
             await processGameEvents(for: selectedGameID)
             await syncLiveActivity()
         }
@@ -450,6 +452,26 @@ final class EncounterViewModel {
                 errorMessage = nil
                 statusMessage = cachedLevelStatusMessage(reason: .serverUnreachable)
             }
+        }
+    }
+
+    private func updateGameStartCountdown(for gameID: Int64) async {
+        guard !isGameActive(gameID: gameID) else {
+            gameStartCountdown = nil
+            return
+        }
+        do {
+            let seconds = try await withSessionRecovery { try await $0.timeoutToGame(gameID: gameID) }
+            if seconds >= 0 {
+                gameStartCountdown = SyncedSecondsCountdown(
+                    remainSeconds: Int(seconds),
+                    syncedAt: Date()
+                )
+            } else {
+                gameStartCountdown = nil
+            }
+        } catch {
+            // Keep the previous countdown on transient failures.
         }
     }
 
@@ -467,10 +489,10 @@ final class EncounterViewModel {
         }
     }
 
-    func submitCode() {
+    func submitCode(_ text: String) {
         guard let model = currentModel, let level = model.level else { return }
 
-        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         let submission = CodeSubmission(
@@ -479,8 +501,6 @@ final class EncounterViewModel {
             levelNumber: Int64(level.number),
             code: trimmed
         )
-
-        code = ""
 
         if !queue.isOnline {
             queue.enqueue(submission)
@@ -773,18 +793,9 @@ final class EncounterViewModel {
             return "Бонусы \(level.passedBonusesCount)/\(level.bonuses.count)"
         }
         if level.timeoutSecondsRemain > 0 {
-            return "До перехода: \(formatDuration(level.timeoutSecondsRemain))"
+            return "До перехода: \(GameDurationFormatter.minutesAndSeconds(level.timeoutSecondsRemain))"
         }
         return queueConnectionStatus.label
-    }
-
-    private func formatDuration(_ seconds: Int) -> String {
-        let minutes = seconds / 60
-        let remainder = seconds % 60
-        if minutes > 0 {
-            return String(format: "%d:%02d", minutes, remainder)
-        }
-        return "\(remainder) сек"
     }
 
     private func markEngineReachable() {

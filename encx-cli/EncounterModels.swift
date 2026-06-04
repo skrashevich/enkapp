@@ -1,6 +1,11 @@
 import Foundation
 import UIKit
 
+struct SyncedSecondsCountdown: Equatable {
+    let remainSeconds: Int
+    let syncedAt: Date
+}
+
 struct LoginResponse: Decodable {
     let error: Int
     let message: String
@@ -240,12 +245,45 @@ struct Sector: Decodable, Identifiable, Hashable {
 
     var id: Int { sectorID }
 
+    /// Player-facing sector number (from «Сектор 18» in `name`). API `Order` is often closure sequence, not this index.
+    var displayOrder: Int {
+        Self.sectorNumber(from: name) ?? order
+    }
+
+    private static func sectorNumber(from name: String) -> Int? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let pattern = #"(?i)(?:сектор|sector)\s*(\d+)\s*$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                  in: trimmed,
+                  range: NSRange(trimmed.startIndex..., in: trimmed)
+              ),
+              match.numberOfRanges > 1,
+              let range = Range(match.range(at: 1), in: trimmed)
+        else { return nil }
+
+        return Int(trimmed[range])
+    }
+
     enum CodingKeys: String, CodingKey {
         case sectorID = "SectorId"
         case order = "Order"
         case name = "Name"
         case isAnswered = "IsAnswered"
         case answer = "Answer"
+    }
+}
+
+extension Array where Element == Sector {
+    var sortedForDisplay: [Sector] {
+        sorted {
+            if $0.displayOrder != $1.displayOrder {
+                return $0.displayOrder < $1.displayOrder
+            }
+            return $0.sectorID < $1.sectorID
+        }
     }
 }
 
@@ -293,6 +331,18 @@ struct Help: Decodable, Identifiable, Hashable {
     let penaltyMessage: String?
 
     var id: Int { helpID }
+
+    var unlockedText: String? {
+        guard let text = helpText, !text.isEmpty else { return nil }
+        let stripped = text.strippingHTML()
+        guard !stripped.isEmpty, !Self.isUnlockPlaceholder(stripped) else { return nil }
+        return text
+    }
+
+    static func isUnlockPlaceholder(_ text: String) -> Bool {
+        let normalized = text.lowercased()
+        return normalized.contains("откроется") && normalized.contains("через")
+    }
 
     enum CodingKeys: String, CodingKey {
         case helpID = "HelpId"
@@ -434,14 +484,19 @@ enum SpentTimeFormatter {
 
 extension String {
     func strippingHTML() -> String {
-        var text = replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+        var text = replacingOccurrences(of: "\r\n", with: "\n")
+        text = text.replacingOccurrences(of: "\r", with: "\n")
+        let lineBreakTags = #"(?i)<br\s*/?>|</p>|</div>|</li>|</tr>|</h[1-6]>"#
+        text = text.replacingOccurrences(of: lineBreakTags, with: "\n", options: .regularExpression)
+        text = text.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
         text = text.replacingOccurrences(of: "&nbsp;", with: " ")
         text = text.replacingOccurrences(of: "&amp;", with: "&")
         text = text.replacingOccurrences(of: "&lt;", with: "<")
         text = text.replacingOccurrences(of: "&gt;", with: ">")
         text = text.replacingOccurrences(of: "&quot;", with: "\"")
         text = text.replacingOccurrences(of: "&#39;", with: "'")
-        text = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        text = text.replacingOccurrences(of: "[ \t]+", with: " ", options: .regularExpression)
+        text = text.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
