@@ -1,7 +1,7 @@
 # enkapp
 
 [![iOS unsigned IPA](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml/badge.svg)](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml)
-[![Download nightly IPA](https://img.shields.io/badge/nightly.link-download%20IPA-0A84FF)](https://nightly.link/skrashevich/enkapp/workflows/iOS%20unsigned%20IPA/main/encx-cli-unsigned-ipa.zip)
+[![Download nightly IPA](https://img.shields.io/badge/nightly.link-download%20IPA-0A84FF)](https://nightly.link/skrashevich/enkapp/workflows/ios-unsigned-ipa/main/encx-cli-unsigned-ipa)
 [![License](https://img.shields.io/github/license/skrashevich/enkapp)](LICENSE)
 
 Нативное iOS-приложение для [Encounter](https://en.cx): очередь кодов, уровни, Live Activity, уведомления.
@@ -10,7 +10,7 @@
 
 ## Скачать
 
-[Последний билд (unsigned IPA)](https://nightly.link/skrashevich/enkapp/workflows/iOS%20unsigned%20IPA/main/encx-cli-unsigned-ipa.zip)
+[Последний билд (unsigned IPA)](https://nightly.link/skrashevich/enkapp/workflows/ios-unsigned-ipa/main/encx-cli-unsigned-ipa)
 
 Учти: скачивание через `nightly.link` может не открываться или работать криво без "специальных сетевых сервисов".
 
