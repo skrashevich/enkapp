@@ -15,7 +15,7 @@ struct GameHomeScreenWidget: Widget {
             GameHomeScreenWidgetView(entry: entry)
                 .containerBackground(for: .widget) {
                     LinearGradient(
-                        colors: [Color(red: 0.12, green: 0.13, blue: 0.16), Color(red: 0.08, green: 0.09, blue: 0.11)],
+                        colors: [WidgetTheme.backgroundTop, WidgetTheme.backgroundBottom],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -93,7 +93,13 @@ struct GameHomeScreenWidgetView: View {
     }
 
     private var headerRow: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .top, spacing: 10) {
+            Text(entry.snapshot.levelNumber > 0 ? "\(entry.snapshot.levelNumber)" : "EN")
+                .font(.title3.weight(.black).monospacedDigit())
+                .foregroundStyle(.white)
+                .frame(width: 38, height: 38)
+                .background(WidgetTheme.accent, in: RoundedRectangle(cornerRadius: 9))
+
             VStack(alignment: .leading, spacing: 2) {
                 if !entry.snapshot.gameTitle.isEmpty {
                     Text(entry.snapshot.gameTitle)
@@ -102,7 +108,7 @@ struct GameHomeScreenWidgetView: View {
                         .lineLimit(1)
                 }
                 Text(entry.snapshot.levelTitle.isEmpty ? "Encounter" : entry.snapshot.levelTitle)
-                    .font(.headline)
+                    .font(.headline.weight(.bold))
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
             }
@@ -113,7 +119,9 @@ struct GameHomeScreenWidgetView: View {
                     .foregroundStyle(.secondary)
                 Image(systemName: entry.snapshot.isOnline ? "wifi" : "wifi.slash")
                     .font(.caption)
-                    .foregroundStyle(entry.snapshot.isOnline ? .green : .orange)
+                    .foregroundStyle(entry.snapshot.isOnline ? WidgetTheme.accent : WidgetTheme.warning)
+                    .padding(7)
+                    .background(WidgetTheme.panel, in: Circle())
             }
         }
     }
@@ -124,15 +132,18 @@ struct GameHomeScreenWidgetView: View {
                 .font(.subheadline.weight(.semibold))
             HStack(spacing: 8) {
                 if !entry.snapshot.teamName.isEmpty {
-                    Text(entry.snapshot.teamName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    WidgetChip(
+                        title: entry.snapshot.teamName,
+                        systemImage: "person.3.fill",
+                        tint: WidgetTheme.info
+                    )
                 }
                 if entry.snapshot.pendingQueueCount > 0 {
-                    Label("\(entry.snapshot.pendingQueueCount) в оч.", systemImage: "tray.full")
-                        .font(.caption.bold())
-                        .foregroundStyle(.orange)
+                    WidgetChip(
+                        title: "\(entry.snapshot.pendingQueueCount) в оч.",
+                        systemImage: "tray.full",
+                        tint: WidgetTheme.warning
+                    )
                 }
                 if !entry.snapshot.status.isEmpty {
                     Text(entry.snapshot.status)
@@ -148,12 +159,13 @@ struct GameHomeScreenWidgetView: View {
         VStack(alignment: .leading, spacing: 6) {
             if entry.snapshot.sectorsRequired > 0 {
                 ProgressView(value: entry.snapshot.sectorProgress)
-                    .tint(.white)
+                    .tint(WidgetTheme.accent)
                 HStack(spacing: 6) {
                     Image(systemName: "square.grid.2x2")
                         .font(.caption2)
+                        .foregroundStyle(WidgetTheme.info)
                     Text(entry.snapshot.sectorsSummary)
-                        .font(.caption)
+                        .font(.caption.weight(.semibold))
                     if entry.snapshot.bonusesTotal > 0 {
                         Text("· Бонусы \(entry.snapshot.bonusesPassed)/\(entry.snapshot.bonusesTotal)")
                             .font(.caption2)
@@ -174,9 +186,9 @@ struct GameHomeScreenWidgetView: View {
             }
             if entry.snapshot.sectorsRequired > 0 {
                 ProgressView(value: entry.snapshot.sectorProgress)
-                    .tint(.white)
+                    .tint(WidgetTheme.accent)
                 Text(entry.snapshot.sectorsSummary)
-                    .font(.caption2)
+                    .font(.caption2.weight(.semibold))
             }
             LiveActivityTimersRow(
                 levelEndsAt: entry.snapshot.levelEndsAt,
@@ -184,9 +196,11 @@ struct GameHomeScreenWidgetView: View {
                 compact: true
             )
             if entry.snapshot.pendingQueueCount > 0 {
-                Label("\(entry.snapshot.pendingQueueCount) в очереди", systemImage: "tray.full")
-                    .font(.caption.bold())
-                    .foregroundStyle(.orange)
+                WidgetChip(
+                    title: "\(entry.snapshot.pendingQueueCount) в очереди",
+                    systemImage: "tray.full",
+                    tint: WidgetTheme.warning
+                )
             }
         }
     }
@@ -199,8 +213,11 @@ struct GameHomeScreenWidgetView: View {
             ForEach(entry.snapshot.recentCodes.prefix(2), id: \.self) { code in
                 Label(code, systemImage: "checkmark.circle.fill")
                     .font(.caption.monospaced())
-                    .foregroundStyle(.green)
+                    .foregroundStyle(WidgetTheme.accent)
                     .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(WidgetTheme.panel, in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }
@@ -209,12 +226,15 @@ struct GameHomeScreenWidgetView: View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: "lightbulb.fill")
                 .font(.caption2)
-                .foregroundStyle(.yellow)
+                .foregroundStyle(WidgetTheme.hint)
             Text(hint)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(WidgetTheme.panel, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var actionButtons: some View {
@@ -236,7 +256,11 @@ struct GameHomeScreenWidgetView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
-            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            .background(WidgetTheme.panelStrong, in: RoundedRectangle(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(WidgetTheme.border, lineWidth: 1)
+            }
         }
     }
 
@@ -245,9 +269,10 @@ struct GameHomeScreenWidgetView: View {
             HStack {
                 Text("EN")
                     .font(.caption.bold())
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(.green.opacity(0.25), in: RoundedRectangle(cornerRadius: 5))
+                    .background(WidgetTheme.accent, in: RoundedRectangle(cornerRadius: 5))
                 Spacer()
             }
             Text("enkapp")

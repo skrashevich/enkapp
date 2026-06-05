@@ -9,9 +9,12 @@ struct QueueLiveActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Ур. \(context.state.levelNumber)")
-                            .font(.headline.monospacedDigit())
+                    VStack(alignment: .leading, spacing: 4) {
+                        WidgetChip(
+                            title: "Ур. \(context.state.levelNumber)",
+                            systemImage: "flag.checkered",
+                            tint: WidgetTheme.accent
+                        )
                         if !context.state.teamName.isEmpty {
                             Text(context.state.teamName)
                                 .font(.caption2)
@@ -21,7 +24,7 @@ struct QueueLiveActivityWidget: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    VStack(alignment: .trailing, spacing: 2) {
+                    VStack(alignment: .trailing, spacing: 4) {
                         LiveActivityTimersRow(
                             levelEndsAt: context.state.levelEndsAt,
                             nextHintUnlocksAt: context.state.nextHintUnlocksAt,
@@ -29,13 +32,18 @@ struct QueueLiveActivityWidget: Widget {
                             vertical: true
                         )
                         if context.state.sectorsRequired > 0 {
-                            Text(context.state.sectorsSummary)
-                                .font(.caption.bold())
+                            WidgetChip(
+                                title: "\(context.state.sectorsPassed)/\(context.state.sectorsRequired)",
+                                systemImage: "square.grid.2x2",
+                                tint: WidgetTheme.info
+                            )
                         }
                         if context.state.pendingCount > 0 {
-                            Text("\(context.state.pendingCount) в оч.")
-                                .font(.caption2)
-                                .foregroundStyle(.orange)
+                            WidgetChip(
+                                title: "\(context.state.pendingCount)",
+                                systemImage: "tray.full",
+                                tint: WidgetTheme.warning
+                            )
                         }
                     }
                 }
@@ -54,16 +62,16 @@ struct QueueLiveActivityWidget: Widget {
 
     @ViewBuilder
     private func expandedBottom(context: ActivityViewContext<QueueActivityAttributes>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             if !context.state.recentCodes.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(context.state.recentCodes.prefix(QueueLiveActivityLayout.dynamicIslandMaxCodes), id: \.self) { code in
                         Text(code)
                             .font(.caption.monospaced())
                             .lineLimit(1)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.green.opacity(0.2), in: Capsule())
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(WidgetTheme.accent.opacity(0.20), in: Capsule())
                     }
                 }
             }
@@ -90,7 +98,7 @@ struct QueueLiveActivityWidget: Widget {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .activityBackgroundTint(.black.opacity(0.85))
+        .activityBackgroundTint(WidgetTheme.backgroundBottom.opacity(0.92))
         .activitySystemActionForegroundColor(.white)
     }
 
@@ -107,7 +115,7 @@ struct QueueLiveActivityWidget: Widget {
             && showHint == nil
             && codes.isEmpty
 
-        VStack(alignment: .leading, spacing: compact ? 4 : 6) {
+        VStack(alignment: .leading, spacing: compact ? 6 : 8) {
             headerRow(context: context, compact: compact)
             progressRow(context: context, compact: compact)
             LiveActivityTimersRow(
@@ -134,17 +142,17 @@ struct QueueLiveActivityWidget: Widget {
         context: ActivityViewContext<QueueActivityAttributes>,
         compact: Bool
     ) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            Text("EN")
-                .font(.caption2.bold())
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(.green.opacity(0.25), in: RoundedRectangle(cornerRadius: 4))
+        HStack(alignment: .center, spacing: 10) {
+            Text(context.state.levelNumber > 0 ? "\(context.state.levelNumber)" : "EN")
+                .font((compact ? Font.caption : Font.subheadline).weight(.black).monospacedDigit())
+                .foregroundStyle(.white)
+                .frame(width: compact ? 28 : 34, height: compact ? 28 : 34)
+                .background(WidgetTheme.accent, in: RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 1) {
                 if !context.attributes.gameTitle.isEmpty {
                     Text(context.attributes.gameTitle)
-                        .font(compact ? .subheadline.weight(.semibold) : .headline)
+                        .font(compact ? .subheadline.weight(.semibold) : .headline.weight(.bold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                 }
@@ -161,7 +169,9 @@ struct QueueLiveActivityWidget: Widget {
 
             Image(systemName: context.state.isOnline ? "wifi" : "wifi.slash")
                 .font(.caption)
-                .foregroundStyle(context.state.isOnline ? .green : .orange)
+                .foregroundStyle(context.state.isOnline ? WidgetTheme.accent : WidgetTheme.warning)
+                .padding(7)
+                .background(WidgetTheme.panel, in: Circle())
         }
     }
 
@@ -169,23 +179,37 @@ struct QueueLiveActivityWidget: Widget {
         context: ActivityViewContext<QueueActivityAttributes>,
         compact: Bool
     ) -> some View {
-        HStack(spacing: compact ? 8 : 10) {
+        HStack(spacing: compact ? 7 : 8) {
             if context.state.sectorsRequired > 0 {
-                Label(context.state.sectorsSummary, systemImage: "square.grid.2x2")
-                    .font(.caption2)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.caption2)
+                            .foregroundStyle(WidgetTheme.info)
+                        Text(context.state.sectorsSummary)
+                            .font(.caption2.weight(.semibold))
+                    }
+                    ProgressView(value: Double(context.state.sectorsPassed), total: Double(context.state.sectorsRequired))
+                        .tint(WidgetTheme.accent)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(WidgetTheme.panel, in: RoundedRectangle(cornerRadius: 8))
             }
             if context.state.bonusesTotal > 0 {
-                Label(context.state.bonusesSummary, systemImage: "gift")
-                    .font(.caption2)
-                    .lineLimit(1)
+                WidgetChip(
+                    title: "\(context.state.bonusesPassed)/\(context.state.bonusesTotal)",
+                    systemImage: "gift",
+                    tint: WidgetTheme.info
+                )
             }
             Spacer(minLength: 0)
             if context.state.pendingCount > 0 {
-                Label("\(context.state.pendingCount)", systemImage: "tray.full")
-                    .font(.caption2.bold())
-                    .foregroundStyle(.orange)
-                    .lineLimit(1)
+                WidgetChip(
+                    title: "\(context.state.pendingCount)",
+                    systemImage: "tray.full",
+                    tint: WidgetTheme.warning
+                )
             }
         }
     }
@@ -199,12 +223,15 @@ struct QueueLiveActivityWidget: Widget {
                 HStack(spacing: 5) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.caption2)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(WidgetTheme.accent)
                     Text(code)
                         .font(.caption.monospaced())
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(WidgetTheme.panel, in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }
@@ -217,12 +244,15 @@ struct QueueLiveActivityWidget: Widget {
             HStack(alignment: .top, spacing: 5) {
                 Image(systemName: "lightbulb.fill")
                     .font(.caption2)
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(WidgetTheme.hint)
                 Text(hint)
                     .font(.caption2)
                     .lineLimit(compact ? 1 : QueueLiveActivityLayout.lockScreenMaxHintLines)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(WidgetTheme.panel, in: RoundedRectangle(cornerRadius: 8))
         }
     }
 

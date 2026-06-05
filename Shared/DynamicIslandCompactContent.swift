@@ -9,7 +9,7 @@ struct DynamicIslandCompactLeading: View {
             if !state.isOnline {
                 Image(systemName: "wifi.slash")
                     .font(.caption2)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(WidgetTheme.warning)
             }
             Text(state.dynamicIslandCompactLeading)
                 .font(.caption.bold().monospacedDigit())
@@ -28,7 +28,7 @@ struct DynamicIslandCompactTrailing: View {
                 HStack(spacing: 2) {
                     Image(systemName: "lightbulb.fill")
                         .font(.caption2)
-                        .foregroundStyle(.yellow)
+                        .foregroundStyle(WidgetTheme.hint)
                     compactCountdown(endsAt: endsAt, tint: .primary)
                 }
             } else if state.pendingCount > 0 {
@@ -50,7 +50,7 @@ struct DynamicIslandCompactTrailing: View {
                 HStack(spacing: 2) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.caption2)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(WidgetTheme.accent)
                     Text(code)
                         .font(.caption.monospaced())
                         .lineLimit(1)
@@ -58,7 +58,7 @@ struct DynamicIslandCompactTrailing: View {
             } else if state.hasRecentLongCode {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(WidgetTheme.accent)
             } else if state.bonusesTotal > 0 {
                 HStack(spacing: 2) {
                     Image(systemName: "gift")
@@ -89,7 +89,7 @@ struct DynamicIslandMinimalContent: View {
             } else if state.pendingCount > 0 {
                 Text("\(state.pendingCount)")
                     .font(.caption2.bold().monospacedDigit())
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(WidgetTheme.warning)
             } else if state.levelNumber > 0 {
                 Text("\(state.levelNumber)")
                     .font(.caption2.bold().monospacedDigit())
