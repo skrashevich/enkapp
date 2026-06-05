@@ -81,7 +81,7 @@ struct DomainGameActionRow: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(game.title).font(.body)
-                        Text("#\(game.id)")
+                        Text(verbatim: "#\(String(game.id))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -124,7 +124,7 @@ struct GameRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Text("#\(game.id) / \(game.description.strippingHTML())")
+            Text(verbatim: "#\(game.displayNumberText) / \(game.description.strippingHTML())")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)

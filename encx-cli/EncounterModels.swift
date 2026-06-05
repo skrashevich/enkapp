@@ -151,6 +151,11 @@ struct GameInfo: Decodable, Identifiable, Hashable {
         isModerated = try container.decodeIfPresent(Bool.self, forKey: .isModerated) ?? false
         levelNumber = try container.decodeIfPresent(Int.self, forKey: .levelNumber)
     }
+
+    /// Public game number for UI (`GameNum`), without locale-specific grouping.
+    var displayNumberText: String {
+        String(number > 0 ? number : id)
+    }
 }
 
 struct GameModel: Decodable {
@@ -604,6 +609,20 @@ enum SpentTimeFormatter {
 }
 
 extension String {
+    func replacingNumericHTMLEntities() -> String {
+        guard let regex = try? NSRegularExpression(pattern: "&#(\\d+);") else { return self }
+        var result = self
+        for match in regex.matches(in: self, range: NSRange(startIndex..., in: self)).reversed() {
+            guard match.numberOfRanges >= 2,
+                  let numberRange = Range(match.range(at: 1), in: self),
+                  let code = Int(self[numberRange]),
+                  let scalar = Unicode.Scalar(code),
+                  let fullRange = Range(match.range, in: result) else { continue }
+            result.replaceSubrange(fullRange, with: String(Character(scalar)))
+        }
+        return result
+    }
+
     func strippingHTML() -> String {
         var text = replacingOccurrences(of: "\r\n", with: "\n")
         text = text.replacingOccurrences(of: "\r", with: "\n")
@@ -616,6 +635,7 @@ extension String {
         text = text.replacingOccurrences(of: "&gt;", with: ">")
         text = text.replacingOccurrences(of: "&quot;", with: "\"")
         text = text.replacingOccurrences(of: "&#39;", with: "'")
+        text = text.replacingNumericHTMLEntities()
         text = text.replacingOccurrences(of: "[ \t]+", with: " ", options: .regularExpression)
         text = text.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
