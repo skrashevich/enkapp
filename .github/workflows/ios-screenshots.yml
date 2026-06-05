@@ -32,7 +32,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: enkapp-ios-screenshots
-          path: build/screenshots/*.png
+          path: build/screenshots/**/*.png
           if-no-files-found: error
           retention-days: 14
 
@@ -40,7 +40,7 @@ jobs:
         if: github.event_name == 'push'
         run: |
           mkdir -p build/pages/screenshots
-          cp build/screenshots/*.png build/pages/screenshots/
+          cp -R build/screenshots/. build/pages/screenshots/
 
       - name: Configure Pages
         if: github.event_name == 'push'
