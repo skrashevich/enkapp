@@ -1,6 +1,7 @@
 # enkapp
 
 [![iOS unsigned IPA](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml/badge.svg)](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml)
+[![TestFlight](https://img.shields.io/badge/TestFlight-Установить-0A84FF?logo=apple)](https://testflight.apple.com/join/QVfQ5Hzf)
 [![Download nightly IPA](https://img.shields.io/badge/dawnl.ink-download%20IPA-0A84FF)](https://dawnl.ink/skrashevich/enkapp/workflows/ios-unsigned-ipa/main/encx-cli-unsigned-ipa)
 [![License](https://img.shields.io/github/license/skrashevich/enkapp)](LICENSE)
 
@@ -8,21 +9,23 @@
 
 Клиент API — [`Encx.xcframework`](https://github.com/skrashevich/encx-cli) (gomobile-обёртка над пакетом `encx` из репозитория [encx-cli](https://github.com/skrashevich/encx-cli)).
 
-## Скачать
+## Скачать и установить
+
+### TestFlight (рекомендуется)
+
+[![Download TestFlight](https://img.shields.io/badge/TestFlight-Установить-0A84FF?logo=apple)](https://testflight.apple.com/join/QVfQ5Hzf)
+
+Самый простой способ: открой ссылку с iPhone, и TestFlight установит приложение.
+
+### Sideloading (без TestFlight)
 
 [Последний билд (unsigned IPA)](https://dawnl.ink/skrashevich/enkapp/workflows/ios-unsigned-ipa/main/encx-cli-unsigned-ipa)
-
-Учти: скачивание через `dawnl.ink` может не открываться или работать криво без "специальных сетевых сервисов".
-
-## Как установить на iPhone
-
-Самый простой путь сейчас: скачать `unsigned IPA` и установить его через sideloading. Публичного TestFlight пока нет, а всех в `Internal Testers` Apple добавлять не даёт без лишнего цирка.
 
 1. Скачай архив по ссылке выше и распакуй его. Внутри будет файл `.ipa`.
 2. Установи любой sideloading-инструмент:
    - `AltStore` / `SideStore` для установки прямо на устройство
    - `Sideloadly` если удобнее ставить с компьютера
-3. Импортируй `.ipa` в выбранный инструмент и подпиши его своим Apple ID.
+3. Импортируй `.ipa` в выбранный инструмент и подпиши своим Apple ID.
 4. После установки на iPhone, если iOS попросит доверить профиль разработчика:
    `Настройки` -> `Основные` -> `VPN и управление устройством` -> доверить профиль.
 5. Запусти `enkapp`.
