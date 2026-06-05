@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var liveActivitySystemStatus: PermissionCheckStatus = .pending
     @State private var liveActivityPushStatus: PermissionCheckStatus = .pending
     @State private var showHARShareSheet = false
+    @State private var showDomainChooser = false
     @State private var harShareURL: URL?
     @State private var harExportError: String?
     @Environment(\.scenePhase) private var scenePhase
@@ -25,165 +26,26 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section("Подключение") {
-                Toggle("Использовать HTTP", isOn: $model.settings.useHTTP)
-                Toggle("Отключить проверку TLS", isOn: $model.settings.insecureTLS)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                settingsHeader
+                accountSection
+                connectionSection
+                notificationsSection
+                liveActivitySection
+                debugSection
+                automationSection
+                aboutSection
             }
-
-            Section {
-                Toggle("Запись HAR", isOn: $model.settings.harRecordingEnabled)
-
-                if model.settings.harRecordingEnabled {
-                    LabeledContent("Записей", value: "\(model.harEntryCount)")
-
-                    Button {
-                        exportHAR()
-                    } label: {
-                        Label("Экспорт HAR", systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(model.harEntryCount == 0 || model.isBusy)
-
-                    Button("Очистить запись", role: .destructive) {
-                        model.clearHARCapture()
-                    }
-                    .disabled(model.harEntryCount == 0 || model.isBusy)
-                }
-            } header: {
-                Text("Отладка")
-            } footer: {
-                Text("HAR — дамп HTTP-запросов к серверу Encounter (HAR 1.2). Экспортируйте и отправьте для отладки или создания mock-сервера. Пароли в login-запросах скрываются; cookies и коды остаются в файле.")
-            }
-
-            if let harExportError {
-                Section {
-                    Label(harExportError, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section {
-                Toggle("Live Activity", isOn: $model.settings.liveActivityEnabled)
-
-                if model.settings.liveActivityEnabled {
-                    liveActivityPermissionRow(
-                        title: "Разрешение Live Activity",
-                        status: liveActivitySystemStatus
-                    ) {
-                        Task { await requestLiveActivityPermission() }
-                    }
-                    liveActivityPermissionRow(
-                        title: "Уведомления",
-                        status: liveActivityPushStatus
-                    ) {
-                        Task { await requestPushPermission() }
-                    }
-                }
-            } footer: {
-                Text(liveActivityFooterText)
-            }
-
-            if liveActivityPermissionsNeedSettings {
-                Section {
-                    Button("Открыть настройки iOS") {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            openURL(url)
-                        }
-                    }
-                }
-            }
-
-            if model.settings.liveActivityEnabled {
-                Section {
-                    liveActivityToggle("Название игры", keyPath: \.showGameTitle)
-                    liveActivityToggle("Уровень", keyPath: \.showLevel)
-                    liveActivityToggle("Команда", keyPath: \.showTeam)
-                    liveActivityToggle("Секторы и бонусы", keyPath: \.showProgress)
-                    liveActivityToggle("Очередь кодов", keyPath: \.showQueue)
-                    liveActivityToggle("Пробитые коды", keyPath: \.showCodes)
-                    liveActivityToggle("Подсказки", keyPath: \.showHints)
-                    liveActivityToggle("Статус", keyPath: \.showStatus)
-                } header: {
-                    Text("На экране блокировки")
-                } footer: {
-                    Text("Выберите, какие блоки отображать в Live Activity.")
-                }
-            }
-
-            Section {
-                Toggle("Новый уровень", isOn: $model.settings.pushOnNewLevel)
-                Toggle("Новая подсказка", isOn: $model.settings.pushOnNewHint)
-            } header: {
-                Text("Уведомления")
-            } footer: {
-                if notificationDenied {
-                    Text("Разрешите уведомления в настройках iOS, чтобы получать оповещения вне приложения.")
-                } else {
-                    Text("Локальные уведомления при смене уровня или появлении текста подсказки. Работают в фоне, пока открыта игра.")
-                }
-            }
-
-            if notificationDenied {
-                Section {
-                    Button("Открыть настройки iOS") {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            openURL(url)
-                        }
-                    }
-                }
-            }
-
-            Section("Аккаунт") {
-                LabeledContent("Домен", value: model.settings.domain)
-
-                TextField("Логин", text: $model.login)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
-                SecureField("Пароль", text: $model.password)
-
-                Button {
-                    Task {
-                        if await model.loginAction() {
-                            dismiss()
-                        }
-                    }
-                } label: {
-                    Label("Войти", systemImage: "person.crop.circle.badge.checkmark")
-                }
-                .disabled(model.login.isEmpty || model.password.isEmpty || model.isBusy)
-            }
-
-            if !model.statusMessage.isEmpty {
-                Section {
-                    Label(model.statusMessage, systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Автоматизации") {
-                Label("Команды Shortcuts", systemImage: "square.stack.3d.up")
-                Text("Отправить код, статус игры и отправка очереди доступны в приложении «Команды». Откройте игру в enkapp, затем добавьте действие enkapp в автоматизацию.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("О приложении") {
-                LabeledContent("Приложение", value: AppMetadata.displayName)
-                LabeledContent("Автор", value: "Sergei \"svk\" Krashevich")
-                LabeledContent("Версия", value: appVersion)
-                Link(destination: AppMetadata.repositoryURL) {
-                    Label("Исходный код на GitHub", systemImage: "link")
-                }
-                Link(destination: AppMetadata.apiClientRepositoryURL) {
-                    Label("Клиент API (encx-cli)", systemImage: "link")
-                }
-            }
+            .padding()
         }
+        .background(GameTheme.background)
+        .scrollContentBackground(.hidden)
+        .preferredColorScheme(.dark)
         .navigationTitle("Настройки")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(GameTheme.background, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .sheet(isPresented: $showHARShareSheet, onDismiss: {
             if let harShareURL {
                 try? FileManager.default.removeItem(at: harShareURL)
@@ -193,6 +55,11 @@ struct SettingsView: View {
             if let harShareURL {
                 ShareSheet(items: [harShareURL])
             }
+        }
+        .sheet(isPresented: $showDomainChooser) {
+            DomainChooserView(model: model, isPresented: $showDomainChooser)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .task {
             if model.settings.liveActivityEnabled {
@@ -243,6 +110,294 @@ struct SettingsView: View {
         }
     }
 
+    private var settingsHeader: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Параметры")
+                        .font(.largeTitle.weight(.bold))
+                        .foregroundStyle(GameTheme.text)
+                    Text("Аккаунт, уведомления и технические опции приложения.")
+                        .font(.subheadline)
+                        .foregroundStyle(GameTheme.muted)
+                }
+                Spacer()
+                Image(systemName: "gearshape.fill")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(GameTheme.sectionHeader)
+                    .frame(width: 44, height: 44)
+                    .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 12))
+            }
+
+            HStack(spacing: 10) {
+                DashboardMetric(
+                    title: "Домен",
+                    value: model.settings.domain,
+                    systemImage: "globe",
+                    tint: GameTheme.bonusTitle
+                )
+                DashboardMetric(
+                    title: "HAR",
+                    value: model.settings.harRecordingEnabled ? "\(model.harEntryCount)" : "Выкл",
+                    systemImage: "doc.text.magnifyingglass",
+                    tint: .orange
+                )
+            }
+        }
+        .sectionPanel()
+    }
+
+    private var accountSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle("Аккаунт")
+
+            Button {
+                showDomainChooser = true
+            } label: {
+                DashboardSettingsRow(
+                    title: "Домен",
+                    subtitle: model.settings.domain,
+                    systemImage: "globe",
+                    tint: GameTheme.bonusTitle
+                ) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GameTheme.muted)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isBusy)
+
+            TextField("Логин", text: $model.login)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .foregroundStyle(GameTheme.text)
+                .padding(12)
+                .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+
+            SecureField("Пароль", text: $model.password)
+                .foregroundStyle(GameTheme.text)
+                .padding(12)
+                .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+
+            Button {
+                Task {
+                    if await model.loginAction() {
+                        dismiss()
+                    }
+                }
+            } label: {
+                Label("Войти", systemImage: "person.crop.circle.badge.checkmark")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(GameTheme.accent)
+            .disabled(model.login.isEmpty || model.password.isEmpty || model.isBusy)
+
+            if !model.statusMessage.isEmpty {
+                Label(model.statusMessage, systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(GameTheme.muted)
+            }
+        }
+        .sectionPanel()
+    }
+
+    private var connectionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle("Подключение")
+            settingToggleRow(
+                title: "Использовать HTTP",
+                subtitle: "Для старых или нестандартных доменов Encounter.",
+                systemImage: "network",
+                isOn: $model.settings.useHTTP
+            )
+            settingToggleRow(
+                title: "Отключить проверку TLS",
+                subtitle: "Только если сертификат домена сломан.",
+                systemImage: "lock.trianglebadge.exclamationmark",
+                tint: .orange,
+                isOn: $model.settings.insecureTLS
+            )
+        }
+        .sectionPanel()
+    }
+
+    private var notificationsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle("Уведомления")
+            settingToggleRow(
+                title: "Новый уровень",
+                subtitle: "Локальное уведомление при смене уровня.",
+                systemImage: "flag.checkered",
+                isOn: $model.settings.pushOnNewLevel
+            )
+            settingToggleRow(
+                title: "Новая подсказка",
+                subtitle: "Оповещение, когда появляется текст подсказки.",
+                systemImage: "lightbulb.fill",
+                tint: GameTheme.sectionHeader,
+                isOn: $model.settings.pushOnNewHint
+            )
+
+            if notificationDenied {
+                Button("Открыть настройки iOS") {
+                    openAppSettings()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+            }
+
+            Text(notificationDenied ? "Разрешите уведомления в настройках iOS, чтобы получать оповещения вне приложения." : "Работают в фоне, пока открыта игра.")
+                .font(.caption)
+                .foregroundStyle(GameTheme.muted)
+        }
+        .sectionPanel()
+    }
+
+    private var liveActivitySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle("Live Activity")
+            settingToggleRow(
+                title: "Live Activity",
+                subtitle: "Игра на экране блокировки и в Dynamic Island.",
+                systemImage: "rectangle.on.rectangle",
+                isOn: $model.settings.liveActivityEnabled
+            )
+
+            if model.settings.liveActivityEnabled {
+                liveActivityPermissionRow(
+                    title: "Разрешение Live Activity",
+                    status: liveActivitySystemStatus
+                ) {
+                    Task { await requestLiveActivityPermission() }
+                }
+                liveActivityPermissionRow(
+                    title: "Уведомления",
+                    status: liveActivityPushStatus
+                ) {
+                    Task { await requestPushPermission() }
+                }
+
+                if liveActivityPermissionsNeedSettings {
+                    Button("Открыть настройки iOS") {
+                        openAppSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                }
+
+                Text(liveActivityFooterText)
+                    .font(.caption)
+                    .foregroundStyle(GameTheme.muted)
+
+                SectionTitle("На экране блокировки")
+                    .padding(.top, 6)
+                liveActivityToggle("Название игры", keyPath: \.showGameTitle)
+                liveActivityToggle("Уровень", keyPath: \.showLevel)
+                liveActivityToggle("Команда", keyPath: \.showTeam)
+                liveActivityToggle("Секторы и бонусы", keyPath: \.showProgress)
+                liveActivityToggle("Очередь кодов", keyPath: \.showQueue)
+                liveActivityToggle("Пробитые коды", keyPath: \.showCodes)
+                liveActivityToggle("Подсказки", keyPath: \.showHints)
+                liveActivityToggle("Статус", keyPath: \.showStatus)
+            }
+        }
+        .sectionPanel()
+    }
+
+    private var debugSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle("Отладка")
+            settingToggleRow(
+                title: "Запись HAR",
+                subtitle: "Дамп HTTP-запросов к серверу Encounter.",
+                systemImage: "doc.text.magnifyingglass",
+                tint: .orange,
+                isOn: $model.settings.harRecordingEnabled
+            )
+
+            if model.settings.harRecordingEnabled {
+                DashboardSettingsRow(
+                    title: "Записей",
+                    subtitle: "Пароли скрываются, cookies и коды остаются в файле.",
+                    systemImage: "tray.full",
+                    tint: .orange
+                ) {
+                    Text("\(model.harEntryCount)")
+                        .font(.headline)
+                        .foregroundStyle(GameTheme.text)
+                }
+
+                HStack(spacing: 10) {
+                    Button {
+                        exportHAR()
+                    } label: {
+                        Label("Экспорт HAR", systemImage: "square.and.arrow.up")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(GameTheme.accent)
+                    .disabled(model.harEntryCount == 0 || model.isBusy)
+
+                    Button(role: .destructive) {
+                        model.clearHARCapture()
+                    } label: {
+                        Label("Очистить", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.harEntryCount == 0 || model.isBusy)
+                }
+            }
+
+            if let harExportError {
+                Label(harExportError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .sectionPanel()
+    }
+
+    private var automationSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle("Автоматизации")
+            DashboardSettingsRow(
+                title: "Команды Shortcuts",
+                subtitle: "Отправить код, статус игры и отправка очереди доступны в приложении «Команды».",
+                systemImage: "square.stack.3d.up",
+                tint: GameTheme.bonusTitle
+            )
+        }
+        .sectionPanel()
+    }
+
+    private var aboutSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle("О приложении")
+            aboutRow("Приложение", value: AppMetadata.displayName, systemImage: "app")
+            aboutRow("Автор", value: "Sergei \"svk\" Krashevich", systemImage: "person")
+            aboutRow("Версия", value: appVersion, systemImage: "number")
+
+            Link(destination: AppMetadata.repositoryURL) {
+                DashboardSettingsRow(
+                    title: "Исходный код на GitHub",
+                    systemImage: "link",
+                    tint: GameTheme.accent
+                )
+            }
+            Link(destination: AppMetadata.apiClientRepositoryURL) {
+                DashboardSettingsRow(
+                    title: "Клиент API (encx-cli)",
+                    systemImage: "link",
+                    tint: GameTheme.accent
+                )
+            }
+        }
+        .sectionPanel()
+    }
+
     @ViewBuilder
     private func liveActivityPermissionRow(
         title: String,
@@ -265,6 +420,9 @@ struct SettingsView: View {
             }
         }
         .font(.subheadline)
+        .foregroundStyle(GameTheme.text)
+        .padding(12)
+        .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
 
         if status == .denied {
             Button(action: onRequest) {
@@ -307,10 +465,60 @@ struct SettingsView: View {
         _ title: String,
         keyPath: WritableKeyPath<LiveActivityDisplayOptions, Bool>
     ) -> some View {
-        Toggle(title, isOn: Binding(
-            get: { model.settings.liveActivityDisplay[keyPath: keyPath] },
-            set: { model.settings.liveActivityDisplay[keyPath: keyPath] = $0 }
-        ))
+        settingToggleRow(
+            title: title,
+            systemImage: liveActivityIcon(for: title),
+            isOn: Binding(
+                get: { model.settings.liveActivityDisplay[keyPath: keyPath] },
+                set: { model.settings.liveActivityDisplay[keyPath: keyPath] = $0 }
+            )
+        )
+    }
+
+    private func settingToggleRow(
+        title: String,
+        subtitle: String? = nil,
+        systemImage: String,
+        tint: Color = GameTheme.accent,
+        isOn: Binding<Bool>
+    ) -> some View {
+        DashboardSettingsRow(
+            title: title,
+            subtitle: subtitle,
+            systemImage: systemImage,
+            tint: tint
+        ) {
+            Toggle(title, isOn: isOn)
+                .labelsHidden()
+                .tint(GameTheme.accent)
+        }
+    }
+
+    private func aboutRow(_ title: String, value: String, systemImage: String) -> some View {
+        DashboardSettingsRow(
+            title: title,
+            systemImage: systemImage,
+            tint: GameTheme.bonusTitle
+        ) {
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(GameTheme.muted)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    private func liveActivityIcon(for title: String) -> String {
+        switch title {
+        case "Название игры": return "textformat"
+        case "Уровень": return "flag.checkered"
+        case "Команда": return "person.3.fill"
+        case "Секторы и бонусы": return "checklist"
+        case "Очередь кодов": return "tray.full"
+        case "Пробитые коды": return "checkmark.seal"
+        case "Подсказки": return "lightbulb.fill"
+        case "Статус": return "waveform.path.ecg"
+        default: return "rectangle.on.rectangle"
+        }
     }
 
     private func refreshNotificationStatus() async {

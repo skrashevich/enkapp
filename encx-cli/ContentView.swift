@@ -8,7 +8,7 @@ struct ContentView: View {
         NavigationStack {
             mainContent
         }
-        .preferredColorScheme(model.selectedScreen == .game ? .dark : nil)
+        .preferredColorScheme(.dark)
     }
 
     private var mainContent: some View {
@@ -96,7 +96,7 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(model.selectedScreen == .game ? GameTheme.background : Color(uiColor: .systemBackground))
+        .background(GameTheme.background)
         .navigationTitle(model.selectedScreen.title)
         .toolbar(model.selectedScreen == .game ? .hidden : .visible, for: .navigationBar)
         .toolbar {
@@ -108,6 +108,7 @@ struct ContentView: View {
                         } label: {
                             Image(systemName: "arrow.clockwise")
                         }
+                        .tint(GameTheme.text)
                         .disabled(model.isBusy)
 
                         NavigationLink {
@@ -115,10 +116,13 @@ struct ContentView: View {
                         } label: {
                             Image(systemName: "gearshape")
                         }
+                        .tint(GameTheme.text)
                     }
                 }
             }
         }
+        .toolbarBackground(GameTheme.background, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .overlay(alignment: .bottom) {
             if model.isBusy {
                 ProgressView()
@@ -152,7 +156,12 @@ struct ContentView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(model.selectedScreen == .game ? GameTheme.panel : Color(uiColor: .secondarySystemBackground))
+        .background(GameTheme.panel)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(GameTheme.border)
+                .frame(height: 1)
+        }
     }
 
     private func screenNavigationButton(
