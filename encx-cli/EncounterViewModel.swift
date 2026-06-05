@@ -385,6 +385,7 @@ final class EncounterViewModel {
                 presentError(error)
             }
         }
+        syncWidgetSnapshot()
     }
 
     @discardableResult
@@ -403,6 +404,7 @@ final class EncounterViewModel {
         }
         if succeeded {
             selectedScreen = .games
+            syncWidgetSnapshot()
         }
         return succeeded
     }
@@ -937,6 +939,8 @@ final class EncounterViewModel {
     }
 
     private func syncLiveActivity() async {
+        syncWidgetSnapshot()
+
         guard settings.liveActivityEnabled else {
             lastSyncedLiveActivityState = nil
             await liveActivity.end()
@@ -1063,6 +1067,118 @@ final class EncounterViewModel {
             return GameDurationFormatter.levelDrainLabel(seconds: level.timeoutSecondsRemain)
         }
         return queueConnectionStatus.label
+    }
+
+    func handleWidgetURL(_ url: URL) async {
+        guard url.scheme?.lowercased() == "encx-cli" else { return }
+
+        switch url.host?.lowercased() {
+        case "game":
+            if let gameID = selectedGameID {
+                _ = await openGame(gameID, presentErrors: false)
+            } else {
+                selectedScreen = .games
+            }
+        case "flush-queue":
+            if selectedGameID != nil {
+                _ = await flushQueueNow(silent: false)
+            }
+        case "codes":
+            selectedScreen = .game
+        default:
+            if selectedGameID != nil {
+                selectedScreen = .game
+            }
+        }
+    }
+
+    private func syncWidgetSnapshot() {
+        let loggedIn = hasStoredCredentials || loadSessionCookies() != nil
+        guard loggedIn else {
+            GameWidgetSnapshotStore.clear()
+            return
+        }
+
+        guard selectedGameID != nil else {
+            GameWidgetSnapshotStore.save(
+                GameWidgetSnapshot(
+                    updatedAt: Date(),
+                    isLoggedIn: true,
+                    hasActiveGame: false,
+                    gameTitle: "",
+                    levelNumber: 0,
+                    levelName: "",
+                    teamName: "",
+                    sectorsPassed: 0,
+                    sectorsRequired: 0,
+                    bonusesPassed: 0,
+                    bonusesTotal: 0,
+                    pendingQueueCount: queue.pending.count,
+                    isOnline: queue.isOnline,
+                    status: "",
+                    recentCodes: [],
+                    hints: [],
+                    levelEndsAt: nil,
+                    nextHintUnlocksAt: nil
+                )
+            )
+            return
+        }
+
+        guard let state = liveActivityContentState(), let model = currentModel else {
+            let title = games.first { $0.id == selectedGameID.map(Int.init) }?.title ?? "Encounter"
+            GameWidgetSnapshotStore.save(
+                GameWidgetSnapshot(
+                    updatedAt: Date(),
+                    isLoggedIn: true,
+                    hasActiveGame: false,
+                    gameTitle: title,
+                    levelNumber: 0,
+                    levelName: "",
+                    teamName: currentModel?.teamName ?? "",
+                    sectorsPassed: 0,
+                    sectorsRequired: 0,
+                    bonusesPassed: 0,
+                    bonusesTotal: 0,
+                    pendingQueueCount: queue.pending.count,
+                    isOnline: queueConnectionStatus == .ready,
+                    status: statusMessage,
+                    recentCodes: [],
+                    hints: [],
+                    levelEndsAt: nil,
+                    nextHintUnlocksAt: nil
+                )
+            )
+            return
+        }
+
+        let display = settings.liveActivityDisplay
+        let rawTitle = model.gameTitle
+            .isEmpty ? (games.first { $0.id == selectedGameID.map(Int.init) }?.title ?? "Encounter") : model.gameTitle
+        let gameTitle = display.showGameTitle ? rawTitle : ""
+
+        GameWidgetSnapshotStore.save(
+            GameWidgetSnapshot(
+                updatedAt: Date(),
+                isLoggedIn: true,
+                hasActiveGame: true,
+                gameTitle: gameTitle,
+                levelNumber: state.levelNumber,
+                levelName: state.levelName,
+                teamName: state.teamName,
+                sectorsPassed: state.sectorsPassed,
+                sectorsRequired: state.sectorsRequired,
+                bonusesPassed: state.bonusesPassed,
+                bonusesTotal: state.bonusesTotal,
+                pendingQueueCount: state.pendingCount,
+                isOnline: state.isOnline,
+                status: state.status,
+                recentCodes: state.recentCodes,
+                hints: state.hints,
+                levelEndsAt: state.levelEndsAt,
+                nextHintUnlocksAt: state.nextHintUnlocksAt
+            )
+        )
     }
 
     private func markEngineReachable() {

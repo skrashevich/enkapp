@@ -21,6 +21,9 @@ struct encx_cliApp: App {
                         await model.requestNotificationAuthorizationIfNeeded()
                     }
                 }
+                .onOpenURL { url in
+                    Task { await model.handleWidgetURL(url) }
+                }
         }
     }
 }

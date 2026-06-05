@@ -240,6 +240,7 @@ struct QueueLiveActivityWidget: Widget {
 @main
 struct EncxWidgetBundle: WidgetBundle {
     var body: some Widget {
+        GameHomeScreenWidget()
         QueueLiveActivityWidget()
     }
 }
