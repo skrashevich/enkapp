@@ -27,14 +27,25 @@ struct GameActionRow: View {
     let badge: String
     let model: EncounterViewModel
 
+    private var gameID: Int64 { Int64(game.id) }
+
     private var isActive: Bool {
         model.isGameActive(game)
+    }
+
+    private var isCurrentJoinedGame: Bool {
+        guard model.selectedGameID == gameID,
+              let current = model.currentModel,
+              current.gameID == game.id else {
+            return false
+        }
+        return !model.needsGameEntry(current)
     }
 
     var body: some View {
         HStack(spacing: 10) {
             Button {
-                Task { await openSelectedGame() }
+                Task { await model.openGame(gameID) }
             } label: {
                 GameRow(game: game, badge: badge)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -42,36 +53,16 @@ struct GameActionRow: View {
             .buttonStyle(.plain)
             .disabled(model.isBusy)
 
-            if isActive {
-                Button {
-                    Task { await model.openGame(Int64(game.id)) }
-                } label: {
-                    Image(systemName: "play.fill")
-                        .frame(width: 34, height: 34)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-                .disabled(model.isBusy)
-                .accessibilityLabel("Войти в игру")
-            } else {
-                Button {
-                    Task { await model.submitGameApplication(Int64(game.id)) }
-                } label: {
-                    Image(systemName: "person.badge.plus")
-                        .frame(width: 34, height: 34)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.isBusy || !model.hasStoredSession)
-                .accessibilityLabel("Подать заявку на игру")
+            Button {
+                Task { await model.openGame(gameID) }
+            } label: {
+                Image(systemName: isActive && isCurrentJoinedGame ? "play.fill" : "chevron.right.circle.fill")
+                    .frame(width: 34, height: 34)
             }
-        }
-    }
-
-    private func openSelectedGame() async {
-        if isActive {
-            await model.openGame(Int64(game.id))
-        } else {
-            await model.enterGame(Int64(game.id))
+            .buttonStyle(.borderedProminent)
+            .tint(isActive && isCurrentJoinedGame ? .green : .accentColor)
+            .disabled(model.isBusy)
+            .accessibilityLabel(isActive && isCurrentJoinedGame ? "Открыть игру" : "Перейти к игре")
         }
     }
 }
@@ -80,10 +71,12 @@ struct DomainGameActionRow: View {
     let game: DomainGame
     let model: EncounterViewModel
 
+    private var gameID: Int64 { Int64(game.id) }
+
     var body: some View {
         HStack(spacing: 10) {
             Button {
-                Task { await model.openGame(Int64(game.id)) }
+                Task { await model.openGame(gameID) }
             } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
@@ -102,14 +95,17 @@ struct DomainGameActionRow: View {
             .disabled(model.isBusy)
 
             Button {
-                Task { await model.submitGameApplication(Int64(game.id)) }
+                Task { await model.openGame(gameID) }
             } label: {
-                Image(systemName: "person.badge.plus")
+                Image(systemName: "chevron.right.circle.fill")
                     .frame(width: 34, height: 34)
             }
             .buttonStyle(.bordered)
-            .disabled(model.isBusy || !model.hasStoredSession)
-            .accessibilityLabel("Подать заявку на игру")
+            .disabled(model.isBusy)
+            .accessibilityLabel("Перейти к игре")
+        }
+        .task(id: gameID) {
+            await model.ensureGameModerationLoadedForUI(gameID: gameID)
         }
     }
 }

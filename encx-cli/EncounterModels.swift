@@ -3,7 +3,12 @@ import UIKit
 
 enum GameEvent {
     static let normal = 0
+    static let gameNotStarted = 5
     static let gameFinished = 6
+    static let playerNoApplication = 7
+    static let teamNoApplication = 8
+    static let playerNotAccepted = 9
+    static let playerNotLoggedIn = 4
     static let gameEnded = 17
 }
 
@@ -52,6 +57,11 @@ struct FlexString: Decodable, Hashable {
 struct SyncedSecondsCountdown: Equatable {
     let remainSeconds: Int
     let syncedAt: Date
+
+    func remainingSeconds(at date: Date = Date()) -> Int {
+        let elapsed = max(0, Int(date.timeIntervalSince(syncedAt)))
+        return max(0, remainSeconds - elapsed)
+    }
 }
 
 struct LoginResponse: Decodable {
@@ -114,6 +124,7 @@ struct GameInfo: Decodable, Identifiable, Hashable {
     let started: Bool
     let finished: Bool
     let inProgress: Bool
+    let isModerated: Bool
     let levelNumber: Int?
 
     enum CodingKeys: String, CodingKey {
@@ -124,7 +135,21 @@ struct GameInfo: Decodable, Identifiable, Hashable {
         case started = "Started"
         case finished = "Finished"
         case inProgress = "InProgress"
+        case isModerated = "IsModerated"
         case levelNumber = "LevelNumber"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        number = try container.decodeIfPresent(Int.self, forKey: .number) ?? 0
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
+        started = try container.decodeIfPresent(Bool.self, forKey: .started) ?? false
+        finished = try container.decodeIfPresent(Bool.self, forKey: .finished) ?? false
+        inProgress = try container.decodeIfPresent(Bool.self, forKey: .inProgress) ?? false
+        isModerated = try container.decodeIfPresent(Bool.self, forKey: .isModerated) ?? false
+        levelNumber = try container.decodeIfPresent(Int.self, forKey: .levelNumber)
     }
 }
 

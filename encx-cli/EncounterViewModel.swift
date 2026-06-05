@@ -61,6 +61,7 @@ final class EncounterViewModel {
     var password = ""
     var games: [GameInfo] = []
     var domainGames: [DomainGame] = []
+    @ObservationIgnored private var moderationByGameID: [Int: Bool] = [:]
     var selectedGameID: Int64?
     var currentModel: GameModel?
     /// Countdown until game start from `GetTimeoutToGame`, when the game has not begun yet.
@@ -156,6 +157,79 @@ final class EncounterViewModel {
 
     func isGameActive(gameID: Int64) -> Bool {
         games.first { $0.id == Int(gameID) }.map(isGameActive) ?? false
+    }
+
+    func hasUserJoined(_ model: GameModel) -> Bool {
+        switch model.event {
+        case GameEvent.playerNoApplication,
+             GameEvent.teamNoApplication,
+             GameEvent.playerNotAccepted,
+             GameEvent.playerNotLoggedIn:
+            return false
+        default:
+            break
+        }
+        return !model.login.isEmpty || !model.teamName.isEmpty
+    }
+
+    func hasUserJoined(gameID: Int64) -> Bool {
+        guard let model = currentModel, model.gameID == gameID else {
+            return false
+        }
+        return hasUserJoined(model)
+    }
+
+    func needsGameEntry(gameID: Int64) -> Bool {
+        guard let model = currentModel, model.gameID == gameID else {
+            return true
+        }
+        return needsGameEntry(model)
+    }
+
+    func needsGameEntry(_ model: GameModel) -> Bool {
+        if isApplicationPending(model) {
+            return false
+        }
+        switch model.event {
+        case GameEvent.playerNoApplication, GameEvent.teamNoApplication:
+            return true
+        default:
+            return !hasUserJoined(model)
+        }
+    }
+
+    func isGameModerated(gameID: Int64) -> Bool {
+        if let game = games.first(where: { $0.id == Int(gameID) }) {
+            return game.isModerated
+        }
+        return moderationByGameID[Int(gameID)] ?? false
+    }
+
+    func isApplicationPending(_ game: GameModel) -> Bool {
+        game.event == GameEvent.playerNotAccepted
+    }
+
+    func entryActionTitle(gameID: Int64) -> String {
+        isGameModerated(gameID: gameID) ? "Подать заявку на игру" : "Войти в игру"
+    }
+
+    func ensureGameModerationLoadedForUI(gameID: Int64) async {
+        await ensureGameModerationLoaded(gameID: gameID)
+    }
+
+    func refreshGameRegistrationState(gameID: Int64) async {
+        guard hasStoredSession else { return }
+        guard selectedGameID == nil || selectedGameID == gameID else { return }
+
+        do {
+            let model = try await withSessionRecovery { try await $0.gameModel(gameID: gameID) }
+            selectedGameID = gameID
+            setCurrentModel(model)
+            try saveCookies(from: try ensureClient())
+            await updateGameStartCountdown(for: gameID)
+        } catch {
+            // Keep the current UI if the probe fails.
+        }
     }
 
     var isCurrentGameComplete: Bool {
@@ -377,30 +451,23 @@ final class EncounterViewModel {
     }
 
     func submitGameApplication(_ gameID: Int64) async {
-        guard hasStoredSession else {
-            errorMessage = "Войдите в аккаунт в настройках, чтобы подать заявку на игру."
-            return
-        }
-
-        await runBusy("Подача заявки...") {
-            let body = try await withSessionRecovery { try $0.submitGameApplication(gameID) }
-            try saveCookies(from: try ensureClient())
-            statusMessage = Self.applicationStatusMessage(from: body)
-            try? await refreshGamesNow()
-        }
+        await enterGame(gameID)
     }
 
     func enterGame(_ gameID: Int64) async {
-        await runBusy("Вход в игру...") {
-            if !isGameActive(gameID: gameID) {
-                do {
-                    let body = try await withSessionRecovery { try $0.submitGameApplication(gameID) }
-                    try saveCookies(from: try ensureClient())
-                    statusMessage = Self.applicationStatusMessage(from: body)
-                } catch {
-                    let message = error.localizedDescription
-                    guard message.contains("404") else { throw error }
-                }
+        await ensureGameModerationLoaded(gameID: gameID)
+        let moderated = isGameModerated(gameID: gameID)
+
+        guard hasStoredSession else {
+            errorMessage = moderated
+                ? "Войдите в аккаунт в настройках, чтобы подать заявку на игру."
+                : "Войдите в аккаунт в настройках, чтобы войти в игру."
+            return
+        }
+
+        await runBusy(moderated ? "Подача заявки..." : "Вход в игру...") {
+            if needsGameEntry(gameID: gameID) {
+                try await submitGameEntry(gameID: gameID)
             }
 
             selectedGameID = gameID
@@ -408,7 +475,9 @@ final class EncounterViewModel {
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: gameID) })
             try saveCookies(from: try ensureClient())
             markEngineReachable()
-            statusMessage = ""
+            if !moderated {
+                statusMessage = ""
+            }
             lastCodeResult = nil
             selectedScreen = .game
             updateScreenWakeLock()
@@ -420,7 +489,9 @@ final class EncounterViewModel {
     }
 
     func openGame(_ gameID: Int64, presentErrors: Bool = true) async -> Bool {
-        await runBusy("Загрузка уровня...", presentErrors: presentErrors) {
+        await ensureGameModerationLoaded(gameID: gameID)
+
+        return await runBusy("Загрузка уровня...", presentErrors: presentErrors) {
             selectedGameID = gameID
             gameStartCountdown = nil
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: gameID) })
@@ -438,34 +509,88 @@ final class EncounterViewModel {
     }
 
     func refreshLevel() async {
+        await refreshLevel(showUI: true)
+    }
+
+    func refreshLevelSilently() async {
+        await refreshLevel(showUI: false)
+    }
+
+    func pollWaitingGameState(gameID: Int64) async {
+        await refreshLevelSilently()
+
+        while !Task.isCancelled {
+            guard shouldContinueWaitingPoll(gameID: gameID) else { return }
+
+            let delay = waitingPollInterval(for: gameID)
+            if delay > 0 {
+                try? await Task.sleep(for: .seconds(delay))
+            }
+            guard !Task.isCancelled, shouldContinueWaitingPoll(gameID: gameID) else { return }
+            await refreshLevelSilently()
+        }
+    }
+
+    private func shouldContinueWaitingPoll(gameID: Int64) -> Bool {
+        selectedScreen == .game
+            && selectedGameID == gameID
+            && currentModel?.gameID == Int(gameID)
+            && currentModel?.level == nil
+            && currentModel?.isGameComplete != true
+    }
+
+    private func waitingPollInterval(for gameID: Int64) -> TimeInterval {
+        if let model = currentModel, isApplicationPending(model) {
+            return 20
+        }
+        if let countdown = gameStartCountdown {
+            let remaining = countdown.remainingSeconds()
+            if remaining <= 0 { return 2 }
+            if remaining <= 15 { return 3 }
+            if remaining <= 60 { return 8 }
+            return min(30, max(10, Double(remaining / 4)))
+        }
+        if isGameActive(gameID: gameID), hasUserJoined(gameID: gameID) {
+            return 5
+        }
+        return 15
+    }
+
+    private func refreshLevel(showUI: Bool) async {
         guard let selectedGameID else { return }
         if !queue.isOnline {
-            if currentModel != nil {
+            if showUI, currentModel != nil {
                 statusMessage = cachedLevelStatusMessage(reason: .offline)
             }
             return
         }
         if !engineReachable, currentModel != nil {
-            statusMessage = cachedLevelStatusMessage(reason: .serverUnreachable)
+            if showUI {
+                statusMessage = cachedLevelStatusMessage(reason: .serverUnreachable)
+            }
             return
         }
+        if !showUI, isBusy { return }
 
         let hadCachedLevel = currentModel != nil
         let succeeded = await runBusy(
-            "Обновление уровня...",
-            presentErrors: !hadCachedLevel
+            showUI ? "Обновление уровня..." : "",
+            showBusy: showUI,
+            presentErrors: showUI && !hadCachedLevel
         ) {
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: selectedGameID) })
             try saveCookies(from: try ensureClient())
             markEngineReachable()
-            statusMessage = ""
+            if showUI || currentModel?.level != nil {
+                statusMessage = ""
+            }
             await updateGameStartCountdown(for: selectedGameID)
             await processGameEvents(for: selectedGameID)
             await syncLiveActivity()
         }
         if !succeeded {
             markEngineUnreachable()
-            if hadCachedLevel {
+            if showUI, hadCachedLevel {
                 errorMessage = nil
                 statusMessage = cachedLevelStatusMessage(reason: .serverUnreachable)
             }
@@ -582,6 +707,9 @@ final class EncounterViewModel {
 
     func flushQueueOnResume() async {
         _ = await flushQueueNow(silent: true)
+        if let selectedGameID, shouldContinueWaitingPoll(gameID: selectedGameID) {
+            await refreshLevelSilently()
+        }
     }
 
     func clearQueue() {
@@ -668,13 +796,17 @@ final class EncounterViewModel {
     private func pollActiveGameIfNeeded(force: Bool = false, skipWhenQueuePending: Bool = false) async {
         guard let gameID = selectedGameID else { return }
         let waitingForFinishTransition = currentModel?.isGameFinished == true
-        guard settings.pushOnNewLevel || settings.pushOnNewHint || settings.liveActivityEnabled || waitingForFinishTransition else {
+        let waitingForLevelOrStart = selectedScreen == .game
+            && currentModel?.level == nil
+            && currentModel?.isGameComplete != true
+        guard settings.pushOnNewLevel || settings.pushOnNewHint || settings.liveActivityEnabled
+            || waitingForFinishTransition || waitingForLevelOrStart else {
             return
         }
         guard queue.isOnline, !isFlushingQueue else { return }
         if skipWhenQueuePending, !queue.pending.isEmpty { return }
 
-        let pollInterval = waitingForFinishTransition ? 5.0 : gamePollInterval
+        let pollInterval = waitingForFinishTransition || waitingForLevelOrStart ? 5.0 : gamePollInterval
         if !force, let lastGamePollDate,
            Date().timeIntervalSince(lastGamePollDate) < pollInterval {
             return
@@ -686,6 +818,7 @@ final class EncounterViewModel {
             setCurrentModel(model)
             try saveCookies(from: try ensureClient())
             markEngineReachable()
+            await updateGameStartCountdown(for: gameID)
             await processGameEvents(for: gameID)
             await syncLiveActivity()
         } catch {
@@ -945,6 +1078,32 @@ final class EncounterViewModel {
     private func recordServerRoundTrip(since started: DispatchTime) {
         let nanos = DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds
         serverRoundTripMs = max(1, Int(nanos / 1_000_000))
+    }
+
+    private func submitGameEntry(gameID: Int64) async throws {
+        do {
+            let body = try await withSessionRecovery { try $0.submitGameApplication(gameID) }
+            try saveCookies(from: try ensureClient())
+            statusMessage = Self.applicationStatusMessage(from: body)
+            try? await refreshGamesNow()
+        } catch {
+            let message = error.localizedDescription
+            guard message.contains("404") else { throw error }
+        }
+    }
+
+    private func ensureGameModerationLoaded(gameID: Int64) async {
+        guard games.first(where: { $0.id == Int(gameID) }) == nil,
+              moderationByGameID[Int(gameID)] == nil else { return }
+
+        do {
+            let stats = try await withSessionRecovery { try await $0.gameStatistics(gameID: gameID) }
+            if let game = stats.game {
+                moderationByGameID[Int(gameID)] = game.isModerated
+            }
+        } catch {
+            // Keep the default (instant entry) when moderation metadata is unavailable.
+        }
     }
 
     private static func applicationStatusMessage(from body: String) -> String {

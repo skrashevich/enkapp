@@ -57,11 +57,14 @@ struct LevelPlayView: View {
     private func waitingState(game: GameModel) -> some View {
         let gameID = Int64(game.gameID)
         let title = game.gameTitle.isEmpty ? "Игра #\(game.gameID)" : game.gameTitle
+        let needsEntry = model.needsGameEntry(gameID: gameID)
         let isActive = model.isGameActive(gameID: gameID)
+        let isPending = model.isApplicationPending(game)
+        let moderated = model.isGameModerated(gameID: gameID)
 
         return VStack(spacing: 16) {
             Spacer()
-            Image(systemName: isActive ? "hourglass" : "person.badge.plus")
+            Image(systemName: waitingStateIcon(needsEntry: needsEntry, isPending: isPending))
                 .font(.system(size: 44))
                 .foregroundStyle(GameTheme.muted)
             Text(title)
@@ -69,13 +72,18 @@ struct LevelPlayView: View {
                 .foregroundStyle(GameTheme.text)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
-            Text(isActive ? "Уровень ещё не открыт. Обновите экран, когда игра начнётся." : "Игра ещё не началась. Подайте заявку на участие.")
+            Text(waitingStateMessage(
+                needsEntry: needsEntry,
+                isActive: isActive,
+                isPending: isPending,
+                moderated: moderated
+            ))
                 .font(.subheadline)
                 .foregroundStyle(GameTheme.muted)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
-            if !isActive, let countdown = model.gameStartCountdown {
+            if !needsEntry, !isActive, let countdown = model.gameStartCountdown {
                 TickingCountdownText(
                     countdown: countdown,
                     label: GameDurationFormatter.gameStartLabel
@@ -94,9 +102,9 @@ struct LevelPlayView: View {
                     .padding(.horizontal, 32)
             }
 
-            if !isActive {
-                Button("Подать заявку на игру") {
-                    Task { await model.submitGameApplication(gameID) }
+            if needsEntry, !isPending {
+                Button(model.entryActionTitle(gameID: gameID)) {
+                    Task { await model.enterGame(gameID) }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(GameTheme.accent)
@@ -117,6 +125,45 @@ struct LevelPlayView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(GameTheme.background)
+        .task(id: game.gameID) {
+            await model.ensureGameModerationLoadedForUI(gameID: gameID)
+            await model.refreshGameRegistrationState(gameID: gameID)
+            await model.pollWaitingGameState(gameID: gameID)
+        }
+    }
+
+    private func waitingStateIcon(needsEntry: Bool, isPending: Bool) -> String {
+        if isPending {
+            return "clock"
+        }
+        return needsEntry ? "person.badge.plus" : "hourglass"
+    }
+
+    private func waitingStateMessage(
+        needsEntry: Bool,
+        isActive: Bool,
+        isPending: Bool,
+        moderated: Bool
+    ) -> String {
+        if isPending {
+            return "Заявка отправлена и ожидает одобрения организатора."
+        }
+        if needsEntry {
+            if moderated {
+                if isActive {
+                    return "Вы ещё не в игре. Подайте заявку на участие."
+                }
+                return "Игра ещё не началась. Подайте заявку на участие."
+            }
+            if isActive {
+                return "Вы ещё не в игре. Войдите, чтобы участвовать."
+            }
+            return "Игра ещё не началась. Войдите в игру, чтобы участвовать."
+        }
+        if isActive {
+            return "Ждём открытия уровня…"
+        }
+        return "Игра скоро начнётся."
     }
 
     private func finishedState(game: GameModel) -> some View {
