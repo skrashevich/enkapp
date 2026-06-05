@@ -140,11 +140,27 @@ struct GameRow: View {
                 .lineLimit(2)
 
             if let levelNumber = game.levelNumber {
-                Label("Уровень \(levelNumber)", systemImage: "flag.checkered")
+                Label(levelCountLabel(levelNumber), systemImage: "flag.checkered")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(GameTheme.sectionHeader)
             }
         }
+    }
+
+    private func levelCountLabel(_ count: Int) -> String {
+        "\(count) \(levelWord(count)) в игре"
+    }
+
+    private func levelWord(_ count: Int) -> String {
+        let mod10 = count % 10
+        let mod100 = count % 100
+        if mod10 == 1 && mod100 != 11 {
+            return "уровень"
+        }
+        if (2...4).contains(mod10) && !(12...14).contains(mod100) {
+            return "уровня"
+        }
+        return "уровней"
     }
 }
 
