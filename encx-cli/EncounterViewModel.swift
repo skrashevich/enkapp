@@ -163,7 +163,11 @@ final class EncounterViewModel {
         case GameEvent.playerNoApplication,
              GameEvent.teamNoApplication,
              GameEvent.playerNotAccepted,
-             GameEvent.playerNotLoggedIn:
+             GameEvent.playerNotLoggedIn,
+             GameEvent.playerNoTeam,
+             GameEvent.playerInactive,
+             GameEvent.gameNotFound,
+             GameEvent.engineMismatch:
             return false
         default:
             break
@@ -192,6 +196,12 @@ final class EncounterViewModel {
         switch model.event {
         case GameEvent.playerNoApplication, GameEvent.teamNoApplication:
             return true
+        case GameEvent.playerNotLoggedIn,
+             GameEvent.playerNoTeam,
+             GameEvent.playerInactive,
+             GameEvent.gameNotFound,
+             GameEvent.engineMismatch:
+            return false
         default:
             return !hasUserJoined(model)
         }
@@ -483,9 +493,7 @@ final class EncounterViewModel {
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: gameID) })
             try saveCookies(from: try ensureClient())
             markEngineReachable()
-            if !moderated {
-                statusMessage = ""
-            }
+            statusMessage = Self.waitingStatusMessage(for: currentModel)
             lastCodeResult = nil
             selectedScreen = .game
             updateScreenWakeLock()
@@ -505,7 +513,9 @@ final class EncounterViewModel {
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: gameID) })
             try saveCookies(from: try ensureClient())
             markEngineReachable()
-            statusMessage = ""
+            if currentModel?.level != nil {
+                statusMessage = ""
+            }
             lastCodeResult = nil
             selectedScreen = .game
             updateScreenWakeLock()
@@ -589,7 +599,7 @@ final class EncounterViewModel {
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: selectedGameID) })
             try saveCookies(from: try ensureClient())
             markEngineReachable()
-            if showUI || currentModel?.level != nil {
+            if currentModel?.level != nil {
                 statusMessage = ""
             }
             await updateGameStartCountdown(for: selectedGameID)
@@ -981,6 +991,8 @@ final class EncounterViewModel {
                 GameEventNotificationService.shared.clearSnapshot(gameID: Int64(model.gameID))
             }
             updateScreenWakeLock()
+        } else if model.level == nil {
+            statusMessage = Self.waitingStatusMessage(for: model)
         }
     }
 
@@ -1223,6 +1235,11 @@ final class EncounterViewModel {
         } catch {
             // Keep the default (instant entry) when moderation metadata is unavailable.
         }
+    }
+
+    static func waitingStatusMessage(for model: GameModel?) -> String {
+        guard let model, model.shouldShowEventStatus else { return "" }
+        return EncounterClient.eventText(for: model.event)
     }
 
     private static func applicationStatusMessage(from body: String) -> String {

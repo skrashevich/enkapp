@@ -61,10 +61,23 @@ struct LevelPlayView: View {
         let isActive = model.isGameActive(gameID: gameID)
         let isPending = model.isApplicationPending(game)
         let moderated = model.isGameModerated(gameID: gameID)
+        let primaryMessage = waitingStateMessage(
+            game: game,
+            needsEntry: needsEntry,
+            isActive: isActive,
+            isPending: isPending,
+            moderated: moderated
+        )
+        let detailMessage = model.statusMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let showsDetailMessage = !detailMessage.isEmpty && detailMessage != primaryMessage
 
         return VStack(spacing: 16) {
             Spacer()
-            Image(systemName: waitingStateIcon(needsEntry: needsEntry, isPending: isPending))
+            Image(systemName: waitingStateIcon(
+                game: game,
+                needsEntry: needsEntry,
+                isPending: isPending
+            ))
                 .font(.system(size: 44))
                 .foregroundStyle(GameTheme.muted)
             Text(title)
@@ -72,12 +85,7 @@ struct LevelPlayView: View {
                 .foregroundStyle(GameTheme.text)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
-            Text(waitingStateMessage(
-                needsEntry: needsEntry,
-                isActive: isActive,
-                isPending: isPending,
-                moderated: moderated
-            ))
+            Text(primaryMessage)
                 .font(.subheadline)
                 .foregroundStyle(GameTheme.muted)
                 .multilineTextAlignment(.center)
@@ -94,8 +102,8 @@ struct LevelPlayView: View {
                 .padding(.horizontal, 32)
             }
 
-            if !model.statusMessage.isEmpty {
-                Text(model.statusMessage)
+            if showsDetailMessage {
+                Text(detailMessage)
                     .font(.caption)
                     .foregroundStyle(GameTheme.accent)
                     .multilineTextAlignment(.center)
@@ -132,14 +140,29 @@ struct LevelPlayView: View {
         }
     }
 
-    private func waitingStateIcon(needsEntry: Bool, isPending: Bool) -> String {
+    private func waitingStateIcon(game: GameModel, needsEntry: Bool, isPending: Bool) -> String {
         if isPending {
             return "clock"
+        }
+        if game.shouldShowEventStatus {
+            return waitingStateErrorIcon(for: game.event)
         }
         return needsEntry ? "person.badge.plus" : "hourglass"
     }
 
+    private func waitingStateErrorIcon(for event: Int) -> String {
+        switch event {
+        case GameEvent.levelDismissed16, GameEvent.levelDismissed18, GameEvent.levelDismissed21:
+            return "arrow.clockwise.circle"
+        case GameEvent.levelAutoAdvance, GameEvent.allSectorsSolved, GameEvent.levelTimeout:
+            return "hourglass"
+        default:
+            return "exclamationmark.triangle"
+        }
+    }
+
     private func waitingStateMessage(
+        game: GameModel,
         needsEntry: Bool,
         isActive: Bool,
         isPending: Bool,
@@ -147,6 +170,9 @@ struct LevelPlayView: View {
     ) -> String {
         if isPending {
             return "Заявка отправлена и ожидает одобрения организатора."
+        }
+        if game.shouldShowEventStatus {
+            return EncounterClient.eventText(for: game.event)
         }
         if needsEntry {
             if moderated {
@@ -160,7 +186,7 @@ struct LevelPlayView: View {
             }
             return "Игра ещё не началась. Войдите в игру, чтобы участвовать."
         }
-        if isActive {
+        if game.isAwaitingLevelOpen || isActive {
             return "Ждём открытия уровня…"
         }
         return "Игра скоро начнётся."

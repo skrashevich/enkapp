@@ -361,8 +361,24 @@ final class EncounterClient {
         #else
         switch code {
         case GameEvent.normal: return "Игра в процессе"
+        case GameEvent.gameNotFound: return "Игра с таким ID не существует"
+        case GameEvent.engineMismatch: return "Игра не соответствует движку"
+        case GameEvent.playerNotLoggedIn: return "Игрок не авторизован"
+        case GameEvent.gameNotStarted: return "Игра ещё не началась"
         case GameEvent.gameFinished: return "Игра завершена"
+        case GameEvent.playerNoApplication: return "Заявка игрока не подана"
+        case GameEvent.teamNoApplication: return "Заявка команды не подана"
+        case GameEvent.playerNotAccepted: return "Заявка игрока ещё не принята"
+        case GameEvent.playerNoTeam: return "Игрок не состоит в команде"
+        case GameEvent.playerInactive: return "Игрок неактивен в команде"
+        case GameEvent.noLevels: return "В игре нет уровней"
+        case GameEvent.teamLimitExceeded: return "Превышен лимит участников в команде"
+        case GameEvent.levelDismissed16, GameEvent.levelDismissed18, GameEvent.levelDismissed21:
+            return "Уровень снят — запросите заново"
         case GameEvent.gameEnded: return "Игра окончена"
+        case GameEvent.levelAutoAdvance: return "Уровень пройден по автопереходу"
+        case GameEvent.allSectorsSolved: return "Все сектора разгаданы"
+        case GameEvent.levelTimeout: return "Таймаут уровня"
         default: return "Неизвестный статус"
         }
         #endif

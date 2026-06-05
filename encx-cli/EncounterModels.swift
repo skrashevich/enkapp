@@ -3,13 +3,25 @@ import UIKit
 
 enum GameEvent {
     static let normal = 0
+    static let gameNotFound = 2
+    static let engineMismatch = 3
+    static let playerNotLoggedIn = 4
     static let gameNotStarted = 5
     static let gameFinished = 6
     static let playerNoApplication = 7
     static let teamNoApplication = 8
     static let playerNotAccepted = 9
-    static let playerNotLoggedIn = 4
+    static let playerNoTeam = 10
+    static let playerInactive = 11
+    static let noLevels = 12
+    static let teamLimitExceeded = 13
+    static let levelDismissed16 = 16
     static let gameEnded = 17
+    static let levelDismissed18 = 18
+    static let levelAutoAdvance = 19
+    static let allSectorsSolved = 20
+    static let levelDismissed21 = 21
+    static let levelTimeout = 22
 }
 
 struct FlexString: Decodable, Hashable {
@@ -172,6 +184,22 @@ struct GameModel: Decodable {
     var isGameFinished: Bool { event == GameEvent.gameFinished }
     var isGameEnded: Bool { event == GameEvent.gameEnded }
     var isGameComplete: Bool { isGameFinished || isGameEnded }
+
+    /// Player is in the game but the engine has not opened a level yet (normal event, no level payload).
+    var isAwaitingLevelOpen: Bool {
+        level == nil && event == GameEvent.normal && !isGameComplete
+    }
+
+    /// Non-transient event status that should be shown instead of a generic waiting message.
+    var shouldShowEventStatus: Bool {
+        guard level == nil, !isGameComplete else { return false }
+        switch event {
+        case GameEvent.normal, GameEvent.gameNotStarted, GameEvent.playerNotAccepted:
+            return false
+        default:
+            return true
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
         case event = "Event"
