@@ -1,0 +1,57 @@
+name: iOS screenshots
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ios-screenshots-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Capture screenshots
+        run: make screenshots
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: enkapp-ios-screenshots
+          path: build/screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prepare Pages artifact
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p build/pages/screenshots
+          cp build/screenshots/*.png build/pages/screenshots/
+
+      - name: Configure Pages
+        if: github.event_name == 'push'
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/pages
+
+      - name: Deploy Pages
+        if: github.event_name == 'push'
+        uses: actions/deploy-pages@v4

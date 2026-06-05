@@ -50,12 +50,25 @@ make framework
 # Unsigned / signed IPA (см. make help)
 make unsigned-ipa
 make signed-ipa DEVELOPMENT_TEAM=XXXXXXXXXX EXPORT_METHOD=release-testing
+
+# Скриншоты для App Store / README
+make screenshots
 ```
 
 Открыть в Xcode: `encx-cli.xcodeproj`, схема `encx-cli`.
 
 `Encx.xcframework` лежит в `encx-cli/Frameworks/`. После `make framework` он синхронизируется из `encx-cli/build/gomobile/`.
 
+## Скриншоты
+
+<p>
+  <img src="https://skrashevich.github.io/enkapp/screenshots/01-games.png" alt="Список игр" width="260">
+  <img src="https://skrashevich.github.io/enkapp/screenshots/02-game.png" alt="Экран игры" width="260">
+  <img src="https://skrashevich.github.io/enkapp/screenshots/03-settings.png" alt="Настройки" width="260">
+</p>
+
+`make screenshots` собирает Debug-приложение для iOS Simulator, запускает его с `--screenshots` и сохраняет PNG в `build/screenshots/`.
+В CI это делает workflow `iOS screenshots`; результат доступен как artifact `enkapp-ios-screenshots`
 ## Структура
 
 | Путь | Назначение |

@@ -58,7 +58,7 @@ EXPORT_METHOD := $(subst development,debugging,$(EXPORT_METHOD))
 EXPORT_METHOD := $(subst ad-hoc,release-testing,$(EXPORT_METHOD))
 EXPORT_METHOD := $(subst app-store,app-store-connect,$(EXPORT_METHOD))
 
-.PHONY: all help clean ipa unsigned-ipa signed-ipa unsigned signed archive export framework
+.PHONY: all help clean ipa unsigned-ipa signed-ipa unsigned signed archive export framework screenshots
 
 all: ipa
 
@@ -69,6 +69,7 @@ help:
 	@echo "  framework      rebuild $(ENCX_FRAMEWORK) via gomobile (mobile/bind-ios.sh)"
 	@echo "  unsigned-ipa   $(UNSIGNED_IPA)  (framework, then unsigned build)"
 	@echo "  signed-ipa     $(SIGNED_IPA)    (framework, then signed archive/export)"
+	@echo "  screenshots    build simulator app and capture demo screenshots"
 	@echo "  ipa            both unsigned and signed"
 	@echo "  clean          remove $(BUILD_DIR)/"
 	@echo ""
@@ -98,6 +99,9 @@ framework:
 
 unsigned: unsigned-ipa
 signed: signed-ipa
+
+screenshots:
+	scripts/capture-ios-screenshots.sh
 
 unsigned-ipa: $(UNSIGNED_IPA)
 

@@ -7,7 +7,7 @@ import SwiftUI
 
 @main
 struct encx_cliApp: App {
-    @State private var model = EncounterViewModel()
+    @State private var model = EncounterViewModel.screenshotModelIfRequested() ?? EncounterViewModel()
 
     init() {
         BackgroundQueueService.shared.register()
@@ -15,15 +15,25 @@ struct encx_cliApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(model: model)
-                .onAppear {
-                    Task {
-                        await model.requestNotificationAuthorizationIfNeeded()
+            Group {
+                if ProcessInfo.processInfo.arguments.contains("--screenshot-settings") {
+                    NavigationStack {
+                        SettingsView(model: model)
                     }
-                }
-                .onOpenURL { url in
-                    Task { await model.handleWidgetURL(url) }
-                }
+                    .preferredColorScheme(.dark)
+                } else {
+                    ContentView(model: model)
+                        .onAppear {
+                            Task {
+                                guard !ProcessInfo.processInfo.arguments.contains("--screenshots") else { return }
+                                await model.requestNotificationAuthorizationIfNeeded()
+                            }
+                        }
+                        .onOpenURL { url in
+                            Task { await model.handleWidgetURL(url) }
+                        }
+                    }
+            }
         }
     }
 }

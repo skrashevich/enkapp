@@ -30,6 +30,7 @@ final class GameEventNotificationService {
 
     @discardableResult
     func requestAuthorizationIfNeeded() async -> Bool {
+        guard !ProcessInfo.processInfo.arguments.contains("--screenshots") else { return false }
         let center = UNUserNotificationCenter.current()
         let status = await center.notificationSettings().authorizationStatus
         switch status {
