@@ -43,24 +43,11 @@ struct QueueLiveActivityWidget: Widget {
                     expandedBottom(context: context)
                 }
             } compactLeading: {
-                Text("\(context.state.levelNumber)")
-                    .font(.caption.bold().monospacedDigit())
+                DynamicIslandCompactLeading(state: context.state)
             } compactTrailing: {
-                if let code = context.state.lastCode {
-                    Text(code)
-                        .font(.caption.monospaced())
-                        .lineLimit(1)
-                } else if context.state.pendingCount > 0 {
-                    Text("\(context.state.pendingCount)")
-                        .font(.caption.bold().monospacedDigit())
-                        .foregroundStyle(.orange)
-                } else if context.state.sectorsRequired > 0 {
-                    Text("\(context.state.sectorsPassed)/\(context.state.sectorsRequired)")
-                        .font(.caption2.monospacedDigit())
-                }
+                DynamicIslandCompactTrailing(state: context.state)
             } minimal: {
-                Text("\(context.state.levelNumber)")
-                    .font(.caption2.bold().monospacedDigit())
+                DynamicIslandMinimalContent(state: context.state)
             }
         }
     }

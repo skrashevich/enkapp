@@ -86,4 +86,32 @@ extension QueueActivityAttributes.ContentState {
     var lastCode: String? {
         recentCodes.last
     }
+
+    /// Max characters for a code answer in Dynamic Island compact mode (longer codes truncate uselessly).
+    static let dynamicIslandCompactMaxCodeLength = 6
+
+    var hasActiveLevelTimer: Bool {
+        levelEndsAt.map { $0 > Date() } ?? false
+    }
+
+    var hasActiveHintTimer: Bool {
+        nextHintUnlocksAt.map { $0 > Date() } ?? false
+    }
+
+    /// Short code safe for compact trailing, if any.
+    var compactDisplayCode: String? {
+        guard let code = lastCode else { return nil }
+        guard code.count <= Self.dynamicIslandCompactMaxCodeLength else { return nil }
+        return code
+    }
+
+    var hasRecentLongCode: Bool {
+        guard let code = lastCode else { return false }
+        return code.count > Self.dynamicIslandCompactMaxCodeLength
+    }
+
+    var dynamicIslandCompactLeading: String {
+        guard levelNumber > 0 else { return "EN" }
+        return "Ур.\(levelNumber)"
+    }
 }
