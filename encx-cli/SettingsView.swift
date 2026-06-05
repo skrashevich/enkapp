@@ -163,6 +163,13 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Автоматизации") {
+                Label("Команды Shortcuts", systemImage: "square.stack.3d.up")
+                Text("Отправить код, статус игры и отправка очереди доступны в приложении «Команды». Откройте игру в enkapp, затем добавьте действие enkapp в автоматизацию.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("О приложении") {
                 LabeledContent("Приложение", value: AppMetadata.displayName)
                 LabeledContent("Автор", value: "Sergei \"svk\" Krashevich")

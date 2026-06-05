@@ -17,7 +17,6 @@ struct encx_cliApp: App {
         WindowGroup {
             ContentView(model: model)
                 .onAppear {
-                    model.configureBackgroundDelivery()
                     Task {
                         await model.requestNotificationAuthorizationIfNeeded()
                     }

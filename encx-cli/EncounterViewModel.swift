@@ -79,7 +79,7 @@ final class EncounterViewModel {
     /// Number of captured HAR entries (updated from settings/debug actions).
     var harEntryCount = 0
 
-    let queue = CodeQueueStore()
+    let queue = CodeQueueStore.shared
     private let liveActivity = QueueLiveActivityManager()
 
     private var client: EncounterClient?
@@ -89,7 +89,6 @@ final class EncounterViewModel {
     private let sessionCookiesKey = "encx.session.cookies"
     private var busyCounter = 0
     private var queueProcessorTask: Task<Void, Never>?
-    private var isFlushingQueue = false
     private var engineReachable = true
     private var keepScreenAwake = false
     private var reloginTask: Task<Void, Error>?
@@ -223,7 +222,7 @@ final class EncounterViewModel {
 
         do {
             let model = try await withSessionRecovery { try await $0.gameModel(gameID: gameID) }
-            selectedGameID = gameID
+            selectGame(gameID)
             setCurrentModel(model)
             try saveCookies(from: try ensureClient())
             await updateGameStartCountdown(for: gameID)
@@ -266,6 +265,7 @@ final class EncounterViewModel {
         }
         applyDefaultDomainIfNeeded(hadSavedSettings: hadSavedSettings)
         rememberDomain(settings.domain)
+        selectedGameID = EncounterSessionStore.loadSelectedGameID()
         queue.onBackOnline = { [weak self] in
             Task { @MainActor in
                 await self?.flushQueueNow(silent: true)
@@ -282,7 +282,13 @@ final class EncounterViewModel {
         if !queue.pending.isEmpty {
             engineReachable = false
         }
+        configureBackgroundDelivery()
         startQueueProcessor()
+    }
+
+    private func selectGame(_ gameID: Int64?) {
+        selectedGameID = gameID
+        EncounterSessionStore.saveSelectedGameID(gameID)
     }
 
     private func applyDefaultDomainIfNeeded(hadSavedSettings: Bool) {
@@ -470,7 +476,7 @@ final class EncounterViewModel {
                 try await submitGameEntry(gameID: gameID)
             }
 
-            selectedGameID = gameID
+            selectGame(gameID)
             gameStartCountdown = nil
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: gameID) })
             try saveCookies(from: try ensureClient())
@@ -492,7 +498,7 @@ final class EncounterViewModel {
         await ensureGameModerationLoaded(gameID: gameID)
 
         return await runBusy("Загрузка уровня...", presentErrors: presentErrors) {
-            selectedGameID = gameID
+            selectGame(gameID)
             gameStartCountdown = nil
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: gameID) })
             try saveCookies(from: try ensureClient())
@@ -803,7 +809,7 @@ final class EncounterViewModel {
             || waitingForFinishTransition || waitingForLevelOrStart else {
             return
         }
-        guard queue.isOnline, !isFlushingQueue else { return }
+        guard queue.isOnline, !queue.isFlushing else { return }
         if skipWhenQueuePending, !queue.pending.isEmpty { return }
 
         let pollInterval = waitingForFinishTransition || waitingForLevelOrStart ? 5.0 : gamePollInterval
@@ -853,10 +859,7 @@ final class EncounterViewModel {
             await syncLiveActivity()
             return queue.pending.isEmpty
         }
-        guard !isFlushingQueue else { return queue.pending.isEmpty }
-
-        isFlushingQueue = true
-        defer { isFlushingQueue = false }
+        guard !queue.isFlushing else { return queue.pending.isEmpty }
 
         let pendingBefore = queue.pending.count
         var shouldSyncLiveActivity = false

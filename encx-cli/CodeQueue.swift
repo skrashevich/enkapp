@@ -23,16 +23,19 @@ struct CodeSubmission: Codable, Identifiable, Hashable {
 @Observable
 @MainActor
 final class CodeQueueStore {
+    static let shared = CodeQueueStore()
+
     private let storageKey = "encx.pendingCodes"
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "encx.network")
 
     var pending: [CodeSubmission] = []
     var isOnline = true
+    private(set) var isFlushing = false
     var onBackOnline: (() -> Void)?
     var onPendingAdded: (() -> Void)?
 
-    init() {
+    private init() {
         load()
         monitor.pathUpdateHandler = { @Sendable [weak self] path in
             Task { @MainActor [weak self] in
@@ -50,15 +53,28 @@ final class CodeQueueStore {
         pending.append(submission)
         save()
         onPendingAdded?()
+        postQueueDidChange()
     }
 
     func clear() {
         pending.removeAll()
         save()
+        postQueueDidChange()
+    }
+
+    func reloadFromDisk() {
+        load()
+    }
+
+    private func postQueueDidChange() {
+        NotificationCenter.default.post(name: .encxQueueDidChange, object: nil)
     }
 
     func flush(send: (CodeSubmission) async throws -> GameModel) async throws -> GameModel? {
-        guard isOnline, !pending.isEmpty else { return nil }
+        guard isOnline, !pending.isEmpty, !isFlushing else { return nil }
+
+        isFlushing = true
+        defer { isFlushing = false }
 
         var latestModel: GameModel?
         var unsent: [CodeSubmission] = []
@@ -80,6 +96,7 @@ final class CodeQueueStore {
 
         pending = unsent
         save()
+        postQueueDidChange()
         return latestModel
     }
 
