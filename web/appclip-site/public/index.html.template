@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>enkapp</title>
+  ${ENKAPP_SMART_APP_BANNER}
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <h1>enkapp</h1>
+    <p>Encounter game tools for queueing codes and opening game levels from iOS.</p>
+    <div class="actions">
+      <a class="button" href="${ENKAPP_TESTFLIGHT_URL}">Install with TestFlight</a>
+      <a class="button secondary" href="/g/encounter.exe.xyz/0">Open game link example</a>
+    </div>
+  </main>
+</body>
+</html>

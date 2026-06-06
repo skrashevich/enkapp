@@ -1,0 +1,22 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "${ENKAPP_TEAM_ID}.${ENKAPP_APP_BUNDLE_ID}"
+        ],
+        "components": [
+          {
+            "/": "/g/*",
+            "comment": "Encounter game and level links"
+          }
+        ]
+      }
+    ]
+  },
+  "appclips": {
+    "apps": [
+      "${ENKAPP_TEAM_ID}.${ENKAPP_CLIP_BUNDLE_ID}"
+    ]
+  }
+}
