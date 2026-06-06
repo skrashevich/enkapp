@@ -286,6 +286,7 @@ struct LevelPlayView: View {
             levelProgress(game: game, level: level)
 
             LevelPlayScrollBody(
+                model: model,
                 statusMessage: model.statusMessage,
                 level: level
             )
@@ -294,9 +295,11 @@ struct LevelPlayView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             LevelCodeInputBar(
                 text: $codeDraft,
-                canSubmit: model.currentModel?.level != nil && !codeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                canSubmitLevel: canSubmitCode(level: level, kind: .level),
+                canSubmitBonus: canSubmitCode(level: level, kind: .bonus),
                 isFocused: $codeFieldFocused,
-                onSubmit: submitCodeDraft
+                onSubmitLevel: { submitCodeDraft(kind: .level) },
+                onSubmitBonus: { submitCodeDraft(kind: .bonus) }
             )
         }
         .overlay(alignment: .bottom) {
@@ -345,11 +348,22 @@ struct LevelPlayView: View {
             .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
     }
 
-    private func submitCodeDraft() {
+    private func canSubmitCode(level: Level, kind: CodeSubmissionKind) -> Bool {
+        let hasText = !codeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard hasText, model.currentModel?.level != nil else { return false }
+        switch kind {
+        case .level:
+            return model.canSubmitLevelCode(on: level)
+        case .bonus:
+            return model.canSubmitBonusCode(on: level)
+        }
+    }
+
+    private func submitCodeDraft(kind: CodeSubmissionKind) {
         let trimmed = codeDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         codeDraft = ""
-        model.submitCode(trimmed)
+        model.submitCode(trimmed, kind: kind)
     }
 
     private func gameHeader(game: GameModel) -> some View {
@@ -546,9 +560,11 @@ private struct LevelDrainCountdown: View {
 
 private struct LevelCodeInputBar: View {
     @Binding var text: String
-    var canSubmit: Bool
+    var canSubmitLevel: Bool
+    var canSubmitBonus: Bool
     var isFocused: FocusState<Bool>.Binding
-    var onSubmit: () -> Void
+    var onSubmitLevel: () -> Void
+    var onSubmitBonus: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -557,7 +573,7 @@ private struct LevelCodeInputBar: View {
                 .autocorrectionDisabled()
                 .submitLabel(.send)
                 .focused(isFocused)
-                .onSubmit(onSubmit)
+                .onSubmit(onSubmitLevel)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
@@ -567,13 +583,26 @@ private struct LevelCodeInputBar: View {
                 }
                 .foregroundStyle(GameTheme.text)
 
-            Button(action: onSubmit) {
+            if canSubmitBonus {
+                Button(action: onSubmitBonus) {
+                    Text("Бонус")
+                        .font(.caption.weight(.semibold))
+                        .frame(height: 40)
+                        .padding(.horizontal, 10)
+                        .background(GameTheme.bonusTitle, in: RoundedRectangle(cornerRadius: 8))
+                        .foregroundStyle(.white)
+                }
+                .accessibilityHint("Отправить как ответ на бонусное задание")
+            }
+
+            Button(action: onSubmitLevel) {
                 Image(systemName: "paperplane.fill")
                     .frame(width: 40, height: 40)
-                    .background(canSubmit ? GameTheme.accent : GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
+                    .background(canSubmitLevel ? GameTheme.accent : GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
                     .foregroundStyle(.white)
             }
-            .disabled(!canSubmit)
+            .disabled(!canSubmitLevel)
+            .accessibilityHint("Отправить как ответ на уровень")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -582,6 +611,7 @@ private struct LevelCodeInputBar: View {
 }
 
 private struct LevelPlayScrollBody: View {
+    let model: EncounterViewModel
     let statusMessage: String
     let level: Level
 
@@ -715,7 +745,9 @@ private struct LevelPlayScrollBody: View {
     }
 
     private var helpsSection: some View {
-        LevelHelpsSection(helps: level.helps, penaltyHelps: level.penaltyHelps)
+        LevelHelpsSection(helps: level.helps, penaltyHelps: level.penaltyHelps) { help in
+            Task { await model.requestPenaltyHelp(help) }
+        }
     }
 
     private var sectorsSectionTitle: String {

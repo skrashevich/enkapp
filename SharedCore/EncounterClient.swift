@@ -215,6 +215,9 @@ nonisolated final class EncounterClient {
     }
 
     func sendCode(_ submission: CodeSubmission) throws -> GameModel {
+        guard submission.kind == .level else {
+            throw EncounterClientError.bindingsUnavailable
+        }
         #if canImport(Encx)
         var error: NSError?
         let json = client.sendCode(
@@ -232,9 +235,102 @@ nonisolated final class EncounterClient {
     }
 
     func sendCode(_ submission: CodeSubmission) async throws -> GameModel {
-        try await Task.detached(priority: .userInitiated) {
+        if submission.kind == .bonus {
+            return try await sendBonusCode(submission)
+        }
+        return try await Task.detached(priority: .userInitiated) {
             try self.sendCode(submission)
         }.value
+    }
+
+    func penaltyHint(gameID: Int64, penaltyID: Int64) throws -> GameModel {
+        throw EncounterClientError.bindingsUnavailable
+    }
+
+    func penaltyHint(gameID: Int64, penaltyID: Int64) async throws -> GameModel {
+        try await requestGameModel(
+            gameID: gameID,
+            method: "GET",
+            queryItems: [
+                URLQueryItem(name: "json", value: "1"),
+                URLQueryItem(name: "pid", value: String(penaltyID)),
+                URLQueryItem(name: "pact", value: "1"),
+            ],
+            formItems: nil,
+            timeout: TimeInterval(max(EncounterTimeouts.httpSeconds, 15))
+        )
+    }
+
+    private func sendBonusCode(_ submission: CodeSubmission) async throws -> GameModel {
+        try await requestGameModel(
+            gameID: submission.gameID,
+            method: "POST",
+            queryItems: [URLQueryItem(name: "json", value: "1")],
+            formItems: [
+                URLQueryItem(name: "LevelId", value: String(submission.levelID)),
+                URLQueryItem(name: "LevelNumber", value: String(submission.levelNumber)),
+                URLQueryItem(name: "BonusAction.Answer", value: submission.code),
+            ],
+            timeout: TimeInterval(EncounterTimeouts.codeSendSeconds)
+        )
+    }
+
+    private struct ExportedCookie: Decodable {
+        let name: String
+        let value: String
+    }
+
+    private func requestGameModel(
+        gameID: Int64,
+        method: String,
+        queryItems: [URLQueryItem],
+        formItems: [URLQueryItem]?,
+        timeout: TimeInterval
+    ) async throws -> GameModel {
+        var components = URLComponents()
+        components.scheme = settings.useHTTP ? "http" : "https"
+        components.host = settings.domain
+        components.path = "/GameEngines/Encounter/Play/\(gameID)"
+        components.queryItems = queryItems
+        guard let url = components.url else {
+            throw EncounterClientError.clientCreationFailed
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = timeout
+        request.setValue(try cookieHeader(), forHTTPHeaderField: "Cookie")
+
+        if let formItems {
+            var formComponents = URLComponents()
+            formComponents.queryItems = formItems
+            request.httpBody = formComponents.percentEncodedQuery?.data(using: .utf8)
+            request.setValue(
+                "application/x-www-form-urlencoded; charset=utf-8",
+                forHTTPHeaderField: "Content-Type"
+            )
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200..<300).contains(httpResponse.statusCode) {
+            throw NSError(
+                domain: "EncounterClient",
+                code: httpResponse.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResponse.statusCode)"]
+            )
+        }
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Invalid UTF-8 JSON"))
+        }
+        return try decode(GameModel.self, from: json)
+    }
+
+    private func cookieHeader() throws -> String {
+        let cookies = try decoder.decode([ExportedCookie].self, from: exportCookies())
+        return cookies
+            .map { "\($0.name)=\($0.value)" }
+            .joined(separator: "; ")
     }
 
     func gameStatistics(gameID: Int64) throws -> GameStatisticsResponse {

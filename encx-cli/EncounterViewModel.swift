@@ -235,6 +235,7 @@ final class EncounterViewModel {
             selectGame(gameID)
             setCurrentModel(model)
             try saveCookies(from: try ensureClient())
+            await refreshAfterTransientLevelEventIfNeeded(gameID: gameID)
             await updateGameStartCountdown(for: gameID)
         } catch {
             // Keep the current UI if the probe fails.
@@ -495,6 +496,7 @@ final class EncounterViewModel {
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: gameID) })
             try saveCookies(from: try ensureClient())
             markEngineReachable()
+            await refreshAfterTransientLevelEventIfNeeded(gameID: gameID)
             statusMessage = Self.waitingStatusMessage(for: currentModel)
             lastCodeResult = nil
             selectedScreen = .game
@@ -534,6 +536,7 @@ final class EncounterViewModel {
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: gameID) })
             try saveCookies(from: try ensureClient())
             markEngineReachable()
+            await refreshAfterTransientLevelEventIfNeeded(gameID: gameID)
             if currentModel?.level != nil {
                 statusMessage = ""
             }
@@ -620,6 +623,7 @@ final class EncounterViewModel {
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: selectedGameID) })
             try saveCookies(from: try ensureClient())
             markEngineReachable()
+            await refreshAfterTransientLevelEventIfNeeded(gameID: selectedGameID)
             if currentModel?.level != nil {
                 statusMessage = ""
             }
@@ -670,17 +674,30 @@ final class EncounterViewModel {
         }
     }
 
-    func submitCode(_ text: String) {
+    func canSubmitLevelCode(on level: Level) -> Bool {
+        levelSubmissionBlockMessage(for: level) == nil
+    }
+
+    func canSubmitBonusCode(on level: Level) -> Bool {
+        bonusSubmissionBlockMessage(for: level) == nil
+    }
+
+    func submitCode(_ text: String, kind: CodeSubmissionKind = .level) {
         guard let model = currentModel, model.isPlayable, let level = model.level else { return }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        if let message = submissionBlockMessage(for: level, kind: kind) {
+            statusMessage = message
+            return
+        }
 
         let submission = CodeSubmission(
             gameID: Int64(model.gameID),
             levelID: Int64(level.levelID),
             levelNumber: Int64(level.number),
-            code: trimmed
+            code: trimmed,
+            kind: kind
         )
 
         if !queue.isOnline {
@@ -706,12 +723,14 @@ final class EncounterViewModel {
     private func sendCodeNow(_ submission: CodeSubmission) async {
         do {
             let started = DispatchTime.now()
-            setCurrentModel(try await withSessionRecovery { try await $0.sendCode(submission) })
+            let updated = try await withSessionRecovery { try await $0.sendCode(submission) }
             recordServerRoundTrip(since: started)
+            setCurrentModel(updated)
             try saveCookies(from: try ensureClient())
             markEngineReachable()
-            statusMessage = resultMessage(from: currentModel)
-            lastCodeResult = feedback(from: currentModel)
+            statusMessage = resultMessage(from: updated)
+            lastCodeResult = feedback(from: updated)
+            await refreshAfterTransientLevelEventIfNeeded(gameID: submission.gameID)
             updateScreenWakeLock()
             if let gameID = selectedGameID {
                 await processGameEvents(for: gameID)
@@ -723,6 +742,68 @@ final class EncounterViewModel {
             statusMessage = queueAddedMessage(error: error)
             await syncLiveActivity()
             BackgroundQueueService.shared.scheduleProcessing()
+        }
+    }
+
+    private func submissionBlockMessage(for level: Level, kind: CodeSubmissionKind) -> String? {
+        switch kind {
+        case .level:
+            return levelSubmissionBlockMessage(for: level)
+        case .bonus:
+            return bonusSubmissionBlockMessage(for: level)
+        }
+    }
+
+    private func levelSubmissionBlockMessage(for level: Level) -> String? {
+        if level.isPassed {
+            return "Уровень уже пройден — ответы больше не отправляются."
+        }
+        if level.dismissed {
+            return "Уровень снят — дождитесь следующего уровня."
+        }
+        if level.hasAnswerBlockRule, level.blockDuration > 0 {
+            return "Ответы на уровень заблокированы ещё на \(level.blockDuration) сек. Бонусные ответы можно отправить отдельно."
+        }
+        return nil
+    }
+
+    private func bonusSubmissionBlockMessage(for level: Level) -> String? {
+        if level.isPassed {
+            return "Уровень уже пройден — бонусные ответы больше не отправляются."
+        }
+        if level.dismissed {
+            return "Уровень снят — бонусные ответы больше не отправляются."
+        }
+        if level.bonuses.allSatisfy(\.isAnswered) {
+            return "На уровне нет неразгаданных бонусов."
+        }
+        return nil
+    }
+
+    func requestPenaltyHelp(_ help: Help) async {
+        guard let model = currentModel, model.isPlayable, model.level != nil else { return }
+        guard help.isPenalty else { return }
+        if help.remainSeconds > 0 {
+            statusMessage = "Штрафная подсказка ещё недоступна."
+            return
+        }
+        if help.unlockedText != nil || help.penaltyHelpState == 2 {
+            statusMessage = "Штрафная подсказка уже открыта."
+            return
+        }
+
+        let gameID = Int64(model.gameID)
+        await runBusy("Открытие штрафной подсказки...") {
+            let updated = try await withSessionRecovery {
+                try await $0.penaltyHint(gameID: gameID, penaltyID: Int64(help.helpID))
+            }
+            setCurrentModel(updated)
+            try saveCookies(from: try ensureClient())
+            markEngineReachable()
+            statusMessage = "Штрафная подсказка открыта"
+            await refreshAfterTransientLevelEventIfNeeded(gameID: gameID)
+            await processGameEvents(for: gameID)
+            await syncLiveActivity()
         }
     }
 
@@ -857,6 +938,7 @@ final class EncounterViewModel {
             setCurrentModel(model)
             try saveCookies(from: try ensureClient())
             markEngineReachable()
+            await refreshAfterTransientLevelEventIfNeeded(gameID: gameID)
             await updateGameStartCountdown(for: gameID)
             await processGameEvents(for: gameID)
             await syncLiveActivity()
@@ -906,6 +988,7 @@ final class EncounterViewModel {
                 recordServerRoundTrip(since: started)
                 try saveCookies(from: try ensureClient())
                 markEngineReachable()
+                await refreshAfterTransientLevelEventIfNeeded(gameID: probeGameID)
                 if let gameID = selectedGameID {
                     await processGameEvents(for: gameID)
                 }
@@ -921,6 +1004,9 @@ final class EncounterViewModel {
                 try saveCookies(from: try ensureClient())
                 markEngineReachable()
                 resetQueueRetryBackoff()
+                if let gameID = selectedGameID {
+                    await refreshAfterTransientLevelEventIfNeeded(gameID: gameID)
+                }
                 if let gameID = selectedGameID {
                     await processGameEvents(for: gameID)
                 }
@@ -995,6 +1081,40 @@ final class EncounterViewModel {
             ?? "Encounter"
         let gameTitle = display.showGameTitle ? rawTitle : ""
         await liveActivity.sync(state: state, gameTitle: gameTitle)
+    }
+
+    private func refreshAfterTransientLevelEventIfNeeded(gameID: Int64) async {
+        guard selectedGameID == gameID,
+              let model = currentModel,
+              model.gameID == Int(gameID),
+              Self.isTransientLevelChangeEvent(model.event),
+              queue.isOnline else {
+            return
+        }
+
+        let transitionStatus = EncounterClient.eventText(for: model.event)
+        do {
+            let refreshed = try await withSessionRecovery { try await $0.gameModel(gameID: gameID) }
+            setCurrentModel(refreshed)
+            try saveCookies(from: try ensureClient())
+            markEngineReachable()
+        } catch {
+            statusMessage = transitionStatus
+        }
+    }
+
+    private static func isTransientLevelChangeEvent(_ event: Int) -> Bool {
+        switch event {
+        case GameEvent.levelDismissed16,
+             GameEvent.levelDismissed18,
+             GameEvent.levelAutoAdvance,
+             GameEvent.allSectorsSolved,
+             GameEvent.levelDismissed21,
+             GameEvent.levelTimeout:
+            return true
+        default:
+            return false
+        }
     }
 
     private func setCurrentModel(_ model: GameModel) {

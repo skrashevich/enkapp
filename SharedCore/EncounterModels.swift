@@ -493,6 +493,13 @@ nonisolated struct Help: Decodable, Identifiable, Hashable {
         return text
     }
 
+    var canRequestPenalty: Bool {
+        isPenalty
+            && penaltyHelpState != 2
+            && remainSeconds <= 0
+            && unlockedText == nil
+    }
+
     static func isUnlockPlaceholder(_ text: String) -> Bool {
         let normalized = text.lowercased()
         return normalized.contains("откроется") && normalized.contains("через")

@@ -2,21 +2,55 @@ import Foundation
 import Network
 import Observation
 
+enum CodeSubmissionKind: String, Codable, Hashable {
+    case level
+    case bonus
+}
+
 struct CodeSubmission: Codable, Identifiable, Hashable {
     let id: UUID
     let gameID: Int64
     let levelID: Int64
     let levelNumber: Int64
     let code: String
+    let kind: CodeSubmissionKind
     let createdAt: Date
 
-    init(gameID: Int64, levelID: Int64, levelNumber: Int64, code: String) {
+    init(
+        gameID: Int64,
+        levelID: Int64,
+        levelNumber: Int64,
+        code: String,
+        kind: CodeSubmissionKind = .level
+    ) {
         self.id = UUID()
         self.gameID = gameID
         self.levelID = levelID
         self.levelNumber = levelNumber
         self.code = code
+        self.kind = kind
         self.createdAt = Date()
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case gameID
+        case levelID
+        case levelNumber
+        case code
+        case kind
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        gameID = try container.decode(Int64.self, forKey: .gameID)
+        levelID = try container.decode(Int64.self, forKey: .levelID)
+        levelNumber = try container.decode(Int64.self, forKey: .levelNumber)
+        code = try container.decode(String.self, forKey: .code)
+        kind = try container.decodeIfPresent(CodeSubmissionKind.self, forKey: .kind) ?? .level
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 }
 

@@ -126,6 +126,10 @@ final class AppClipViewModel {
             errorMessage = AppClipError.gameNotPlayable.localizedDescription
             return
         }
+        if let message = Self.levelSubmissionBlockMessage(for: level) {
+            statusMessage = message
+            return
+        }
 
         let submission = CodeSubmission(
             gameID: Int64(model.gameID),
@@ -270,6 +274,19 @@ final class AppClipViewModel {
             return "Сессия истекла. В очереди: \(count)"
         }
         return "Движок недоступен. В очереди: \(count)"
+    }
+
+    private static func levelSubmissionBlockMessage(for level: Level) -> String? {
+        if level.isPassed {
+            return "Уровень уже пройден — ответы больше не отправляются."
+        }
+        if level.dismissed {
+            return "Уровень снят — дождитесь следующего уровня."
+        }
+        if level.hasAnswerBlockRule, level.blockDuration > 0 {
+            return "Ответы на уровень заблокированы ещё на \(level.blockDuration) сек."
+        }
+        return nil
     }
 
     static func resultMessage(from model: GameModel?) -> String {

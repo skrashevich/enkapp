@@ -73,8 +73,10 @@ struct LevelSectorsScreen: View {
 struct LevelHelpsSection: View {
     let helps: [Help]
     let penaltyHelps: [Help]
+    var onRequestPenaltyHelp: ((Help) -> Void)?
 
     @State private var syncedAt = Date()
+    @State private var pendingPenaltyHelp: Help?
 
     private var syncKey: String {
         (helps + penaltyHelps)
@@ -107,7 +109,16 @@ struct LevelHelpsSection: View {
                         help: help,
                         title: "Штраф \(GameDurationFormatter.minutesAndSeconds(help.penalty))",
                         syncedAt: syncedAt,
-                        fallbackText: help.penaltyMessage ?? "Требуется запрос"
+                        fallbackText: help.penaltyMessage ?? "Требуется запрос",
+                        onRequestPenaltyHelp: onRequestPenaltyHelp.map { request in
+                            {
+                                if help.requestConfirm {
+                                    pendingPenaltyHelp = help
+                                } else {
+                                    request(help)
+                                }
+                            }
+                        }
                     )
                     .sectionPanel()
                 }
@@ -117,6 +128,30 @@ struct LevelHelpsSection: View {
         .onChange(of: syncKey) { _, _ in
             syncedAt = Date()
         }
+        .confirmationDialog(
+            "Открыть штрафную подсказку?",
+            isPresented: Binding(
+                get: { pendingPenaltyHelp != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingPenaltyHelp = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let help = pendingPenaltyHelp {
+                Button("Открыть со штрафом \(GameDurationFormatter.minutesAndSeconds(help.penalty))", role: .destructive) {
+                    onRequestPenaltyHelp?(help)
+                    pendingPenaltyHelp = nil
+                }
+            }
+            Button("Отмена", role: .cancel) {
+                pendingPenaltyHelp = nil
+            }
+        } message: {
+            Text(pendingPenaltyHelp?.penaltyMessage ?? "После открытия подсказки команда получит штраф.")
+        }
     }
 }
 
@@ -125,6 +160,7 @@ private struct HelpRow: View {
     let title: String
     let syncedAt: Date
     var fallbackText: String?
+    var onRequestPenaltyHelp: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -151,6 +187,17 @@ private struct HelpRow: View {
                 Text("Открывается…")
                     .font(.body)
                     .foregroundStyle(GameTheme.muted)
+            }
+
+            if help.canRequestPenalty, let onRequestPenaltyHelp {
+                Button {
+                    onRequestPenaltyHelp()
+                } label: {
+                    Label("Открыть штрафную подсказку", systemImage: "exclamationmark.triangle")
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
+                .padding(.top, 4)
             }
         }
     }

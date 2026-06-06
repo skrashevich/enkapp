@@ -4,6 +4,7 @@ enum EncounterShortcutError: LocalizedError {
     case notLoggedIn
     case noActiveGame
     case gameNotPlayable
+    case levelAnswerBlocked(String)
     case emptyCode
 
     var errorDescription: String? {
@@ -14,6 +15,8 @@ enum EncounterShortcutError: LocalizedError {
             return "Откройте игру в приложении — автоматизации работают с активной игрой."
         case .gameNotPlayable:
             return "Игра сейчас недоступна для отправки кодов."
+        case .levelAnswerBlocked(let message):
+            return message
         case .emptyCode:
             return "Код не может быть пустым."
         }
@@ -44,6 +47,9 @@ final class EncounterShortcutService {
 
         let model = try await loadPlayableGameModel()
         guard let level = model.level else { throw EncounterShortcutError.gameNotPlayable }
+        if let message = Self.levelSubmissionBlockMessage(for: level) {
+            throw EncounterShortcutError.levelAnswerBlocked(message)
+        }
 
         let submission = CodeSubmission(
             gameID: Int64(model.gameID),
@@ -135,6 +141,19 @@ final class EncounterShortcutService {
             throw EncounterShortcutError.gameNotPlayable
         }
         return model
+    }
+
+    private static func levelSubmissionBlockMessage(for level: Level) -> String? {
+        if level.isPassed {
+            return "Уровень уже пройден — ответы больше не отправляются."
+        }
+        if level.dismissed {
+            return "Уровень снят — дождитесь следующего уровня."
+        }
+        if level.hasAnswerBlockRule, level.blockDuration > 0 {
+            return "Ответы на уровень заблокированы ещё на \(level.blockDuration) сек."
+        }
+        return nil
     }
 
     private func ensureClient() throws -> EncounterClient {
