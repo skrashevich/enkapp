@@ -38,6 +38,7 @@
 		980823AD2FCCDFD60030CDA4 /* encx-cli.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "encx-cli.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		980823BB2FCCDFD60030CDA4 /* encx-cli-widget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "encx-cli-widget.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		980823CC2FCCDFD60030CDA4 /* WidgetExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "WidgetExtension-Info.plist"; sourceTree = "<group>"; };
+		98AC10202FD2B00000000020 /* encx-cli-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "encx-cli-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -83,6 +84,7 @@
 				980823BD2FCCDFD60030CDA4 /* encx-cli-widget */,
 				980823BE2FCCDFD60030CDA4 /* Shared */,
 				980823CC2FCCDFD60030CDA4 /* WidgetExtension-Info.plist */,
+				98AC10202FD2B00000000020 /* encx-cli-Info.plist */,
 				980823AE2FCCDFD60030CDA4 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -360,15 +362,13 @@
 				DEVELOPMENT_TEAM = ZLQX2C6SX2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.svk-team.encx-cli.queue-flush";
+				INFOPLIST_FILE = "encx-cli-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = enkapp;
-				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = \"com.svk-team.encx-cli\";\n    CFBundleURLSchemes =     (\n        \"encx-cli\"\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = "fetch processing";
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -401,15 +401,13 @@
 				DEVELOPMENT_TEAM = ZLQX2C6SX2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.svk-team.encx-cli.queue-flush";
+				INFOPLIST_FILE = "encx-cli-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = enkapp;
-				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = \"com.svk-team.encx-cli\";\n    CFBundleURLSchemes =     (\n        \"encx-cli\"\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = "fetch processing";
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
