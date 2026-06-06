@@ -71,6 +71,10 @@
  */
 - (NSString* _Nonnull)getGameStatistics:(int64_t)gameID error:(NSError* _Nullable* _Nullable)error;
 /**
+ * GetMyTeamDetails returns the current user's team page HTML.
+ */
+- (NSString* _Nonnull)getMyTeamDetails:(NSError* _Nullable* _Nullable)error;
+/**
  * GetPenaltyHint requests a penalty hint. Returns updated GameModel JSON.
  */
 - (NSString* _Nonnull)getPenaltyHint:(int64_t)gameID penaltyID:(int64_t)penaltyID error:(NSError* _Nullable* _Nullable)error;
@@ -82,6 +86,14 @@
  * GetTeamDetails returns team details page HTML.
  */
 - (NSString* _Nonnull)getTeamDetails:(int64_t)teamID error:(NSError* _Nullable* _Nullable)error;
+/**
+ * GetTeamInvitations returns team invitations addressed to the current user as JSON.
+ */
+- (NSString* _Nonnull)getTeamInvitations:(NSError* _Nullable* _Nullable)error;
+/**
+ * GetTeamManagementInfo returns parsed team management info as JSON.
+ */
+- (NSString* _Nonnull)getTeamManagementInfo:(int64_t)teamID error:(NSError* _Nullable* _Nullable)error;
 /**
  * GetTimeoutToGame returns seconds until game start, or -1 if no counter is present.
  */
@@ -95,6 +107,14 @@
  */
 - (BOOL)importCookies:(NSData* _Nullable)data error:(NSError* _Nullable* _Nullable)error;
 /**
+ * InviteTeamMember invites a user login into a team.
+ */
+- (BOOL)inviteTeamMember:(int64_t)teamID login:(NSString* _Nullable)login error:(NSError* _Nullable* _Nullable)error;
+/**
+ * LeaveTeam leaves a team when TeamDetails.aspx exposes a leave action.
+ */
+- (BOOL)leaveTeam:(int64_t)teamID error:(NSError* _Nullable* _Nullable)error;
+/**
  * Login authenticates on the Encounter domain. Returns LoginResponse JSON.
  */
 - (NSString* _Nonnull)login:(NSString* _Nullable)login password:(NSString* _Nullable)password error:(NSError* _Nullable* _Nullable)error;
@@ -106,6 +126,22 @@
  * PingGame checks engine reachability with the code-send timeout.
  */
 - (NSString* _Nonnull)pingGame:(int64_t)gameID error:(NSError* _Nullable* _Nullable)error;
+/**
+ * RejectTeamInvitation rejects a team invitation.
+ */
+- (BOOL)rejectTeamInvitation:(int64_t)teamID error:(NSError* _Nullable* _Nullable)error;
+/**
+ * RemoveTeamInvitation removes a pending invitation sent by a team.
+ */
+- (BOOL)removeTeamInvitation:(int64_t)teamID userID:(int64_t)userID error:(NSError* _Nullable* _Nullable)error;
+/**
+ * RenameTeam renames a team.
+ */
+- (BOOL)renameTeam:(int64_t)teamID name:(NSString* _Nullable)name error:(NSError* _Nullable* _Nullable)error;
+/**
+ * RequestTeamMembership sends a request to join a team by name.
+ */
+- (BOOL)requestTeamMembership:(NSString* _Nullable)teamName error:(NSError* _Nullable* _Nullable)error;
 /**
  * SendBonusCode submits a bonus answer via BonusAction.Answer. Returns updated GameModel JSON.
  */
@@ -123,6 +159,14 @@ Zero or negative values reset to the default (1 second).
  * SetHARRecordingEnabled toggles HAR 1.2 capture for Encounter HTTP traffic.
  */
 - (void)setHARRecordingEnabled:(BOOL)enabled;
+/**
+ * SetTeamForum updates the team external forum URL.
+ */
+- (BOOL)setTeamForum:(int64_t)teamID forum:(NSString* _Nullable)forum error:(NSError* _Nullable* _Nullable)error;
+/**
+ * SetTeamSite updates the team website URL.
+ */
+- (BOOL)setTeamSite:(int64_t)teamID site:(NSString* _Nullable)site error:(NSError* _Nullable* _Nullable)error;
 @end
 
 /**
@@ -158,8 +202,18 @@ timeoutSeconds: HTTP client timeout (0 = default 15s). lang: API language (empty
 FOUNDATION_EXPORT EncxmobileEncClient* _Nullable EncxmobileNewClientWithOptions(NSString* _Nullable domain, BOOL insecureTLS, BOOL useHTTP, int64_t timeoutSeconds, NSString* _Nullable lang);
 
 /**
+ * ParseTeamInvitations extracts incoming team invitations from HTML. Returns JSON array.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull EncxmobileParseTeamInvitations(NSString* _Nullable html, NSError* _Nullable* _Nullable error);
+
+/**
  * ParseTeamLinks extracts team IDs and names from HTML. Returns JSON array of TeamInfo.
  */
 FOUNDATION_EXPORT NSString* _Nonnull EncxmobileParseTeamLinks(NSString* _Nullable html, NSError* _Nullable* _Nullable error);
+
+/**
+ * ParseTeamManagementInfo extracts team management info from HTML. Returns JSON.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull EncxmobileParseTeamManagementInfo(NSString* _Nullable html, int64_t teamID, NSError* _Nullable* _Nullable error);
 
 #endif
