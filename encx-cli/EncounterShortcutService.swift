@@ -3,9 +3,15 @@ import Foundation
 enum EncounterShortcutError: LocalizedError {
     case notLoggedIn
     case noActiveGame
+    case noActiveTeam
     case gameNotPlayable
     case levelAnswerBlocked(String)
     case emptyCode
+    case emptyTeamName
+    case emptyPlayerLogin
+    case invalidTeamID
+    case invalidUserID
+    case teamActionUnavailable(String)
 
     var errorDescription: String? {
         switch self {
@@ -13,12 +19,24 @@ enum EncounterShortcutError: LocalizedError {
             return "Войдите в приложении, чтобы использовать автоматизации."
         case .noActiveGame:
             return "Откройте игру в приложении — автоматизации работают с активной игрой."
+        case .noActiveTeam:
+            return "Команда не выбрана. Откройте раздел команды в приложении."
         case .gameNotPlayable:
             return "Игра сейчас недоступна для отправки кодов."
         case .levelAnswerBlocked(let message):
             return message
         case .emptyCode:
             return "Код не может быть пустым."
+        case .emptyTeamName:
+            return "Название команды не может быть пустым."
+        case .emptyPlayerLogin:
+            return "Логин игрока не может быть пустым."
+        case .invalidTeamID:
+            return "ID команды должен быть больше нуля."
+        case .invalidUserID:
+            return "ID игрока должен быть больше нуля."
+        case .teamActionUnavailable(let message):
+            return message
         }
     }
 }
@@ -30,6 +48,15 @@ struct EncounterGameStatusSummary: Equatable {
     let levelName: String
     let teamName: String
     let pendingQueueCount: Int
+}
+
+struct EncounterTeamStatusSummary: Equatable {
+    let summary: String
+    let teamID: Int64
+    let teamName: String
+    let teamsCount: Int
+    let incomingInvitationsCount: Int
+    let pendingInvitationsCount: Int
 }
 
 @MainActor
@@ -122,13 +149,127 @@ final class EncounterShortcutService {
         return "Отправлено из очереди. Осталось: \(queue.pending.count)"
     }
 
-    private func loadActiveGameModel() async throws -> GameModel {
-        guard EncounterSessionStore.hasStoredSession(
-            settings: EncounterSessionStore.loadSettings(),
-            login: EncounterSessionStore.loadLogin()
-        ) else {
-            throw EncounterShortcutError.notLoggedIn
+    func teamStatusSummary() async throws -> EncounterTeamStatusSummary {
+        let snapshot = try await loadTeamSnapshot()
+        var parts: [String] = []
+
+        if let team = snapshot.team {
+            let name = team.name.isEmpty ? "Команда #\(team.id)" : team.name
+            parts.append(name)
+        } else {
+            parts.append("Команда не выбрана")
         }
+
+        parts.append("Команд: \(snapshot.teams.count)")
+        if !snapshot.invitations.isEmpty {
+            parts.append("Входящие: \(snapshot.invitations.count)")
+        }
+        if let info = snapshot.info, !info.pendingInvitations.isEmpty {
+            parts.append("Исходящие: \(info.pendingInvitations.count)")
+        }
+
+        return EncounterTeamStatusSummary(
+            summary: parts.joined(separator: " · "),
+            teamID: snapshot.teamID ?? 0,
+            teamName: snapshot.team?.name ?? "",
+            teamsCount: snapshot.teams.count,
+            incomingInvitationsCount: snapshot.invitations.count,
+            pendingInvitationsCount: snapshot.info?.pendingInvitations.count ?? 0
+        )
+    }
+
+    func requestTeamMembership(_ teamName: String) async throws -> String {
+        let trimmed = teamName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw EncounterShortcutError.emptyTeamName }
+        try await requireStoredSession()
+        try await withSessionRecovery { try await $0.requestTeamMembership(teamName: trimmed) }
+        try saveCookies(from: try ensureClient())
+        return "Заявка в команду отправлена: \(trimmed)"
+    }
+
+    func acceptTeamInvitation(teamID: Int64) async throws -> String {
+        guard teamID > 0 else { throw EncounterShortcutError.invalidTeamID }
+        try await requireStoredSession()
+        try await withSessionRecovery { try await $0.acceptTeamInvitation(teamID: teamID) }
+        try saveCookies(from: try ensureClient())
+        return "Приглашение принято: команда #\(teamID)"
+    }
+
+    func rejectTeamInvitation(teamID: Int64) async throws -> String {
+        guard teamID > 0 else { throw EncounterShortcutError.invalidTeamID }
+        try await requireStoredSession()
+        try await withSessionRecovery { try await $0.rejectTeamInvitation(teamID: teamID) }
+        try saveCookies(from: try ensureClient())
+        return "Приглашение отклонено: команда #\(teamID)"
+    }
+
+    func inviteTeamMember(login: String) async throws -> String {
+        let trimmed = login.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw EncounterShortcutError.emptyPlayerLogin }
+        let snapshot = try await loadTeamSnapshot()
+        guard let teamID = snapshot.teamID else { throw EncounterShortcutError.noActiveTeam }
+
+        try await withSessionRecovery {
+            try await $0.inviteTeamMember(teamID: teamID, login: trimmed)
+        }
+        try saveCookies(from: try ensureClient())
+        return "Приглашение отправлено игроку \(trimmed)"
+    }
+
+    func removeTeamInvitation(userID: Int64) async throws -> String {
+        guard userID > 0 else { throw EncounterShortcutError.invalidUserID }
+        let snapshot = try await loadTeamSnapshot()
+        guard let teamID = snapshot.teamID else { throw EncounterShortcutError.noActiveTeam }
+
+        try await withSessionRecovery {
+            try await $0.removeTeamInvitation(teamID: teamID, userID: userID)
+        }
+        try saveCookies(from: try ensureClient())
+        return "Приглашение игроку #\(userID) отозвано"
+    }
+
+    func leaveCurrentTeam() async throws -> String {
+        let snapshot = try await loadTeamSnapshot()
+        guard let teamID = snapshot.teamID else { throw EncounterShortcutError.noActiveTeam }
+        if snapshot.info?.canLeave == false {
+            throw EncounterShortcutError.teamActionUnavailable("Для этой команды выход недоступен.")
+        }
+
+        try await withSessionRecovery { try await $0.leaveTeam(teamID: teamID) }
+        try saveCookies(from: try ensureClient())
+        return "Вы вышли из команды"
+    }
+
+    func renameCurrentTeam(_ name: String) async throws -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw EncounterShortcutError.emptyTeamName }
+        let teamID = try await currentTeamID()
+
+        try await withSessionRecovery { try await $0.renameTeam(teamID: teamID, name: trimmed) }
+        try saveCookies(from: try ensureClient())
+        return "Название команды обновлено: \(trimmed)"
+    }
+
+    func updateCurrentTeamSite(_ site: String) async throws -> String {
+        let trimmed = site.trimmingCharacters(in: .whitespacesAndNewlines)
+        let teamID = try await currentTeamID()
+
+        try await withSessionRecovery { try await $0.setTeamSite(teamID: teamID, site: trimmed) }
+        try saveCookies(from: try ensureClient())
+        return trimmed.isEmpty ? "Сайт команды очищен" : "Сайт команды обновлён"
+    }
+
+    func updateCurrentTeamForum(_ forum: String) async throws -> String {
+        let trimmed = forum.trimmingCharacters(in: .whitespacesAndNewlines)
+        let teamID = try await currentTeamID()
+
+        try await withSessionRecovery { try await $0.setTeamForum(teamID: teamID, forum: trimmed) }
+        try saveCookies(from: try ensureClient())
+        return trimmed.isEmpty ? "Форум команды очищен" : "Форум команды обновлён"
+    }
+
+    private func loadActiveGameModel() async throws -> GameModel {
+        try await requireStoredSession()
         guard let gameID = EncounterSessionStore.loadSelectedGameID() else {
             throw EncounterShortcutError.noActiveGame
         }
@@ -141,6 +282,59 @@ final class EncounterShortcutService {
             throw EncounterShortcutError.gameNotPlayable
         }
         return model
+    }
+
+    private func requireStoredSession() async throws {
+        guard EncounterSessionStore.hasStoredSession(
+            settings: EncounterSessionStore.loadSettings(),
+            login: EncounterSessionStore.loadLogin()
+        ) else {
+            throw EncounterShortcutError.notLoggedIn
+        }
+    }
+
+    private func currentTeamID() async throws -> Int64 {
+        let snapshot = try await loadTeamSnapshot()
+        guard let teamID = snapshot.teamID else { throw EncounterShortcutError.noActiveTeam }
+        return teamID
+    }
+
+    private struct TeamSnapshot {
+        let teams: [TeamInfo]
+        let invitations: [TeamInvitation]
+        let teamID: Int64?
+        let team: TeamInfo?
+        let info: TeamManagementInfo?
+    }
+
+    private func loadTeamSnapshot(preferredTeamID: Int64? = nil) async throws -> TeamSnapshot {
+        try await requireStoredSession()
+        return try await withSessionRecovery { client in
+            async let invitationsResult = client.teamInvitations()
+            async let htmlResult = client.myTeamDetailsHTML()
+
+            let html = try await htmlResult
+            let teams = try await client.teamLinks(from: html)
+            let invitations = try await invitationsResult
+            let teamID = preferredTeamID.flatMap { id in teams.contains { Int64($0.id) == id } ? id : nil }
+                ?? teams.first.map { Int64($0.id) }
+            let team = teamID.flatMap { id in teams.first { Int64($0.id) == id } }
+            let info: TeamManagementInfo?
+            if let teamID {
+                info = try await client.teamManagementInfo(teamID: teamID)
+            } else {
+                info = nil
+            }
+
+            try saveCookies(from: client)
+            return TeamSnapshot(
+                teams: teams,
+                invitations: invitations,
+                teamID: teamID,
+                team: team,
+                info: info
+            )
+        }
     }
 
     private static func levelSubmissionBlockMessage(for level: Level) -> String? {
