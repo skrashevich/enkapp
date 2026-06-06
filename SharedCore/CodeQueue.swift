@@ -101,7 +101,7 @@ final class CodeQueueStore {
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
+        guard let data = EncounterSharedStorage.data(forKey: storageKey),
               let decoded = try? JSONDecoder().decode([CodeSubmission].self, from: data) else {
             pending = []
             return
@@ -111,6 +111,6 @@ final class CodeQueueStore {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(pending) else { return }
-        UserDefaults.standard.set(data, forKey: storageKey)
+        EncounterSharedStorage.set(data, forKey: storageKey)
     }
 }

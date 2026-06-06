@@ -4,7 +4,7 @@ import Foundation
 import Encx
 #endif
 
-enum EncounterTimeouts {
+nonisolated enum EncounterTimeouts {
     /// HTTP client timeout for login and game loads (0 = Go default 15s).
     static let httpSeconds: Int64 = 0
     /// Per-request timeout for code send and engine probes (enforced in Go via context).
@@ -28,7 +28,7 @@ enum EncounterClientError: LocalizedError {
     }
 }
 
-struct LiveActivityDisplayOptions: Codable, Equatable {
+nonisolated struct LiveActivityDisplayOptions: Codable, Equatable {
     var showGameTitle = true
     var showLevel = true
     var showTeam = true
@@ -39,7 +39,7 @@ struct LiveActivityDisplayOptions: Codable, Equatable {
     var showStatus = true
 }
 
-struct DomainSettings: Codable, Equatable {
+nonisolated struct DomainSettings: Codable, Equatable {
     /// Default Encounter host for development (public mock at https://encounter.exe.xyz).
     static let defaultDomain = "encounter.exe.xyz"
 
@@ -56,7 +56,7 @@ struct DomainSettings: Codable, Equatable {
     var harRecordingEnabled = false
 }
 
-final class EncounterClient {
+nonisolated final class EncounterClient {
     private let decoder = JSONDecoder()
 
     #if canImport(Encx)

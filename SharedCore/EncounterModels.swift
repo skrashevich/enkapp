@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-enum GameEvent {
+nonisolated enum GameEvent {
     static let normal = 0
     static let gameNotFound = 2
     static let engineMismatch = 3
@@ -24,7 +24,7 @@ enum GameEvent {
     static let levelTimeout = 22
 }
 
-struct FlexString: Decodable, Hashable {
+nonisolated struct FlexString: Decodable, Hashable {
     let value: String
 
     init(from decoder: Decoder) throws {
@@ -66,7 +66,7 @@ struct FlexString: Decodable, Hashable {
     }
 }
 
-struct SyncedSecondsCountdown: Equatable {
+nonisolated struct SyncedSecondsCountdown: Equatable {
     let remainSeconds: Int
     let syncedAt: Date
 
@@ -76,7 +76,7 @@ struct SyncedSecondsCountdown: Equatable {
     }
 }
 
-struct LoginResponse: Decodable {
+nonisolated struct LoginResponse: Decodable {
     let error: Int
     let message: String
     let captchaURL: String?
@@ -88,7 +88,7 @@ struct LoginResponse: Decodable {
     }
 }
 
-struct UserProfile: Decodable {
+nonisolated struct UserProfile: Decodable {
     let id: Int
     let login: String
     let domain: String
@@ -102,7 +102,7 @@ struct UserProfile: Decodable {
     }
 }
 
-struct DomainGame: Decodable, Identifiable, Hashable {
+nonisolated struct DomainGame: Decodable, Identifiable, Hashable {
     let id: Int
     let title: String
 
@@ -112,7 +112,7 @@ struct DomainGame: Decodable, Identifiable, Hashable {
     }
 }
 
-struct GameListResponse: Decodable {
+nonisolated struct GameListResponse: Decodable {
     let comingGames: [GameInfo]
     let activeGames: [GameInfo]
 
@@ -128,7 +128,7 @@ struct GameListResponse: Decodable {
     }
 }
 
-struct GameInfo: Decodable, Identifiable, Hashable {
+nonisolated struct GameInfo: Decodable, Identifiable, Hashable {
     let id: Int
     let number: Int
     let title: String
@@ -170,7 +170,7 @@ struct GameInfo: Decodable, Identifiable, Hashable {
     }
 }
 
-struct GameModel: Decodable {
+nonisolated struct GameModel: Decodable {
     let event: Int
     let gameID: Int
     let gameTitle: String
@@ -232,7 +232,7 @@ struct GameModel: Decodable {
     }
 }
 
-struct LevelSummary: Decodable, Identifiable, Hashable {
+nonisolated struct LevelSummary: Decodable, Identifiable, Hashable {
     let levelID: Int
     let levelNumber: Int
     let levelName: String
@@ -250,7 +250,7 @@ struct LevelSummary: Decodable, Identifiable, Hashable {
     }
 }
 
-struct Level: Decodable {
+nonisolated struct Level: Decodable {
     let levelID: Int
     let number: Int
     let name: String
@@ -334,7 +334,7 @@ struct Level: Decodable {
     }
 }
 
-struct LevelTask: Decodable, Hashable {
+nonisolated struct LevelTask: Decodable, Hashable {
     let taskText: String
     let formattedText: String
 
@@ -348,7 +348,7 @@ struct LevelTask: Decodable, Hashable {
     }
 }
 
-struct AdminMessage: Decodable, Identifiable, Hashable {
+nonisolated struct AdminMessage: Decodable, Identifiable, Hashable {
     let messageID: Int
     let ownerLogin: String
     let messageText: String
@@ -365,7 +365,7 @@ struct AdminMessage: Decodable, Identifiable, Hashable {
     }
 }
 
-struct Sector: Decodable, Identifiable, Hashable {
+nonisolated struct Sector: Decodable, Identifiable, Hashable {
     let sectorID: Int
     let order: Int
     let name: String
@@ -425,7 +425,7 @@ extension Array where Element == Sector {
     }
 }
 
-struct Bonus: Decodable, Identifiable, Hashable {
+nonisolated struct Bonus: Decodable, Identifiable, Hashable {
     let bonusID: Int
     let name: String
     let number: Int
@@ -473,7 +473,7 @@ struct Bonus: Decodable, Identifiable, Hashable {
     }
 }
 
-struct Help: Decodable, Identifiable, Hashable {
+nonisolated struct Help: Decodable, Identifiable, Hashable {
     let helpID: Int
     let number: Int
     let helpText: String?
@@ -511,7 +511,7 @@ struct Help: Decodable, Identifiable, Hashable {
     }
 }
 
-struct CodeAction: Decodable, Identifiable, Hashable {
+nonisolated struct CodeAction: Decodable, Identifiable, Hashable {
     let actionID: Int
     let levelNumber: Int
     let kind: Int
@@ -533,7 +533,7 @@ struct CodeAction: Decodable, Identifiable, Hashable {
     }
 }
 
-struct EngineAction: Decodable {
+nonisolated struct EngineAction: Decodable {
     let levelAction: ActionResult?
     let bonusAction: ActionResult?
 
@@ -543,7 +543,7 @@ struct EngineAction: Decodable {
     }
 }
 
-struct ActionResult: Decodable {
+nonisolated struct ActionResult: Decodable {
     let answer: String?
     let isCorrectAnswer: Bool?
 
@@ -553,7 +553,7 @@ struct ActionResult: Decodable {
     }
 }
 
-struct GameStatisticsResponse: Decodable {
+nonisolated struct GameStatisticsResponse: Decodable {
     let game: GameInfo?
     let levels: [LevelStatInfo]
     let statItems: [[StatItem]]
@@ -578,7 +578,7 @@ struct GameStatisticsResponse: Decodable {
     }
 }
 
-struct LevelStatInfo: Decodable, Identifiable, Hashable {
+nonisolated struct LevelStatInfo: Decodable, Identifiable, Hashable {
     let levelID: Int
     let levelNumber: Int
     let levelName: String
@@ -596,7 +596,7 @@ struct LevelStatInfo: Decodable, Identifiable, Hashable {
     }
 }
 
-struct LevelPlayerCount: Decodable, Hashable {
+nonisolated struct LevelPlayerCount: Decodable, Hashable {
     let levelNum: Int
     let count: Int
 
@@ -606,7 +606,7 @@ struct LevelPlayerCount: Decodable, Hashable {
     }
 }
 
-struct StatItem: Decodable, Identifiable, Hashable {
+nonisolated struct StatItem: Decodable, Identifiable, Hashable {
     let userName: String
     let teamName: String
     let levelNum: Int
@@ -624,7 +624,7 @@ struct StatItem: Decodable, Identifiable, Hashable {
     }
 }
 
-enum SpentTimeFormatter {
+nonisolated enum SpentTimeFormatter {
     static func format(seconds: Int) -> String {
         let h = seconds / 3600
         let m = (seconds % 3600) / 60
@@ -637,7 +637,7 @@ enum SpentTimeFormatter {
 }
 
 extension String {
-    func replacingNumericHTMLEntities() -> String {
+    nonisolated func replacingNumericHTMLEntities() -> String {
         guard let regex = try? NSRegularExpression(pattern: "&#(\\d+);") else { return self }
         var result = self
         for match in regex.matches(in: self, range: NSRange(startIndex..., in: self)).reversed() {
@@ -651,7 +651,7 @@ extension String {
         return result
     }
 
-    func strippingHTML() -> String {
+    nonisolated func strippingHTML() -> String {
         var text = replacingOccurrences(of: "\r\n", with: "\n")
         text = text.replacingOccurrences(of: "\r", with: "\n")
         let lineBreakTags = #"(?i)<br\s*/?>|</p>|</div>|</li>|</tr>|</h[1-6]>"#

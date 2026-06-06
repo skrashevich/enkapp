@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		980823C52FCCDFD60030CDA4 /* encx-cli-widget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 980823BB2FCCDFD60030CDA4 /* encx-cli-widget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		98AC10142FD2A00000000014 /* AppIcon60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 98AC10162FD2A00000000016 /* AppIcon60x60@2x.png */; };
+		98AC10152FD2A00000000015 /* AppIcon76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = 98AC10172FD2A00000000017 /* AppIcon76x76@2x~ipad.png */; };
+		98AC10112FD2A00000000011 /* enkapp-clip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = 98AC10022FD2A00000000002 /* enkapp-clip.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -17,6 +20,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 980823BC2FCCDFD60030CDA4;
 			remoteInfo = "encx-cli-widget";
+		};
+		98AC10102FD2A00000000010 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 980823A52FCCDFD60030CDA4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 98AC10042FD2A00000000004;
+			remoteInfo = "enkapp-clip";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -32,6 +42,17 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		98AC10122FD2A00000000012 /* Embed App Clips */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/AppClips";
+			dstSubfolderSpec = 16;
+			files = (
+				98AC10112FD2A00000000011 /* enkapp-clip.app in Embed App Clips */,
+			);
+			name = "Embed App Clips";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +60,9 @@
 		980823BB2FCCDFD60030CDA4 /* encx-cli-widget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "encx-cli-widget.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		980823CC2FCCDFD60030CDA4 /* WidgetExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "WidgetExtension-Info.plist"; sourceTree = "<group>"; };
 		98AC10202FD2B00000000020 /* encx-cli-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "encx-cli-Info.plist"; sourceTree = "<group>"; };
+		98AC10022FD2A00000000002 /* enkapp-clip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "enkapp-clip.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		98AC10162FD2A00000000016 /* AppIcon60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png"; sourceTree = "<group>"; };
+		98AC10172FD2A00000000017 /* AppIcon76x76@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon76x76@2x~ipad.png"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -62,6 +86,16 @@
 			path = SharedCore;
 			sourceTree = "<group>";
 		};
+		98AC10072FD2A00000000007 /* enkapp-clip */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "enkapp-clip";
+			sourceTree = "<group>";
+		};
+		98AC10082FD2A00000000008 /* encx-cli/Frameworks */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "encx-cli/Frameworks";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,6 +113,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		98AC10092FD2A00000000009 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -89,6 +130,10 @@
 				980823BD2FCCDFD60030CDA4 /* encx-cli-widget */,
 				980823BE2FCCDFD60030CDA4 /* Shared */,
 				98AC10062FD2A00000000006 /* SharedCore */,
+				98AC10072FD2A00000000007 /* enkapp-clip */,
+				98AC10082FD2A00000000008 /* encx-cli/Frameworks */,
+				98AC10162FD2A00000000016 /* AppIcon60x60@2x.png */,
+				98AC10172FD2A00000000017 /* AppIcon76x76@2x~ipad.png */,
 				980823CC2FCCDFD60030CDA4 /* WidgetExtension-Info.plist */,
 				98AC10202FD2B00000000020 /* encx-cli-Info.plist */,
 				980823AE2FCCDFD60030CDA4 /* Products */,
@@ -100,6 +145,7 @@
 			children = (
 				980823AD2FCCDFD60030CDA4 /* encx-cli.app */,
 				980823BB2FCCDFD60030CDA4 /* encx-cli-widget.appex */,
+				98AC10022FD2A00000000002 /* enkapp-clip.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -115,11 +161,13 @@
 				980823AA2FCCDFD60030CDA4 /* Frameworks */,
 				980823AB2FCCDFD60030CDA4 /* Resources */,
 				980823C32FCCDFD60030CDA4 /* Embed Foundation Extensions */,
+				98AC10122FD2A00000000012 /* Embed App Clips */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				980823C72FCCDFD60030CDA4 /* PBXTargetDependency */,
+				98AC10132FD2A00000000013 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				980823AF2FCCDFD60030CDA4 /* encx-cli */,
@@ -156,6 +204,30 @@
 			productReference = 980823BB2FCCDFD60030CDA4 /* encx-cli-widget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		98AC10042FD2A00000000004 /* enkapp-clip */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 98AC100B2FD2A0000000000B /* Build configuration list for PBXNativeTarget "enkapp-clip" */;
+			buildPhases = (
+				98AC100C2FD2A0000000000C /* Sources */,
+				98AC10092FD2A00000000009 /* Frameworks */,
+				98AC100D2FD2A0000000000D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				98AC10062FD2A00000000006 /* SharedCore */,
+				98AC10072FD2A00000000007 /* enkapp-clip */,
+				98AC10082FD2A00000000008 /* encx-cli/Frameworks */,
+			);
+			name = "enkapp-clip";
+			packageProductDependencies = (
+			);
+			productName = "enkapp-clip";
+			productReference = 98AC10022FD2A00000000002 /* enkapp-clip.app */;
+			productType = "com.apple.product-type.application.on-demand-install-capable";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -170,6 +242,9 @@
 						CreatedOnToolsVersion = 26.5;
 					};
 					980823BC2FCCDFD60030CDA4 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					98AC10042FD2A00000000004 = {
 						CreatedOnToolsVersion = 26.5;
 					};
 				};
@@ -190,6 +265,7 @@
 			targets = (
 				980823AC2FCCDFD60030CDA4 /* encx-cli */,
 				980823BC2FCCDFD60030CDA4 /* encx-cli-widget */,
+				98AC10042FD2A00000000004 /* enkapp-clip */,
 			);
 		};
 /* End PBXProject section */
@@ -206,6 +282,15 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		98AC100D2FD2A0000000000D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				98AC10142FD2A00000000014 /* AppIcon60x60@2x.png in Resources */,
+				98AC10152FD2A00000000015 /* AppIcon76x76@2x~ipad.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -226,6 +311,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		98AC100C2FD2A0000000000C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -233,6 +325,11 @@
 			isa = PBXTargetDependency;
 			target = 980823BC2FCCDFD60030CDA4 /* encx-cli-widget */;
 			targetProxy = 980823C62FCCDFD60030CDA4 /* PBXContainerItemProxy */;
+		};
+		98AC10132FD2A00000000013 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 98AC10042FD2A00000000004 /* enkapp-clip */;
+			targetProxy = 98AC10102FD2A00000000010 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -365,7 +462,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "encx-cli/encx-cli.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEVELOPMENT_TEAM = ZLQX2C6SX2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -404,7 +501,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "encx-cli/encx-cli.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEVELOPMENT_TEAM = ZLQX2C6SX2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -441,7 +538,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "encx-cli-widget/encx-cli-widget.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEVELOPMENT_TEAM = ZLQX2C6SX2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "WidgetExtension-Info.plist";
@@ -469,7 +566,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "encx-cli-widget/encx-cli-widget.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEVELOPMENT_TEAM = ZLQX2C6SX2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "WidgetExtension-Info.plist";
@@ -487,6 +584,84 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		98AC100E2FD2A0000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "enkapp-clip/enkapp-clip-debug.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 32;
+				DEVELOPMENT_TEAM = ZLQX2C6SX2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "enkapp Clip";
+				INFOPLIST_KEY_CFBundleIcons = "{\n    CFBundlePrimaryIcon =     {\n        CFBundleIconFiles =         (\n            AppIcon60x60,\n            AppIcon76x76\n        );\n        CFBundleIconName = AppIcon;\n    };\n}";
+				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = \"com.svk-team.encx-cli.clip\";\n    CFBundleURLSchemes =     (\n        \"enkapp-clip\"\n    );\n}";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.2;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.svk-team.encx-cli.Clip";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		98AC100F2FD2A0000000000F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "enkapp-clip/enkapp-clip.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 32;
+				DEVELOPMENT_TEAM = ZLQX2C6SX2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "enkapp Clip";
+				INFOPLIST_KEY_CFBundleIcons = "{\n    CFBundlePrimaryIcon =     {\n        CFBundleIconFiles =         (\n            AppIcon60x60,\n            AppIcon76x76\n        );\n        CFBundleIconName = AppIcon;\n    };\n}";
+				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = \"com.svk-team.encx-cli.clip\";\n    CFBundleURLSchemes =     (\n        \"enkapp-clip\"\n    );\n}";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.2;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.svk-team.encx-cli.Clip";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -518,6 +693,15 @@
 			buildConfigurations = (
 				980823C92FCCDFD80030CDA4 /* Debug */,
 				980823CA2FCCDFD80030CDA4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		98AC100B2FD2A0000000000B /* Build configuration list for PBXNativeTarget "enkapp-clip" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				98AC100E2FD2A0000000000E /* Debug */,
+				98AC100F2FD2A0000000000F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -207,7 +207,3 @@ final class EncounterShortcutService {
         return isCorrect ? "Код принят: \(answer)" : "Код не подошёл: \(answer)"
     }
 }
-
-extension Notification.Name {
-    static let encxQueueDidChange = Notification.Name("encx.queueDidChange")
-}

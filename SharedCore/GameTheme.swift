@@ -14,7 +14,7 @@ enum GameTheme {
 
 enum GameDurationFormatter {
     /// Examples: `45 сек.`, `56 мин. 54 сек.`, `1 ч. 10 мин. 5 сек.`
-    static func minutesAndSeconds(_ seconds: Int) -> String {
+    nonisolated static func minutesAndSeconds(_ seconds: Int) -> String {
         let total = max(0, seconds)
         let hours = total / 3600
         let minutes = (total % 3600) / 60
@@ -33,21 +33,21 @@ enum GameDurationFormatter {
         return parts.joined(separator: " ")
     }
 
-    static func levelDrainLabel(seconds: Int) -> String {
+    nonisolated static func levelDrainLabel(seconds: Int) -> String {
         if seconds <= 0 {
             return "Слив…"
         }
         return "До слива: \(minutesAndSeconds(seconds))"
     }
 
-    static func helpUnlockLabel(seconds: Int) -> String {
+    nonisolated static func helpUnlockLabel(seconds: Int) -> String {
         if seconds <= 0 {
             return "Открывается…"
         }
         return "Откроется через \(minutesAndSeconds(seconds))"
     }
 
-    static func gameStartLabel(seconds: Int) -> String {
+    nonisolated static func gameStartLabel(seconds: Int) -> String {
         if seconds <= 0 {
             return "Игра начинается…"
         }
