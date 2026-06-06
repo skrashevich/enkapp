@@ -84,12 +84,14 @@ struct AccountGamesView: View {
                     systemImage: "clock.fill",
                     tint: .orange
                 )
-                DashboardMetric(
-                    title: "Домен",
-                    value: "\(filteredDomainGames.count)",
-                    systemImage: "globe",
-                    tint: GameTheme.bonusTitle
-                )
+                if !filteredDomainGames.isEmpty {
+                    DashboardMetric(
+                        title: "Прочие",
+                        value: "\(filteredDomainGames.count)",
+                        systemImage: "globe",
+                        tint: GameTheme.bonusTitle
+                    )
+                }
             }
         }
         .sectionPanel()
