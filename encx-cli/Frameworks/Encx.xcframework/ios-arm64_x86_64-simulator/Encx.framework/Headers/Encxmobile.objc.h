@@ -63,6 +63,10 @@
  */
 - (NSString* _Nonnull)getGameModel:(int64_t)gameID error:(NSError* _Nullable* _Nullable)error;
 /**
+ * GetGameModelLevel returns the state for a specific level number in storm sequence games.
+ */
+- (NSString* _Nonnull)getGameModelLevel:(int64_t)gameID levelNumber:(int64_t)levelNumber error:(NSError* _Nullable* _Nullable)error;
+/**
  * GetGameStatistics returns full game statistics as JSON.
  */
 - (NSString* _Nonnull)getGameStatistics:(int64_t)gameID error:(NSError* _Nullable* _Nullable)error;
@@ -102,6 +106,10 @@
  * PingGame checks engine reachability with the code-send timeout.
  */
 - (NSString* _Nonnull)pingGame:(int64_t)gameID error:(NSError* _Nullable* _Nullable)error;
+/**
+ * SendBonusCode submits a bonus answer via BonusAction.Answer. Returns updated GameModel JSON.
+ */
+- (NSString* _Nonnull)sendBonusCode:(int64_t)gameID levelID:(int64_t)levelID levelNumber:(int64_t)levelNumber code:(NSString* _Nullable)code error:(NSError* _Nullable* _Nullable)error;
 /**
  * SendCode submits an answer via LevelAction.Answer. Returns updated GameModel JSON.
  */

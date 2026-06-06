@@ -8,9 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		980823C52FCCDFD60030CDA4 /* encx-cli-widget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 980823BB2FCCDFD60030CDA4 /* encx-cli-widget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		98AC10142FD2A00000000014 /* AppIcon60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 98AC10162FD2A00000000016 /* AppIcon60x60@2x.png */; };
-		98AC10152FD2A00000000015 /* AppIcon76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = 98AC10172FD2A00000000017 /* AppIcon76x76@2x~ipad.png */; };
 		98AC10112FD2A00000000011 /* enkapp-clip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = 98AC10022FD2A00000000002 /* enkapp-clip.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		98AC10142FD2A00000000014 /* enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 98AC10162FD2A00000000016 /* enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png */; };
+		98AC10152FD2A00000000015 /* enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = 98AC10172FD2A00000000017 /* enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon76x76@2x~ipad.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,10 +59,10 @@
 		980823AD2FCCDFD60030CDA4 /* encx-cli.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "encx-cli.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		980823BB2FCCDFD60030CDA4 /* encx-cli-widget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "encx-cli-widget.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		980823CC2FCCDFD60030CDA4 /* WidgetExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "WidgetExtension-Info.plist"; sourceTree = "<group>"; };
-		98AC10202FD2B00000000020 /* encx-cli-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "encx-cli-Info.plist"; sourceTree = "<group>"; };
 		98AC10022FD2A00000000002 /* enkapp-clip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "enkapp-clip.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		98AC10162FD2A00000000016 /* AppIcon60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png"; sourceTree = "<group>"; };
-		98AC10172FD2A00000000017 /* AppIcon76x76@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon76x76@2x~ipad.png"; sourceTree = "<group>"; };
+		98AC10162FD2A00000000016 /* enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png"; sourceTree = "<group>"; };
+		98AC10172FD2A00000000017 /* enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon76x76@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon76x76@2x~ipad.png"; sourceTree = "<group>"; };
+		98AC10202FD2B00000000020 /* encx-cli-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "encx-cli-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -132,8 +132,8 @@
 				98AC10062FD2A00000000006 /* SharedCore */,
 				98AC10072FD2A00000000007 /* enkapp-clip */,
 				98AC10082FD2A00000000008 /* encx-cli/Frameworks */,
-				98AC10162FD2A00000000016 /* AppIcon60x60@2x.png */,
-				98AC10172FD2A00000000017 /* AppIcon76x76@2x~ipad.png */,
+				98AC10162FD2A00000000016 /* enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png */,
+				98AC10172FD2A00000000017 /* enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon76x76@2x~ipad.png */,
 				980823CC2FCCDFD60030CDA4 /* WidgetExtension-Info.plist */,
 				98AC10202FD2B00000000020 /* encx-cli-Info.plist */,
 				980823AE2FCCDFD60030CDA4 /* Products */,
@@ -289,8 +289,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				98AC10142FD2A00000000014 /* AppIcon60x60@2x.png in Resources */,
-				98AC10152FD2A00000000015 /* AppIcon76x76@2x~ipad.png in Resources */,
+				98AC10142FD2A00000000014 /* enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon60x60@2x.png in Resources */,
+				98AC10152FD2A00000000015 /* enkapp-clip/Assets.xcassets/AppIcon.appiconset/AppIcon76x76@2x~ipad.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -462,7 +462,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "encx-cli/encx-cli.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = ZLQX2C6SX2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -501,7 +501,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "encx-cli/encx-cli.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = ZLQX2C6SX2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -538,7 +538,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "encx-cli-widget/encx-cli-widget.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_TEAM = ZLQX2C6SX2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "WidgetExtension-Info.plist";
@@ -566,7 +566,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "encx-cli-widget/encx-cli-widget.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_TEAM = ZLQX2C6SX2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "WidgetExtension-Info.plist";
@@ -595,7 +595,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "enkapp-clip/enkapp-clip-debug.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = ZLQX2C6SX2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -634,7 +634,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "enkapp-clip/enkapp-clip.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = ZLQX2C6SX2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
