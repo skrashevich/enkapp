@@ -8,7 +8,14 @@ extension EncounterViewModel {
     static func screenshotModelIfRequested() -> EncounterViewModel? {
         let arguments = ProcessInfo.processInfo.arguments
         guard arguments.contains("--screenshots") else { return nil }
-        let screen: AppScreen = arguments.contains("--screenshot-game") ? .game : .games
+        let screen: AppScreen
+        if arguments.contains("--screenshot-team") {
+            screen = .team
+        } else if arguments.contains("--screenshot-game") {
+            screen = .game
+        } else {
+            screen = .games
+        }
         return screenshotModel(selectedScreen: screen)
     }
 
@@ -29,6 +36,10 @@ extension EncounterViewModel {
         domainGames = Self.decodeFixture([DomainGame].self, from: Self.domainGamesJSON)
         selectedGameID = 82034
         currentModel = Self.decodeFixture(GameModel.self, from: Self.gameJSON)
+        myTeams = Self.decodeFixture([TeamInfo].self, from: Self.myTeamsJSON)
+        selectedTeamID = 404
+        teamManagementInfo = Self.decodeFixture(TeamManagementInfo.self, from: Self.teamManagementJSON)
+        teamInvitations = Self.decodeFixture([TeamInvitation].self, from: Self.teamInvitationsJSON)
         gameStartCountdown = nil
         self.selectedScreen = selectedScreen
         statusMessage = "Демо-режим для скриншотов"
@@ -86,6 +97,37 @@ extension EncounterViewModel {
       { "gameId": 82071, "title": "Архивный EN-спринт" },
       { "gameId": 82072, "title": "Тренировка кодов" }
     ]
+    """
+
+    private static let myTeamsJSON = """
+    [
+      { "teamId": 404, "name": "Команда 404" },
+      { "teamId": 512, "name": "Байты и кофе" },
+      { "teamId": 777, "name": "Ночные координаты" }
+    ]
+    """
+
+    private static let teamInvitationsJSON = """
+    [
+      { "team_id": 901, "name": "Секретный отдел", "action": "accept" },
+      { "team_id": 902, "name": "Полевой штаб", "action": "accept" }
+    ]
+    """
+
+    private static let teamManagementJSON = """
+    {
+      "team_id": 404,
+      "team_name": "Команда 404",
+      "pending_invitations": [
+        { "user_id": 101, "login": "alice" },
+        { "user_id": 102, "login": "bob" },
+        { "user_id": 103, "login": "charlie" }
+      ],
+      "actions": {
+        "invite": "/team/invite",
+        "leave": "/team/leave"
+      }
+    }
     """
 
     private static let gameJSON = """

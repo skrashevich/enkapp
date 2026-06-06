@@ -144,6 +144,11 @@ capture_device() {
   sleep 2
   xcrun simctl io "$udid" screenshot "$output_dir/03-settings.png"
   resize_png "$output_dir/03-settings.png" "$size"
+
+  xcrun simctl launch --terminate-running-process "$udid" "$BUNDLE_ID" --screenshots --screenshot-team
+  sleep 2
+  xcrun simctl io "$udid" screenshot "$output_dir/04-team.png"
+  resize_png "$output_dir/04-team.png" "$size"
 }
 
 capture_device "$iphone_udid" "$OUTPUT_DIR/iphone" "$IPHONE_SIZE"
