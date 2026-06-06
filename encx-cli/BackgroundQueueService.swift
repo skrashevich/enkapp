@@ -91,17 +91,29 @@ final class BackgroundQueueService {
     }
 
     private func beginBackgroundTask() -> UIBackgroundTaskIdentifier {
-        var taskID: UIBackgroundTaskIdentifier = .invalid
-        taskID = UIApplication.shared.beginBackgroundTask(withName: "queue-flush-loop") {
-            if taskID != .invalid {
-                UIApplication.shared.endBackgroundTask(taskID)
+        let token = BackgroundTaskToken()
+        let taskID = UIApplication.shared.beginBackgroundTask(withName: "queue-flush-loop") {
+            Task { @MainActor in
+                token.end()
             }
         }
+        token.taskID = taskID
         return taskID
     }
 
     private func endBackgroundTask(_ taskID: UIBackgroundTaskIdentifier) {
         guard taskID != .invalid else { return }
         UIApplication.shared.endBackgroundTask(taskID)
+    }
+}
+
+@MainActor
+private final class BackgroundTaskToken {
+    var taskID: UIBackgroundTaskIdentifier = .invalid
+
+    func end() {
+        guard taskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(taskID)
+        taskID = .invalid
     }
 }
