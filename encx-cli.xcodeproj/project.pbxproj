@@ -57,6 +57,11 @@
 			path = Shared;
 			sourceTree = "<group>";
 		};
+		98AC10062FD2A00000000006 /* SharedCore */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SharedCore;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -83,6 +88,7 @@
 				980823AF2FCCDFD60030CDA4 /* encx-cli */,
 				980823BD2FCCDFD60030CDA4 /* encx-cli-widget */,
 				980823BE2FCCDFD60030CDA4 /* Shared */,
+				98AC10062FD2A00000000006 /* SharedCore */,
 				980823CC2FCCDFD60030CDA4 /* WidgetExtension-Info.plist */,
 				98AC10202FD2B00000000020 /* encx-cli-Info.plist */,
 				980823AE2FCCDFD60030CDA4 /* Products */,
@@ -118,6 +124,7 @@
 			fileSystemSynchronizedGroups = (
 				980823AF2FCCDFD60030CDA4 /* encx-cli */,
 				980823BE2FCCDFD60030CDA4 /* Shared */,
+				98AC10062FD2A00000000006 /* SharedCore */,
 			);
 			name = "encx-cli";
 			packageProductDependencies = (

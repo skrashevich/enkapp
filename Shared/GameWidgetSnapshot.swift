@@ -6,12 +6,31 @@ enum GameWidgetSnapshotStore {
     static let snapshotKey = "encx.widget.snapshot"
     static let widgetKind = "GameHomeScreenWidget"
 
-    private static var defaults: UserDefaults? {
-        UserDefaults(suiteName: appGroupID)
+    private static var isRunningInPreview: Bool {
+        ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
     }
 
+    private static let snapshotURL: URL? = {
+        guard !isRunningInPreview else { return nil }
+        guard let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupID
+        ) else {
+            return nil
+        }
+        let directory = containerURL
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("GameWidgetSnapshotStore", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        return directory.appendingPathComponent("snapshot.json")
+    }()
+
     static func load() -> GameWidgetSnapshot? {
-        guard let data = defaults?.data(forKey: snapshotKey),
+        guard let snapshotURL,
+              let data = try? Data(contentsOf: snapshotURL),
               let decoded = try? JSONDecoder().decode(GameWidgetSnapshot.self, from: data) else {
             return nil
         }
@@ -19,13 +38,18 @@ enum GameWidgetSnapshotStore {
     }
 
     static func save(_ snapshot: GameWidgetSnapshot) {
-        guard let data = try? JSONEncoder().encode(snapshot) else { return }
-        defaults?.set(data, forKey: snapshotKey)
+        guard let data = try? JSONEncoder().encode(snapshot),
+              let snapshotURL else {
+            return
+        }
+        try? data.write(to: snapshotURL, options: .atomic)
         WidgetCenter.shared.reloadTimelines(ofKind: widgetKind)
     }
 
     static func clear() {
-        defaults?.removeObject(forKey: snapshotKey)
+        if let snapshotURL {
+            try? FileManager.default.removeItem(at: snapshotURL)
+        }
         WidgetCenter.shared.reloadTimelines(ofKind: widgetKind)
     }
 }

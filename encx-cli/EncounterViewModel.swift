@@ -260,12 +260,10 @@ final class EncounterViewModel {
     }
 
     init() {
-        let hadSavedSettings = UserDefaults.standard.data(forKey: settingsKey) != nil
-        if let data = UserDefaults.standard.data(forKey: settingsKey),
-           let decoded = try? JSONDecoder().decode(DomainSettings.self, from: data) {
-            settings = decoded
-        }
-        login = UserDefaults.standard.string(forKey: loginKey) ?? ""
+        EncounterSessionStore.migrateLegacyStorageIfNeeded()
+        let hadSavedSettings = EncounterSharedStorage.data(forKey: settingsKey) != nil
+        settings = EncounterSessionStore.loadSettings()
+        login = EncounterSessionStore.loadLogin()
         if let saved = UserDefaults.standard.stringArray(forKey: knownDomainsKey), !saved.isEmpty {
             knownDomains = saved
         } else {
@@ -761,7 +759,7 @@ final class EncounterViewModel {
 
     func persistAuthorizationSettings() {
         saveSettings()
-        UserDefaults.standard.set(login, forKey: loginKey)
+        EncounterSessionStore.saveLogin(login)
     }
 
     func applyHARRecordingSetting() {
@@ -1307,28 +1305,15 @@ final class EncounterViewModel {
     }
 
     private func saveSettings() {
-        guard let data = try? JSONEncoder().encode(settings) else { return }
-        UserDefaults.standard.set(data, forKey: settingsKey)
+        EncounterSessionStore.saveSettings(settings)
     }
 
     private func saveCookies(from client: EncounterClient) throws {
-        let data = try client.exportCookies()
-        UserDefaults.standard.set(data, forKey: sessionCookiesKey)
+        EncounterSessionStore.saveSessionCookies(try client.exportCookies())
     }
 
     private func loadSessionCookies() -> Data? {
-        if let data = UserDefaults.standard.data(forKey: sessionCookiesKey) {
-            return data
-        }
-        if let legacy = UserDefaults.standard.data(forKey: cookiesKey(for: settings.domain)) {
-            UserDefaults.standard.set(legacy, forKey: sessionCookiesKey)
-            return legacy
-        }
-        return nil
-    }
-
-    private func cookiesKey(for domain: String) -> String {
-        "encx.cookies.\(domain.lowercased())"
+        EncounterSessionStore.loadSessionCookies()
     }
 
     @discardableResult

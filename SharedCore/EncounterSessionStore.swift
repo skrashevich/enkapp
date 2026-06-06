@@ -6,8 +6,24 @@ enum EncounterSessionStore {
     static let sessionCookiesKey = "encx.session.cookies"
     static let selectedGameIDKey = "encx.selectedGameID"
 
+    private static let migrationKeys = [
+        settingsKey,
+        loginKey,
+        sessionCookiesKey,
+        selectedGameIDKey,
+    ]
+
+    private static let didMigrateLegacyStorage: Void = {
+        EncounterSharedStorage.migrateFromStandard(keys: migrationKeys)
+    }()
+
+    static func migrateLegacyStorageIfNeeded() {
+        _ = didMigrateLegacyStorage
+    }
+
     static func loadSettings() -> DomainSettings {
-        guard let data = UserDefaults.standard.data(forKey: settingsKey),
+        migrateLegacyStorageIfNeeded()
+        guard let data = EncounterSharedStorage.data(forKey: settingsKey),
               let decoded = try? JSONDecoder().decode(DomainSettings.self, from: data) else {
             return DomainSettings()
         }
@@ -16,46 +32,50 @@ enum EncounterSessionStore {
 
     static func saveSettings(_ settings: DomainSettings) {
         guard let data = try? JSONEncoder().encode(settings) else { return }
-        UserDefaults.standard.set(data, forKey: settingsKey)
+        EncounterSharedStorage.set(data, forKey: settingsKey)
     }
 
     static func loadLogin() -> String {
-        UserDefaults.standard.string(forKey: loginKey) ?? ""
+        migrateLegacyStorageIfNeeded()
+        return EncounterSharedStorage.string(forKey: loginKey) ?? ""
     }
 
     static func saveLogin(_ login: String) {
-        UserDefaults.standard.set(login, forKey: loginKey)
+        EncounterSharedStorage.set(login, forKey: loginKey)
     }
 
     static func loadSelectedGameID() -> Int64? {
-        let value = UserDefaults.standard.object(forKey: selectedGameIDKey) as? Int64
-            ?? UserDefaults.standard.object(forKey: selectedGameIDKey).flatMap { $0 as? Int }.map(Int64.init)
+        migrateLegacyStorageIfNeeded()
+        let stored = EncounterSharedStorage.object(forKey: selectedGameIDKey)
+        let value = stored as? Int64
+            ?? stored.flatMap { $0 as? Int }.map(Int64.init)
         return value
     }
 
     static func saveSelectedGameID(_ gameID: Int64?) {
         if let gameID {
-            UserDefaults.standard.set(gameID, forKey: selectedGameIDKey)
+            EncounterSharedStorage.set(gameID, forKey: selectedGameIDKey)
         } else {
-            UserDefaults.standard.removeObject(forKey: selectedGameIDKey)
+            EncounterSharedStorage.removeObject(forKey: selectedGameIDKey)
         }
     }
 
     static func loadSessionCookies() -> Data? {
-        if let data = UserDefaults.standard.data(forKey: sessionCookiesKey) {
+        migrateLegacyStorageIfNeeded()
+        if let data = EncounterSharedStorage.data(forKey: sessionCookiesKey) {
             return data
         }
         let domain = loadSettings().domain
         let legacyKey = "encx.cookies.\(domain.lowercased())"
-        if let legacy = UserDefaults.standard.data(forKey: legacyKey) {
-            UserDefaults.standard.set(legacy, forKey: sessionCookiesKey)
+        if let legacy = EncounterSharedStorage.data(forKey: legacyKey) {
+            EncounterSharedStorage.set(legacy, forKey: sessionCookiesKey)
             return legacy
         }
         return nil
     }
 
     static func saveSessionCookies(_ data: Data) {
-        UserDefaults.standard.set(data, forKey: sessionCookiesKey)
+        EncounterSharedStorage.set(data, forKey: sessionCookiesKey)
     }
 
     static func hasStoredCredentials(settings: DomainSettings, login: String) -> Bool {
