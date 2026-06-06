@@ -32,6 +32,63 @@ extension View {
     }
 }
 
+struct DisconnectFromGameButton: View {
+    let model: EncounterViewModel
+
+    var body: some View {
+        Button {
+            Task { await model.stopGameMonitoring() }
+        } label: {
+            Label("Отключиться от игры", systemImage: "rectangle.portrait.and.arrow.forward")
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.orange)
+        .disabled(model.isBusy)
+        .accessibilityLabel("Отключиться от игры")
+        .accessibilityHint("Прекратить мониторинг, Live Activity и уведомления об уровнях")
+    }
+}
+
+struct GameMonitoringBanner: View {
+    let model: EncounterViewModel
+
+    private var gameTitle: String {
+        if let model = model.currentModel, !model.gameTitle.isEmpty {
+            return model.gameTitle
+        }
+        if let gameID = model.selectedGameID,
+           let game = model.games.first(where: { $0.id == Int(gameID) }) {
+            return game.title
+        }
+        if let gameID = model.selectedGameID {
+            return "Игра #\(gameID)"
+        }
+        return "Игра"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .foregroundStyle(GameTheme.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Слежение за игрой")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GameTheme.text)
+                    Text(gameTitle)
+                        .font(.caption)
+                        .foregroundStyle(GameTheme.muted)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
+            DisconnectFromGameButton(model: model)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .sectionPanel()
+    }
+}
+
 struct GameActionRow: View {
     let game: GameInfo
     let badge: String

@@ -10,6 +10,10 @@ struct AccountGamesView: View {
             LazyVStack(alignment: .leading, spacing: 16) {
                 headerSection
 
+                if model.isMonitoringGame {
+                    GameMonitoringBanner(model: model)
+                }
+
                 if !model.hasStoredSession && model.games.isEmpty && model.domainGames.isEmpty {
                     ContentUnavailableView {
                         Label("Войдите в аккаунт", systemImage: "person.crop.circle")

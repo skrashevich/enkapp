@@ -245,6 +245,10 @@ final class EncounterViewModel {
         currentModel?.isGameComplete == true
     }
 
+    var isMonitoringGame: Bool {
+        selectedGameID != nil
+    }
+
     var hasStoredSession: Bool {
         loadSessionCookies() != nil || hasStoredCredentials
     }
@@ -502,6 +506,25 @@ final class EncounterViewModel {
             await flushQueueNow(silent: true)
             await syncLiveActivity()
         }
+    }
+
+    func stopGameMonitoring() async {
+        let stoppedGameID = selectedGameID
+        selectGame(nil)
+        currentModel = nil
+        gameStartCountdown = nil
+        lastGamePollDate = nil
+        lastSyncedLiveActivityState = nil
+        lastCodeResult = nil
+        serverRoundTripMs = nil
+        statusMessage = ""
+        selectedScreen = .games
+        updateScreenWakeLock()
+        if let stoppedGameID {
+            GameEventNotificationService.shared.clearSnapshot(gameID: stoppedGameID)
+        }
+        await liveActivity.end()
+        syncWidgetSnapshot()
     }
 
     func openGame(_ gameID: Int64, presentErrors: Bool = true) async -> Bool {
@@ -977,6 +1000,8 @@ final class EncounterViewModel {
     }
 
     private func setCurrentModel(_ model: GameModel) {
+        guard let selectedGameID, selectedGameID == Int64(model.gameID) else { return }
+
         let wasPlayable = currentModel?.isPlayable ?? true
         currentModel = model
         liveActivityModelAnchor = Date()
