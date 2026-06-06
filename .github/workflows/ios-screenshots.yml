@@ -41,6 +41,9 @@ jobs:
         run: |
           mkdir -p build/pages/screenshots
           cp -R build/screenshots/. build/pages/screenshots/
+          if [ -d docs ]; then
+            cp -R docs/. build/pages/
+          fi
 
       - name: Configure Pages
         if: github.event_name == 'push'
