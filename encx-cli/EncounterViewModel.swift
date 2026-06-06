@@ -5,11 +5,13 @@ import UIKit
 enum AppScreen: Hashable {
     case games
     case game
+    case team
 
     var title: String {
         switch self {
         case .games: return "Игры"
         case .game: return "Игра"
+        case .team: return "Команда"
         }
     }
 }
@@ -61,6 +63,10 @@ final class EncounterViewModel {
     var password = ""
     var games: [GameInfo] = []
     var domainGames: [DomainGame] = []
+    var myTeams: [TeamInfo] = []
+    var selectedTeamID: Int64?
+    var teamManagementInfo: TeamManagementInfo?
+    var teamInvitations: [TeamInvitation] = []
     @ObservationIgnored private var moderationByGameID: [Int: Bool] = [:]
     var selectedGameID: Int64?
     var currentModel: GameModel?
@@ -148,6 +154,24 @@ final class EncounterViewModel {
 
     var upcomingGames: [GameInfo] {
         games.filter { !$0.started && !$0.finished }
+    }
+
+    var selectedTeam: TeamInfo? {
+        guard let selectedTeamID else { return myTeams.first }
+        return myTeams.first { Int64($0.id) == selectedTeamID }
+    }
+
+    var currentTeamID: Int64? {
+        if let selectedTeamID { return selectedTeamID }
+        if let teamManagementInfo { return Int64(teamManagementInfo.teamID) }
+        return myTeams.first.map { Int64($0.id) }
+    }
+
+    var currentTeamName: String {
+        if let teamManagementInfo, !teamManagementInfo.teamName.isEmpty {
+            return teamManagementInfo.teamName
+        }
+        return selectedTeam?.name ?? ""
     }
 
     func isGameActive(_ game: GameInfo) -> Bool {
@@ -468,6 +492,141 @@ final class EncounterViewModel {
     func refreshGames() async {
         await runBusy("Загрузка игр...") {
             try await refreshGamesNow()
+        }
+    }
+
+    func refreshTeam() async {
+        guard hasStoredSession else {
+            myTeams = []
+            selectedTeamID = nil
+            teamManagementInfo = nil
+            teamInvitations = []
+            errorMessage = "Войдите в аккаунт в настройках, чтобы управлять командой."
+            return
+        }
+
+        await runBusy("Загрузка команды...") {
+            try await refreshTeamNow()
+        }
+    }
+
+    func selectTeam(_ teamID: Int64) async {
+        selectedTeamID = teamID
+        await runBusy("Загрузка команды...") {
+            teamManagementInfo = try await withSessionRecovery {
+                try await $0.teamManagementInfo(teamID: teamID)
+            }
+            try saveCookies(from: try ensureClient())
+            statusMessage = "Команда загружена"
+        }
+    }
+
+    func requestTeamMembership(_ teamName: String) async {
+        let trimmed = teamName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            statusMessage = "Введите название команды"
+            return
+        }
+        await runBusy("Отправка заявки...") {
+            try await withSessionRecovery { try await $0.requestTeamMembership(teamName: trimmed) }
+            try saveCookies(from: try ensureClient())
+            try await refreshTeamNow()
+            statusMessage = "Заявка отправлена"
+        }
+    }
+
+    func acceptTeamInvitation(_ invitation: TeamInvitation) async {
+        await runBusy("Принятие приглашения...") {
+            try await withSessionRecovery { try await $0.acceptTeamInvitation(teamID: Int64(invitation.teamID)) }
+            try saveCookies(from: try ensureClient())
+            try await refreshTeamNow(preferredTeamID: Int64(invitation.teamID))
+            statusMessage = "Приглашение принято"
+        }
+    }
+
+    func rejectTeamInvitation(_ invitation: TeamInvitation) async {
+        await runBusy("Отклонение приглашения...") {
+            try await withSessionRecovery { try await $0.rejectTeamInvitation(teamID: Int64(invitation.teamID)) }
+            try saveCookies(from: try ensureClient())
+            try await refreshTeamNow()
+            statusMessage = "Приглашение отклонено"
+        }
+    }
+
+    func inviteTeamMember(login: String) async {
+        guard let teamID = currentTeamID else {
+            statusMessage = "Команда не выбрана"
+            return
+        }
+        let trimmed = login.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            statusMessage = "Введите логин игрока"
+            return
+        }
+        await runBusy("Отправка приглашения...") {
+            try await withSessionRecovery {
+                try await $0.inviteTeamMember(teamID: teamID, login: trimmed)
+            }
+            try saveCookies(from: try ensureClient())
+            try await refreshTeamNow(preferredTeamID: teamID)
+            statusMessage = "Приглашение отправлено"
+        }
+    }
+
+    func removeTeamInvitation(_ invitation: TeamPendingInvitation) async {
+        guard let teamID = currentTeamID else { return }
+        await runBusy("Отзыв приглашения...") {
+            try await withSessionRecovery {
+                try await $0.removeTeamInvitation(teamID: teamID, userID: Int64(invitation.userID))
+            }
+            try saveCookies(from: try ensureClient())
+            try await refreshTeamNow(preferredTeamID: teamID)
+            statusMessage = "Приглашение отозвано"
+        }
+    }
+
+    func leaveCurrentTeam() async {
+        guard let teamID = currentTeamID else { return }
+        await runBusy("Выход из команды...") {
+            try await withSessionRecovery { try await $0.leaveTeam(teamID: teamID) }
+            try saveCookies(from: try ensureClient())
+            try await refreshTeamNow()
+            statusMessage = "Вы вышли из команды"
+        }
+    }
+
+    func renameCurrentTeam(_ name: String) async {
+        guard let teamID = currentTeamID else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            statusMessage = "Введите название команды"
+            return
+        }
+        await runBusy("Переименование команды...") {
+            try await withSessionRecovery { try await $0.renameTeam(teamID: teamID, name: trimmed) }
+            try saveCookies(from: try ensureClient())
+            try await refreshTeamNow(preferredTeamID: teamID)
+            statusMessage = "Название обновлено"
+        }
+    }
+
+    func updateCurrentTeamSite(_ site: String) async {
+        guard let teamID = currentTeamID else { return }
+        await runBusy("Обновление сайта...") {
+            try await withSessionRecovery { try await $0.setTeamSite(teamID: teamID, site: site.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            try saveCookies(from: try ensureClient())
+            statusMessage = "Сайт команды обновлён"
+            try await refreshTeamNow(preferredTeamID: teamID)
+        }
+    }
+
+    func updateCurrentTeamForum(_ forum: String) async {
+        guard let teamID = currentTeamID else { return }
+        await runBusy("Обновление форума...") {
+            try await withSessionRecovery { try await $0.setTeamForum(teamID: teamID, forum: forum.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            try saveCookies(from: try ensureClient())
+            statusMessage = "Форум команды обновлён"
+            try await refreshTeamNow(preferredTeamID: teamID)
         }
     }
 
@@ -1403,6 +1562,41 @@ final class EncounterViewModel {
             domainGames = (try? client.domainGames()) ?? []
             try saveCookies(from: client)
             statusMessage = games.isEmpty && domainGames.isEmpty ? "Игры не найдены" : "Игры загружены"
+        }
+    }
+
+    private func refreshTeamNow(preferredTeamID: Int64? = nil) async throws {
+        try await withSessionRecovery { client in
+            async let invitationsResult = client.teamInvitations()
+            async let htmlResult = client.myTeamDetailsHTML()
+
+            let html = try await htmlResult
+            let teams = try await client.teamLinks(from: html)
+            let invitations = try await invitationsResult
+
+            myTeams = teams
+            teamInvitations = invitations
+
+            let nextTeamID = preferredTeamID
+                ?? selectedTeamID.flatMap { id in teams.contains { Int64($0.id) == id } ? id : nil }
+                ?? teams.first.map { Int64($0.id) }
+            selectedTeamID = nextTeamID
+
+            if let nextTeamID {
+                teamManagementInfo = try await client.teamManagementInfo(teamID: nextTeamID)
+            } else {
+                teamManagementInfo = nil
+            }
+
+            try saveCookies(from: client)
+            if let nextTeamID {
+                let name = currentTeamName.isEmpty ? "#\(nextTeamID)" : currentTeamName
+                statusMessage = "Команда загружена: \(name)"
+            } else if !invitations.isEmpty {
+                statusMessage = "Есть приглашения в команду"
+            } else {
+                statusMessage = "Команда не найдена"
+            }
         }
     }
 

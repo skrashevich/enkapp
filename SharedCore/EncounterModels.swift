@@ -102,6 +102,83 @@ nonisolated struct UserProfile: Decodable {
     }
 }
 
+nonisolated struct TeamInfo: Decodable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+
+    enum CodingKeys: String, CodingKey {
+        case id = "teamId"
+        case name
+    }
+}
+
+nonisolated struct TeamInvitation: Decodable, Identifiable, Hashable {
+    let teamID: Int
+    let name: String
+    let action: String
+
+    var id: Int { teamID }
+    var displayName: String { name.isEmpty ? "#\(teamID)" : name }
+
+    enum CodingKeys: String, CodingKey {
+        case teamID = "team_id"
+        case name
+        case action
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        teamID = try container.decode(Int.self, forKey: .teamID)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        action = try container.decodeIfPresent(String.self, forKey: .action) ?? ""
+    }
+}
+
+nonisolated struct TeamPendingInvitation: Decodable, Identifiable, Hashable {
+    let userID: Int
+    let login: String
+
+    var id: Int { userID }
+    var displayName: String { login.isEmpty ? "User #\(userID)" : login }
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case login
+    }
+}
+
+nonisolated struct TeamManagementInfo: Decodable, Hashable {
+    let teamID: Int
+    let teamName: String
+    let pendingInvitations: [TeamPendingInvitation]
+    let actions: [String: String]
+
+    enum CodingKeys: String, CodingKey {
+        case teamID = "team_id"
+        case teamName = "team_name"
+        case pendingInvitations = "pending_invitations"
+        case actions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        teamID = try container.decode(Int.self, forKey: .teamID)
+        teamName = try container.decodeIfPresent(String.self, forKey: .teamName) ?? ""
+        pendingInvitations = try container.decodeIfPresent([TeamPendingInvitation].self, forKey: .pendingInvitations) ?? []
+        actions = try container.decodeIfPresent([String: String].self, forKey: .actions) ?? [:]
+    }
+
+    var canInviteMembers: Bool {
+        actions.keys.contains("invite") || !teamName.isEmpty
+    }
+
+    var canLeave: Bool {
+        actions.keys.contains { key in
+            key.contains("leave") || key.contains("quit") || key.contains("exit")
+        }
+    }
+}
+
 nonisolated struct DomainGame: Decodable, Identifiable, Hashable {
     let id: Int
     let title: String

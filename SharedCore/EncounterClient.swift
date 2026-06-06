@@ -169,6 +169,122 @@ nonisolated final class EncounterClient {
         #endif
     }
 
+    func teamLinks(from html: String) throws -> [TeamInfo] {
+        #if canImport(Encx)
+        var error: NSError?
+        let json = EncxmobileParseTeamLinks(html, &error)
+        if let error { throw error }
+        return try decode([TeamInfo].self, from: json)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func myTeamDetailsHTML() throws -> String {
+        #if canImport(Encx)
+        var error: NSError?
+        let html = client.getMyTeamDetails(&error)
+        if let error { throw error }
+        return html
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func teamManagementInfo(teamID: Int64) throws -> TeamManagementInfo {
+        #if canImport(Encx)
+        var error: NSError?
+        let json = client.getTeamManagementInfo(teamID, error: &error)
+        if let error { throw error }
+        return try decode(TeamManagementInfo.self, from: json)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func teamInvitations() throws -> [TeamInvitation] {
+        #if canImport(Encx)
+        var error: NSError?
+        let json = client.getTeamInvitations(&error)
+        if let error { throw error }
+        return try decode([TeamInvitation].self, from: json)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func acceptTeamInvitation(teamID: Int64) throws {
+        #if canImport(Encx)
+        try client.acceptTeamInvitation(teamID)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func rejectTeamInvitation(teamID: Int64) throws {
+        #if canImport(Encx)
+        try client.rejectTeamInvitation(teamID)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func requestTeamMembership(teamName: String) throws {
+        #if canImport(Encx)
+        try client.requestTeamMembership(teamName)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func inviteTeamMember(teamID: Int64, login: String) throws {
+        #if canImport(Encx)
+        try client.inviteTeamMember(teamID, login: login)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func removeTeamInvitation(teamID: Int64, userID: Int64) throws {
+        #if canImport(Encx)
+        try client.removeTeamInvitation(teamID, userID: userID)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func leaveTeam(teamID: Int64) throws {
+        #if canImport(Encx)
+        try client.leaveTeam(teamID)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func renameTeam(teamID: Int64, name: String) throws {
+        #if canImport(Encx)
+        try client.renameTeam(teamID, name: name)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func setTeamSite(teamID: Int64, site: String) throws {
+        #if canImport(Encx)
+        try client.setTeamSite(teamID, site: site)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func setTeamForum(teamID: Int64, forum: String) throws {
+        #if canImport(Encx)
+        try client.setTeamForum(teamID, forum: forum)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
     func gameList(page: Int64 = 0) throws -> GameListResponse {
         #if canImport(Encx)
         var error: NSError?
@@ -347,6 +463,84 @@ nonisolated final class EncounterClient {
     func gameStatistics(gameID: Int64) async throws -> GameStatisticsResponse {
         try await Task.detached(priority: .userInitiated) {
             try self.gameStatistics(gameID: gameID)
+        }.value
+    }
+
+    func teamLinks(from html: String) async throws -> [TeamInfo] {
+        try await Task.detached(priority: .userInitiated) {
+            try self.teamLinks(from: html)
+        }.value
+    }
+
+    func myTeamDetailsHTML() async throws -> String {
+        try await Task.detached(priority: .userInitiated) {
+            try self.myTeamDetailsHTML()
+        }.value
+    }
+
+    func teamManagementInfo(teamID: Int64) async throws -> TeamManagementInfo {
+        try await Task.detached(priority: .userInitiated) {
+            try self.teamManagementInfo(teamID: teamID)
+        }.value
+    }
+
+    func teamInvitations() async throws -> [TeamInvitation] {
+        try await Task.detached(priority: .userInitiated) {
+            try self.teamInvitations()
+        }.value
+    }
+
+    func acceptTeamInvitation(teamID: Int64) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try self.acceptTeamInvitation(teamID: teamID)
+        }.value
+    }
+
+    func rejectTeamInvitation(teamID: Int64) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try self.rejectTeamInvitation(teamID: teamID)
+        }.value
+    }
+
+    func requestTeamMembership(teamName: String) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try self.requestTeamMembership(teamName: teamName)
+        }.value
+    }
+
+    func inviteTeamMember(teamID: Int64, login: String) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try self.inviteTeamMember(teamID: teamID, login: login)
+        }.value
+    }
+
+    func removeTeamInvitation(teamID: Int64, userID: Int64) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try self.removeTeamInvitation(teamID: teamID, userID: userID)
+        }.value
+    }
+
+    func leaveTeam(teamID: Int64) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try self.leaveTeam(teamID: teamID)
+        }.value
+    }
+
+    func renameTeam(teamID: Int64, name: String) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try self.renameTeam(teamID: teamID, name: name)
+        }.value
+    }
+
+    func setTeamSite(teamID: Int64, site: String) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try self.setTeamSite(teamID: teamID, site: site)
+        }.value
+    }
+
+    func setTeamForum(teamID: Int64, forum: String) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try self.setTeamForum(teamID: teamID, forum: forum)
         }.value
     }
 

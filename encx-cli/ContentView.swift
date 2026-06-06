@@ -92,6 +92,8 @@ struct ContentView: View {
                 AccountGamesView(model: model)
                 case .game:
                 LevelPlayView(model: model)
+                case .team:
+                TeamManagementView(model: model)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -110,6 +112,15 @@ struct ContentView: View {
                         }
                         .tint(GameTheme.text)
                         .disabled(model.isBusy)
+
+                        Button {
+                            model.selectedScreen = .team
+                        } label: {
+                            Image(systemName: "person.2.fill")
+                        }
+                        .tint(model.selectedScreen == .team ? GameTheme.accent : GameTheme.text)
+                        .disabled(model.isBusy)
+                        .accessibilityLabel("Управление командой")
 
                         NavigationLink {
                             SettingsView(model: model)
@@ -191,6 +202,8 @@ struct ContentView: View {
             await model.refreshGames()
         case .game:
             await model.refreshLevel()
+        case .team:
+            await model.refreshTeam()
         }
     }
 }
