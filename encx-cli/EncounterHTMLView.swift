@@ -81,7 +81,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
           html, body {
             margin: 0;
             padding: 0;
-            background: #000;
+            background: transparent;
             color: #fff;
             font: 15px/1.45 -apple-system, BlinkMacSystemFont, sans-serif;
             overflow: visible;

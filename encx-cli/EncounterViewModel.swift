@@ -122,6 +122,7 @@ final class EncounterViewModel {
     /// Anchor for Live Activity countdowns; updated when `currentModel` changes, not on every sync.
     private var liveActivityModelAnchor = Date()
     private var lastSyncedLiveActivityState: QueueActivityAttributes.ContentState?
+    private var hintUnlockRefreshTask: Task<Void, Never>?
     private var harEntryCountRefreshTask: Task<Void, Never>?
 
     var shouldKeepScreenAwake: Bool {
@@ -343,6 +344,7 @@ final class EncounterViewModel {
     private func selectGame(_ gameID: Int64?) {
         selectedGameID = gameID
         EncounterSessionStore.saveSelectedGameID(gameID)
+        scheduleHintUnlockRefresh(for: currentModel)
     }
 
     private func applyDefaultDomainIfNeeded(hadSavedSettings: Bool) {
@@ -690,6 +692,8 @@ final class EncounterViewModel {
         currentModel = nil
         resetCodeLog()
         gameStartCountdown = nil
+        hintUnlockRefreshTask?.cancel()
+        hintUnlockRefreshTask = nil
         lastGamePollDate = nil
         lastSyncedLiveActivityState = nil
         lastCodeResult = nil
@@ -1368,6 +1372,7 @@ final class EncounterViewModel {
         mergeCodeLogActions(model.level?.mixedActions ?? [], gameID: selectedGameID)
         liveActivityModelAnchor = Date()
         lastSyncedLiveActivityState = nil
+        scheduleHintUnlockRefresh(for: model)
 
         if model.isGameComplete {
             if wasPlayable {
@@ -1381,6 +1386,40 @@ final class EncounterViewModel {
         } else if model.level == nil {
             statusMessage = Self.waitingStatusMessage(for: model)
         }
+    }
+
+    private func scheduleHintUnlockRefresh(for model: GameModel?) {
+        hintUnlockRefreshTask?.cancel()
+        hintUnlockRefreshTask = nil
+
+        guard let selectedGameID,
+              let model,
+              model.gameID == Int(selectedGameID),
+              model.isPlayable,
+              let level = model.level else {
+            return
+        }
+
+        let nearestHintRemain = level.nearestLockedHintRemainSeconds
+        guard nearestHintRemain > 0 else { return }
+
+        hintUnlockRefreshTask = Task { [weak self, selectedGameID] in
+            try? await Task.sleep(for: .seconds(nearestHintRemain + 1))
+            guard !Task.isCancelled else { return }
+            await self?.refreshAfterHintUnlock(gameID: selectedGameID)
+        }
+    }
+
+    private func refreshAfterHintUnlock(gameID: Int64) async {
+        guard selectedGameID == gameID,
+              selectedScreen == .game,
+              currentModel?.gameID == Int(gameID),
+              (currentModel?.level?.nearestLockedHintRemainSeconds ?? 0) > 0,
+              queue.isOnline else {
+            return
+        }
+
+        await refreshLevel(showUI: false)
     }
 
     private func updateNewHintPopup(previousModel: GameModel?, currentModel: GameModel) {
