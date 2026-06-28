@@ -257,6 +257,13 @@ struct LevelPlayView: View {
             .tint(GameTheme.accent)
             .padding(.horizontal, 32)
 
+            NavigationLink(value: AppRoute.codes) {
+                Text("Журнал кодов")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .padding(.horizontal, 32)
+
             Button("Обновить") {
                 Task { await model.refreshLevel() }
             }

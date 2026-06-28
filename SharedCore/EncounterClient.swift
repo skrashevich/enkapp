@@ -319,6 +319,17 @@ nonisolated final class EncounterClient {
         #endif
     }
 
+    func gameModelLevel(gameID: Int64, levelNumber: Int64) throws -> GameModel {
+        #if canImport(Encx)
+        var error: NSError?
+        let json = client.getGameModelLevel(gameID, levelNumber: levelNumber, error: &error)
+        if let error { throw error }
+        return try decode(GameModel.self, from: json)
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
     func pingGame(gameID: Int64) throws -> GameModel {
         #if canImport(Encx)
         var error: NSError?
@@ -547,6 +558,12 @@ nonisolated final class EncounterClient {
     func gameModel(gameID: Int64) async throws -> GameModel {
         try await Task.detached(priority: .userInitiated) {
             try self.gameModel(gameID: gameID)
+        }.value
+    }
+
+    func gameModelLevel(gameID: Int64, levelNumber: Int64) async throws -> GameModel {
+        try await Task.detached(priority: .userInitiated) {
+            try self.gameModelLevel(gameID: gameID, levelNumber: levelNumber)
         }.value
     }
 

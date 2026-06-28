@@ -168,8 +168,16 @@ nonisolated struct TeamManagementInfo: Decodable, Hashable {
         actions = try container.decodeIfPresent([String: String].self, forKey: .actions) ?? [:]
     }
 
-    var canInviteMembers: Bool {
-        actions.keys.contains("invite") || !teamName.isEmpty
+    var canManageTeam: Bool {
+        actions.keys.contains { key in
+            let normalizedKey = key.lowercased()
+            return normalizedKey.contains("invite")
+                || normalizedKey.contains("rename")
+                || normalizedKey.contains("site")
+                || normalizedKey.contains("forum")
+                || normalizedKey.contains("manage")
+                || normalizedKey.contains("edit")
+        }
     }
 
     var canLeave: Bool {

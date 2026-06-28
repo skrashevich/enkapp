@@ -4,29 +4,35 @@ import UIKit
 
 struct CodesView: View {
     @Bindable var model: EncounterViewModel
-    let sentActions: [CodeAction]
     @State private var copiedActionID: Int?
 
-    private var sentActionsNewestFirst: [CodeAction] {
-        sentActions.sorted { $0.actionID > $1.actionID }
+    private var loggedActionsNewestFirst: [CodeAction] {
+        model.codeLogActions.sorted {
+            if $0.levelNumber != $1.levelNumber {
+                return $0.levelNumber > $1.levelNumber
+            }
+            return $0.actionID > $1.actionID
+        }
     }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 pendingSection
-                if !sentActions.isEmpty {
-                    sentSection
-                }
+                logSection
             }
             .padding()
         }
         .background(GameTheme.background)
-        .navigationTitle("Коды")
+        .navigationTitle("Журнал кодов")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {
             await model.flushQueue()
+            await model.refreshCodeLog()
             await model.refreshLevel()
+        }
+        .task(id: model.currentModel?.gameID) {
+            await model.refreshCodeLog()
         }
         .task(id: model.selectedGameID) {
             while !Task.isCancelled {
@@ -120,28 +126,49 @@ struct CodesView: View {
         }
     }
 
-    private var sentSection: some View {
+    private var logSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            GameSectionHeader(title: "Отправленные на уровне (\(sentActionsNewestFirst.count))")
+            HStack {
+                GameSectionHeader(title: "Пробитые коды (\(loggedActionsNewestFirst.count))")
+                Spacer()
+                if model.isCodeLogLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
 
-            ForEach(sentActionsNewestFirst) { action in
-                sentCodeRow(action)
+            if !model.codeLogStatusMessage.isEmpty {
+                Text(model.codeLogStatusMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(GameTheme.muted)
+            }
+
+            if loggedActionsNewestFirst.isEmpty && !model.isCodeLogLoading && model.codeLogStatusMessage.isEmpty {
+                Text("Пробитых кодов пока нет")
+                    .font(.subheadline)
+                    .foregroundStyle(GameTheme.muted)
+            } else {
+                ForEach(loggedActionsNewestFirst) { action in
+                    sentCodeRow(action)
+                }
             }
         }
     }
 
     private func sentCodeRow(_ action: CodeAction) -> some View {
-        Button {
+        let resultColor = action.isCorrect ? GameTheme.accent : GameTheme.muted
+
+        return Button {
             copyCode(action.answer, actionID: action.id)
         } label: {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: action.isCorrect ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(action.isCorrect ? GameTheme.accent : GameTheme.muted)
+                    .foregroundStyle(resultColor)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(action.answer)
                         .font(.body.monospaced())
-                        .foregroundStyle(GameTheme.text)
-                    Text("\(action.login), \(action.locDateTime)")
+                        .foregroundStyle(action.isCorrect ? GameTheme.accent : GameTheme.text)
+                    Text("Ур. \(action.levelNumber) · \(action.login), \(action.locDateTime)")
                         .font(.caption)
                         .foregroundStyle(GameTheme.muted)
                 }
@@ -153,6 +180,10 @@ struct CodesView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
             .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(action.isCorrect ? GameTheme.accent.opacity(0.55) : Color.clear, lineWidth: 1)
+            }
         }
         .buttonStyle(.plain)
         .contextMenu {

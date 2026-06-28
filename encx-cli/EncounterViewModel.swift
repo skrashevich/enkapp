@@ -27,6 +27,12 @@ struct CodeResultFeedback: Equatable {
     let id: UUID
 }
 
+struct NewHintPopup: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    let message: String
+}
+
 enum SessionRecoveryError: LocalizedError {
     case reloginRequired
 
@@ -85,6 +91,10 @@ final class EncounterViewModel {
     var antiSpamVerificationURL: URL?
     var showAntiSpamVerification = false
     var lastCodeResult: CodeResultFeedback?
+    var newHintPopup: NewHintPopup?
+    var codeLogActions: [CodeAction] = []
+    var isCodeLogLoading = false
+    var codeLogStatusMessage = ""
     var knownDomains: [String] = []
     /// Last successful engine round-trip (ping or code send), for the Codes tab.
     var serverRoundTripMs: Int?
@@ -105,6 +115,7 @@ final class EncounterViewModel {
     private var keepScreenAwake = false
     private var reloginTask: Task<Void, Error>?
     private var lastGamePollDate: Date?
+    private var codeLogLoadedGameID: Int64?
     private let gamePollInterval: TimeInterval = 20
     /// Backoff for queue retries while the engine is unreachable (cap keeps UI responsive).
     private var queueRetryBackoffSeconds: TimeInterval = 0.4
@@ -677,10 +688,12 @@ final class EncounterViewModel {
         let stoppedGameID = selectedGameID
         selectGame(nil)
         currentModel = nil
+        resetCodeLog()
         gameStartCountdown = nil
         lastGamePollDate = nil
         lastSyncedLiveActivityState = nil
         lastCodeResult = nil
+        newHintPopup = nil
         serverRoundTripMs = nil
         statusMessage = ""
         selectedScreen = .games
@@ -717,6 +730,69 @@ final class EncounterViewModel {
 
     func refreshLevel() async {
         await refreshLevel(showUI: true)
+    }
+
+    func refreshCodeLog() async {
+        guard let model = currentModel else { return }
+        let gameID = Int64(model.gameID)
+        guard !isCodeLogLoading else { return }
+        guard queue.isOnline else {
+            codeLogStatusMessage = cachedLevelStatusMessage(reason: .offline)
+            return
+        }
+
+        isCodeLogLoading = true
+        codeLogStatusMessage = "Загрузка журнала..."
+        defer { isCodeLogLoading = false }
+
+        var actionsByID: [Int: CodeAction] = [:]
+        for action in model.level?.mixedActions ?? [] {
+            actionsByID[action.actionID] = action
+        }
+
+        let levelNumbers = Set(
+            model.levels
+                .map(\.levelNumber)
+                .filter { $0 > 0 }
+        )
+
+        var skippedLevels = 0
+        do {
+            for levelNumber in levelNumbers.sorted() {
+                if Task.isCancelled { return }
+                if model.level?.number == levelNumber {
+                    continue
+                }
+                do {
+                    let levelModel = try await withSessionRecovery {
+                        try await $0.gameModelLevel(gameID: gameID, levelNumber: Int64(levelNumber))
+                    }
+                    for action in levelModel.level?.mixedActions ?? [] {
+                        actionsByID[action.actionID] = action
+                    }
+                } catch {
+                    skippedLevels += 1
+                }
+            }
+
+            guard selectedGameID == gameID else { return }
+            codeLogActions = actionsByID.values.sorted {
+                if $0.levelNumber != $1.levelNumber {
+                    return $0.levelNumber > $1.levelNumber
+                }
+                return $0.actionID > $1.actionID
+            }
+            codeLogLoadedGameID = gameID
+            if skippedLevels > 0 {
+                codeLogStatusMessage = "Часть уровней не удалось загрузить: \(skippedLevels)"
+            } else {
+                codeLogStatusMessage = codeLogActions.isEmpty ? "Пробитых кодов пока нет" : ""
+            }
+            try saveCookies(from: try ensureClient())
+            markEngineReachable()
+        } catch {
+            codeLogStatusMessage = EncounterClient.userFacingDescription(for: error)
+        }
     }
 
     func refreshLevelSilently() async {
@@ -1285,8 +1361,11 @@ final class EncounterViewModel {
     private func setCurrentModel(_ model: GameModel) {
         guard let selectedGameID, selectedGameID == Int64(model.gameID) else { return }
 
+        let previousModel = currentModel
         let wasPlayable = currentModel?.isPlayable ?? true
         currentModel = model
+        updateNewHintPopup(previousModel: previousModel, currentModel: model)
+        mergeCodeLogActions(model.level?.mixedActions ?? [], gameID: selectedGameID)
         liveActivityModelAnchor = Date()
         lastSyncedLiveActivityState = nil
 
@@ -1302,6 +1381,68 @@ final class EncounterViewModel {
         } else if model.level == nil {
             statusMessage = Self.waitingStatusMessage(for: model)
         }
+    }
+
+    private func updateNewHintPopup(previousModel: GameModel?, currentModel: GameModel) {
+        guard selectedScreen == .game,
+              currentModel.isPlayable,
+              let previousLevel = previousModel?.level,
+              let currentLevel = currentModel.level,
+              previousLevel.levelID == currentLevel.levelID else {
+            return
+        }
+
+        let previousHintIDs = Set(Self.visibleUnlockedHints(in: previousLevel).map(\.helpID))
+        let newHints = Self.visibleUnlockedHints(in: currentLevel)
+            .filter { !previousHintIDs.contains($0.helpID) }
+            .sorted { $0.number < $1.number }
+
+        guard !newHints.isEmpty else { return }
+
+        let title = newHints.count == 1
+            ? "Новая подсказка \(newHints[0].number)"
+            : "Новые подсказки"
+        let message = newHints
+            .map { help in
+                let text = help.unlockedText?.strippingHTML()
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return "Подсказка \(help.number): \(text)"
+            }
+            .joined(separator: "\n\n")
+
+        guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        newHintPopup = NewHintPopup(title: title, message: message)
+    }
+
+    private static func visibleUnlockedHints(in level: Level) -> [Help] {
+        (level.helps + level.penaltyHelps).filter { $0.unlockedText != nil }
+    }
+
+    private func mergeCodeLogActions(_ actions: [CodeAction], gameID: Int64) {
+        if codeLogLoadedGameID != gameID {
+            codeLogActions = []
+            codeLogLoadedGameID = gameID
+            codeLogStatusMessage = ""
+        }
+        guard !actions.isEmpty else { return }
+
+        var actionsByID = Dictionary(uniqueKeysWithValues: codeLogActions.map { ($0.actionID, $0) })
+        for action in actions {
+            actionsByID[action.actionID] = action
+        }
+        codeLogActions = actionsByID.values.sorted {
+            if $0.levelNumber != $1.levelNumber {
+                return $0.levelNumber > $1.levelNumber
+            }
+            return $0.actionID > $1.actionID
+        }
+    }
+
+    private func resetCodeLog() {
+        codeLogActions = []
+        isCodeLogLoading = false
+        codeLogStatusMessage = ""
+        codeLogLoadedGameID = nil
     }
 
     private func liveActivityContentState() -> QueueActivityAttributes.ContentState? {

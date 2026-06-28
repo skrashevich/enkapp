@@ -21,8 +21,10 @@ struct TeamManagementView: View {
                 } else {
                     invitationsSection
                     if model.currentTeamID != nil {
-                        teamEditorSection
-                        outgoingInvitationsSection
+                        if model.teamManagementInfo?.canManageTeam == true {
+                            teamEditorSection
+                            outgoingInvitationsSection
+                        }
                     } else {
                         joinRequestSection
                     }

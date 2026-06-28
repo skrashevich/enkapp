@@ -7,90 +7,27 @@ struct ContentView: View {
     var body: some View {
         NavigationStack(path: $model.navigationPath) {
             mainContent
-                .navigationDestination(for: AppRoute.self) { route in
-                    switch route {
-                    case .codes:
-                        CodesView(
-                            model: model,
-                            sentActions: model.currentModel?.level?.mixedActions ?? []
-                        )
-                    case .statistics(let gameID):
-                        GameStatisticsView(model: model, gameID: gameID)
-                    }
-                }
+                .navigationDestination(for: AppRoute.self, destination: destination)
         }
         .preferredColorScheme(.dark)
     }
 
+    @ViewBuilder
+    private func destination(for route: AppRoute) -> some View {
+        switch route {
+        case .codes:
+            CodesView(model: model)
+        case .statistics(let gameID):
+            GameStatisticsView(model: model, gameID: gameID)
+        }
+    }
+
     private var mainContent: some View {
         screenContent
-            .task {
-                await model.restoreSession()
-                await model.flushQueueOnResume()
-                model.updateScreenWakeLock()
-            }
-            .onChange(of: scenePhase) { _, phase in
-                switch phase {
-                case .active:
-                    model.updateScreenWakeLock()
-                    Task { await model.flushQueueOnResume() }
-                case .background:
-                    model.handleAppBackground()
-                default:
-                    break
-                }
-            }
-            .onChange(of: model.selectedScreen) { _, _ in
-                if model.selectedScreen != .game {
-                    model.navigationPath.removeAll()
-                }
-                model.updateScreenWakeLock()
-            }
-            .onChange(of: model.selectedGameID) { _, _ in
-                model.updateScreenWakeLock()
-            }
-            .onChange(of: model.queue.pending.count) { _, _ in
-                model.updateScreenWakeLock()
-            }
-            .onChange(of: model.settings.useHTTP) {
-                model.persistAuthorizationSettings()
-            }
-            .onChange(of: model.settings.insecureTLS) {
-                model.persistAuthorizationSettings()
-            }
-            .onChange(of: model.settings.liveActivityEnabled) {
-                Task { await model.applyLiveActivitySetting() }
-            }
-            .onChange(of: model.settings.liveActivityDisplay) {
-                model.persistAuthorizationSettings()
-                Task { await model.applyLiveActivitySetting() }
-            }
-            .onChange(of: model.settings.pushOnNewLevel) {
-                model.persistAuthorizationSettings()
-            }
-            .onChange(of: model.settings.pushOnNewHint) {
-                model.persistAuthorizationSettings()
-            }
-            .onChange(of: model.settings.harRecordingEnabled) {
-                model.applyHARRecordingSetting()
-                model.persistAuthorizationSettings()
-            }
-            .onChange(of: model.login) {
-                model.persistAuthorizationSettings()
-            }
-            .alert(
-                "Ошибка",
-                isPresented: isErrorPresented
-            ) {
-                if model.antiSpamVerificationURL != nil {
-                    Button("Пройти проверку") {
-                        model.showAntiSpamVerification = true
-                    }
-                }
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(model.errorMessage ?? "")
-            }
+            .modifier(SettingsChangeObserver(model: model))
+            .modifier(LifecycleObserver(model: model, scenePhase: scenePhase))
+            .modifier(ErrorAlertPresenter(model: model))
+            .modifier(NewHintPopupPresenter(model: model))
             .sheet(isPresented: $model.showAntiSpamVerification) {
                 AntiSpamVerificationView(model: model)
             }
@@ -159,13 +96,6 @@ struct ContentView: View {
         }
     }
 
-    private var isErrorPresented: Binding<Bool> {
-        Binding(
-            get: { model.errorMessage != nil && !model.showAntiSpamVerification },
-            set: { if !$0 { model.errorMessage = nil } }
-        )
-    }
-
     private var screenNavigation: some View {
         HStack(spacing: 8) {
             screenNavigationButton(
@@ -219,6 +149,128 @@ struct ContentView: View {
         case .team:
             await model.refreshTeam()
         }
+    }
+}
+
+private struct LifecycleObserver: ViewModifier {
+    @Bindable var model: EncounterViewModel
+    let scenePhase: ScenePhase
+
+    func body(content: Content) -> some View {
+        content
+            .task {
+                await model.restoreSession()
+                await model.flushQueueOnResume()
+                model.updateScreenWakeLock()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                switch phase {
+                case .active:
+                    model.updateScreenWakeLock()
+                    Task { await model.flushQueueOnResume() }
+                case .background:
+                    model.handleAppBackground()
+                default:
+                    break
+                }
+            }
+            .onChange(of: model.selectedScreen) { _, _ in
+                if model.selectedScreen != .game {
+                    model.navigationPath.removeAll()
+                }
+                model.updateScreenWakeLock()
+            }
+            .onChange(of: model.selectedGameID) { _, _ in
+                model.updateScreenWakeLock()
+            }
+            .onChange(of: model.queue.pending.count) { _, _ in
+                model.updateScreenWakeLock()
+            }
+    }
+}
+
+private struct SettingsChangeObserver: ViewModifier {
+    @Bindable var model: EncounterViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: model.settings.useHTTP) {
+                model.persistAuthorizationSettings()
+            }
+            .onChange(of: model.settings.insecureTLS) {
+                model.persistAuthorizationSettings()
+            }
+            .onChange(of: model.settings.liveActivityEnabled) {
+                Task { await model.applyLiveActivitySetting() }
+            }
+            .onChange(of: model.settings.liveActivityDisplay) {
+                model.persistAuthorizationSettings()
+                Task { await model.applyLiveActivitySetting() }
+            }
+            .onChange(of: model.settings.pushOnNewLevel) {
+                model.persistAuthorizationSettings()
+            }
+            .onChange(of: model.settings.pushOnNewHint) {
+                model.persistAuthorizationSettings()
+            }
+            .onChange(of: model.settings.harRecordingEnabled) {
+                model.applyHARRecordingSetting()
+                model.persistAuthorizationSettings()
+            }
+            .onChange(of: model.login) {
+                model.persistAuthorizationSettings()
+            }
+    }
+}
+
+private struct ErrorAlertPresenter: ViewModifier {
+    @Bindable var model: EncounterViewModel
+
+    func body(content: Content) -> some View {
+        content.alert(
+            "Ошибка",
+            isPresented: isPresented
+        ) {
+            if model.antiSpamVerificationURL != nil {
+                Button("Пройти проверку") {
+                    model.showAntiSpamVerification = true
+                }
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.errorMessage ?? "")
+        }
+    }
+
+    private var isPresented: Binding<Bool> {
+        Binding(
+            get: { model.errorMessage != nil && !model.showAntiSpamVerification },
+            set: { if !$0 { model.errorMessage = nil } }
+        )
+    }
+}
+
+private struct NewHintPopupPresenter: ViewModifier {
+    @Bindable var model: EncounterViewModel
+
+    func body(content: Content) -> some View {
+        content.alert(
+            model.newHintPopup?.title ?? "Новая подсказка",
+            isPresented: isPresented
+        ) {
+            Button("OK", role: .cancel) {
+                model.newHintPopup = nil
+            }
+        } message: {
+            Text(model.newHintPopup?.message ?? "")
+        }
+    }
+
+    private var isPresented: Binding<Bool> {
+        Binding(
+            get: { model.newHintPopup != nil },
+            set: { if !$0 { model.newHintPopup = nil } }
+        )
     }
 }
 

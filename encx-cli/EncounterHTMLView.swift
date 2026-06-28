@@ -16,14 +16,33 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
     @Binding var contentHeight: CGFloat
 
     private static let measureHeightJS = """
-    Math.ceil(Math.max(
-        document.body.scrollHeight,
-        document.documentElement.scrollHeight,
-        document.body.offsetHeight,
-        document.documentElement.offsetHeight,
-        document.body.getBoundingClientRect().height,
-        document.documentElement.getBoundingClientRect().height
-    ))
+    (() => {
+        const body = document.body;
+        if (!body) { return 0; }
+
+        const bodyTop = body.getBoundingClientRect().top;
+        const computedBody = window.getComputedStyle(body);
+        let bottom = 0;
+
+        const range = document.createRange();
+        range.selectNodeContents(body);
+        const rangeRect = range.getBoundingClientRect();
+        if (rangeRect.height > 0) {
+            bottom = Math.max(bottom, rangeRect.bottom - bodyTop);
+        }
+
+        for (const element of body.querySelectorAll('*')) {
+            const style = window.getComputedStyle(element);
+            if (style.display === 'none' || style.visibility === 'hidden') { continue; }
+
+            const rect = element.getBoundingClientRect();
+            if (rect.width > 0 || rect.height > 0) {
+                bottom = Math.max(bottom, rect.bottom - bodyTop);
+            }
+        }
+
+        return Math.ceil(bottom + parseFloat(computedBody.paddingBottom || '0'));
+    })()
     """
 
     func makeCoordinator() -> Coordinator {
@@ -45,6 +64,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {
         guard context.coordinator.lastHTML != html else { return }
         context.coordinator.lastHTML = html
+        context.coordinator.resetHeight()
         webView.loadHTMLString(wrappedHTML(html), baseURL: nil)
     }
 
@@ -85,6 +105,12 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
 
         init(contentHeight: Binding<CGFloat>) {
             _contentHeight = contentHeight
+        }
+
+        func resetHeight() {
+            DispatchQueue.main.async {
+                self.contentHeight = 80
+            }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
