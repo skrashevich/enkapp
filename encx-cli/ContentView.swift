@@ -5,8 +5,19 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $model.navigationPath) {
             mainContent
+                .navigationDestination(for: AppRoute.self) { route in
+                    switch route {
+                    case .codes:
+                        CodesView(
+                            model: model,
+                            sentActions: model.currentModel?.level?.mixedActions ?? []
+                        )
+                    case .statistics(let gameID):
+                        GameStatisticsView(model: model, gameID: gameID)
+                    }
+                }
         }
         .preferredColorScheme(.dark)
     }
@@ -30,6 +41,9 @@ struct ContentView: View {
                 }
             }
             .onChange(of: model.selectedScreen) { _, _ in
+                if model.selectedScreen != .game {
+                    model.navigationPath.removeAll()
+                }
                 model.updateScreenWakeLock()
             }
             .onChange(of: model.selectedGameID) { _, _ in

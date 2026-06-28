@@ -16,6 +16,11 @@ enum AppScreen: Hashable {
     }
 }
 
+enum AppRoute: Hashable {
+    case codes
+    case statistics(Int64)
+}
+
 struct CodeResultFeedback: Equatable {
     let message: String
     let isCorrect: Bool
@@ -73,6 +78,7 @@ final class EncounterViewModel {
     /// Countdown until game start from `GetTimeoutToGame`, when the game has not begun yet.
     var gameStartCountdown: SyncedSecondsCountdown?
     var selectedScreen: AppScreen = .games
+    var navigationPath: [AppRoute] = []
     var isBusy = false
     var statusMessage = ""
     var errorMessage: String?
@@ -1395,15 +1401,34 @@ final class EncounterViewModel {
             }
         case "flush-queue":
             if selectedGameID != nil {
+                selectedScreen = .game
                 _ = await flushQueueNow(silent: false)
             }
         case "codes":
-            selectedScreen = .game
+            await openCodesFromWidget()
         default:
             if selectedGameID != nil {
                 selectedScreen = .game
             }
         }
+    }
+
+    private func openCodesFromWidget() async {
+        guard let gameID = selectedGameID else {
+            selectedScreen = .games
+            navigationPath.removeAll()
+            return
+        }
+
+        selectedScreen = .game
+        navigationPath.removeAll()
+
+        if currentModel?.gameID != Int(gameID) || currentModel?.level == nil {
+            _ = await openGame(gameID, presentErrors: false)
+        }
+
+        selectedScreen = .game
+        navigationPath = [.codes]
     }
 
     private func syncWidgetSnapshot() {

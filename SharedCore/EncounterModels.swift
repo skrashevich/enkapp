@@ -721,6 +721,14 @@ nonisolated enum SpentTimeFormatter {
 }
 
 extension String {
+    nonisolated func removingHTMLScriptAndStyleBlocks() -> String {
+        replacingOccurrences(
+            of: #"(?is)<(script|style)\b[^>]*>.*?</\1>"#,
+            with: " ",
+            options: .regularExpression
+        )
+    }
+
     nonisolated func replacingNumericHTMLEntities() -> String {
         guard let regex = try? NSRegularExpression(pattern: "&#(\\d+);") else { return self }
         var result = self
@@ -738,6 +746,7 @@ extension String {
     nonisolated func strippingHTML() -> String {
         var text = replacingOccurrences(of: "\r\n", with: "\n")
         text = text.replacingOccurrences(of: "\r", with: "\n")
+        text = text.removingHTMLScriptAndStyleBlocks()
         let lineBreakTags = #"(?i)<br\s*/?>|</p>|</div>|</li>|</tr>|</h[1-6]>"#
         text = text.replacingOccurrences(of: lineBreakTags, with: "\n", options: .regularExpression)
         text = text.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)

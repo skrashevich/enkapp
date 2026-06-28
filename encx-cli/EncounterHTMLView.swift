@@ -49,7 +49,8 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
     }
 
     private func wrappedHTML(_ body: String) -> String {
-        """
+        let sanitizedBody = body.removingHTMLScriptAndStyleBlocks()
+        return """
         <!DOCTYPE html>
         <html>
         <head>
@@ -73,7 +74,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
           h1, h2, h3, h4 { margin: 0 0 10px; line-height: 1.25; }
         </style>
         </head>
-        <body>\(body)</body>
+        <body>\(sanitizedBody)</body>
         </html>
         """
     }

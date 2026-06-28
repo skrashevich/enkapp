@@ -394,18 +394,11 @@ struct LevelPlayView: View {
                 }
                 .disabled(model.isBusy)
 
-                NavigationLink {
-                    GameStatisticsView(model: model, gameID: Int64(game.gameID))
-                } label: {
+                NavigationLink(value: AppRoute.statistics(Int64(game.gameID))) {
                     headerAction("Статистика", systemImage: "chart.bar")
                 }
 
-                NavigationLink {
-                    CodesView(
-                        model: model,
-                        sentActions: game.level?.mixedActions ?? []
-                    )
-                } label: {
+                NavigationLink(value: AppRoute.codes) {
                     codesHeaderAction(pendingCount: model.queue.pending.count)
                 }
             }
