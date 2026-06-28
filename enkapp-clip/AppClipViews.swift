@@ -4,6 +4,7 @@ struct AppClipRootView: View {
     @Bindable var model: AppClipViewModel
     @Environment(\.openURL) private var openURL
     @State private var codeDraft = ""
+    @State private var previousCodeDraft = ""
 
     var body: some View {
         NavigationStack {
@@ -243,6 +244,18 @@ struct AppClipRootView: View {
                 .foregroundStyle(GameTheme.text)
                 .onSubmit { submitDraft() }
 
+            if !previousCodeDraft.isEmpty {
+                Button {
+                    codeDraft = previousCodeDraft
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .frame(width: 42, height: 42)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Повторить предыдущий код")
+                .accessibilityHint("Вернуть предыдущий код в поле ввода для правки")
+            }
+
             Button {
                 submitDraft()
             } label: {
@@ -298,7 +311,9 @@ struct AppClipRootView: View {
     }
 
     private func submitDraft() {
-        let value = codeDraft
+        let value = codeDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        previousCodeDraft = value
         codeDraft = ""
         Task { await model.submitCode(value) }
     }

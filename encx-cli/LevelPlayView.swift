@@ -4,6 +4,7 @@ import Observation
 struct LevelPlayView: View {
     @Bindable var model: EncounterViewModel
     @State private var codeDraft = ""
+    @State private var previousCodeDraft = ""
     @FocusState private var codeFieldFocused: Bool
     @State private var codeResultToast: CodeResultFeedback?
     @State private var codeResultDismissTask: Task<Void, Never>?
@@ -26,6 +27,7 @@ struct LevelPlayView: View {
         }
         .onChange(of: model.selectedGameID) { _, _ in
             codeDraft = ""
+            previousCodeDraft = ""
         }
     }
 
@@ -295,9 +297,11 @@ struct LevelPlayView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             LevelCodeInputBar(
                 text: $codeDraft,
+                previousText: previousCodeDraft,
                 canSubmitLevel: canSubmitCode(level: level, kind: .level),
                 canSubmitBonus: canSubmitCode(level: level, kind: .bonus),
                 isFocused: $codeFieldFocused,
+                onRepeatPrevious: repeatPreviousCodeDraft,
                 onSubmitLevel: { submitCodeDraft(kind: .level) },
                 onSubmitBonus: { submitCodeDraft(kind: .bonus) }
             )
@@ -362,8 +366,15 @@ struct LevelPlayView: View {
     private func submitCodeDraft(kind: CodeSubmissionKind) {
         let trimmed = codeDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        previousCodeDraft = trimmed
         codeDraft = ""
         model.submitCode(trimmed, kind: kind)
+    }
+
+    private func repeatPreviousCodeDraft() {
+        guard !previousCodeDraft.isEmpty else { return }
+        codeDraft = previousCodeDraft
+        codeFieldFocused = true
     }
 
     private func gameHeader(game: GameModel) -> some View {
@@ -444,7 +455,9 @@ struct LevelPlayView: View {
     }
 
     private func levelProgress(game: GameModel, level: Level) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let title = currentLevelTitle(game: game, level: level)
+
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 if !game.teamName.isEmpty || !game.login.isEmpty {
                     Text([game.login, game.teamName].filter { !$0.isEmpty }.joined(separator: " · "))
@@ -472,6 +485,13 @@ struct LevelPlayView: View {
                 }
             }
 
+            Text(title.isEmpty ? "Уровень \(level.number)" : "Ур. \(level.number): \(title)")
+                .font(.headline)
+                .foregroundStyle(GameTheme.text)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             if let progress = sectorsProgressCaption(level: level) {
                 Text(progress)
                     .font(.caption.weight(.medium))
@@ -481,6 +501,18 @@ struct LevelPlayView: View {
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 8)
+    }
+
+    private func currentLevelTitle(game: GameModel, level: Level) -> String {
+        let directName = level.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !directName.isEmpty {
+            return directName
+        }
+
+        return game.levels
+            .first { $0.levelID == level.levelID || $0.levelNumber == level.number }?
+            .levelName
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     private func sectorsProgressCaption(level: Level) -> String? {
@@ -553,9 +585,11 @@ private struct LevelDrainCountdown: View {
 
 private struct LevelCodeInputBar: View {
     @Binding var text: String
+    var previousText: String
     var canSubmitLevel: Bool
     var canSubmitBonus: Bool
     var isFocused: FocusState<Bool>.Binding
+    var onRepeatPrevious: () -> Void
     var onSubmitLevel: () -> Void
     var onSubmitBonus: () -> Void
 
@@ -575,6 +609,17 @@ private struct LevelCodeInputBar: View {
                         .stroke(GameTheme.border, lineWidth: 1)
                 }
                 .foregroundStyle(GameTheme.text)
+
+            if !previousText.isEmpty {
+                Button(action: onRepeatPrevious) {
+                    Image(systemName: "arrow.uturn.backward")
+                        .frame(width: 40, height: 40)
+                        .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
+                        .foregroundStyle(GameTheme.text)
+                }
+                .accessibilityLabel("Повторить предыдущий код")
+                .accessibilityHint("Вернуть предыдущий код в поле ввода для правки")
+            }
 
             if canSubmitBonus {
                 Button(action: onSubmitBonus) {
