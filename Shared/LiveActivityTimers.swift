@@ -92,26 +92,37 @@ struct LiveActivityTimersRow: View {
 
     @ViewBuilder
     private func timerItems(separator: String?) -> some View {
-        if showsLevelTimer {
-            LiveActivityTimerLabel(
-                title: "Слив",
-                endsAt: levelEndsAt,
-                systemImage: "timer",
-                tint: WidgetTheme.warning
-            )
-        }
         if showsLevelTimer && showsHintTimer, let separator {
+            hintTimer
             Text(separator)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            levelTimer
+        } else {
+            if showsHintTimer {
+                hintTimer
+            }
+            if showsLevelTimer {
+                levelTimer
+            }
         }
-        if showsHintTimer {
-            LiveActivityTimerLabel(
-                title: "Подсказка",
-                endsAt: nextHintUnlocksAt,
-                systemImage: "lightbulb.fill",
-                tint: WidgetTheme.hint
-            )
-        }
+    }
+
+    private var hintTimer: some View {
+        LiveActivityTimerLabel(
+            title: "Подсказка",
+            endsAt: nextHintUnlocksAt,
+            systemImage: "lightbulb.fill",
+            tint: WidgetTheme.hint
+        )
+    }
+
+    private var levelTimer: some View {
+        LiveActivityTimerLabel(
+            title: "Слив",
+            endsAt: levelEndsAt,
+            systemImage: "timer",
+            tint: WidgetTheme.warning
+        )
     }
 }

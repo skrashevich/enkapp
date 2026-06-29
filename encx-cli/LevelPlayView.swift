@@ -220,6 +220,14 @@ struct LevelPlayView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
+            if let finalTeamStanding = model.finalTeamStanding {
+                Text(finalTeamStanding.displayText)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(GameTheme.text)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
             if let level {
                 Text(level.name.isEmpty ? "Уровень \(level.number)" : level.name)
                     .font(.subheadline)
@@ -294,6 +302,13 @@ struct LevelPlayView: View {
             gameHeader(game: game)
             levelProgress(game: game, level: level)
 
+            if let popup = model.teammateCodePopup {
+                teammateCodePopupView(popup)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             LevelPlayScrollBody(
                 model: model,
                 statusMessage: model.statusMessage,
@@ -322,6 +337,7 @@ struct LevelPlayView: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: codeResultToast)
+        .animation(.easeOut(duration: 0.25), value: model.teammateCodePopup)
         .onChange(of: model.lastCodeResult) { _, newValue in
             if let newValue {
                 showCodeResultToast(newValue)
@@ -357,6 +373,36 @@ struct LevelPlayView: View {
             .frame(maxWidth: .infinity)
             .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 10))
             .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+    }
+
+    private func teammateCodePopupView(_ popup: TeammateCodePopup) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: popup.isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(popup.isCorrect ? GameTheme.accent : .orange)
+                .font(.title3)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(popup.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(popup.isCorrect ? GameTheme.accent : .orange)
+                Text(popup.message)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(GameTheme.text)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(popup.isCorrect ? GameTheme.accent.opacity(0.35) : Color.orange.opacity(0.35), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.16), radius: 6, y: 3)
     }
 
     private func canSubmitCode(level: Level, kind: CodeSubmissionKind) -> Bool {

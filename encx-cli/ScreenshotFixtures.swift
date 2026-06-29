@@ -137,6 +137,7 @@ extension EncounterViewModel {
       "GameTitle": "Межрег в екенях",
       "Login": "svk",
       "TeamName": "Команда 404",
+      "FinishPlace": 3,
       "Levels": [
         { "LevelId": 1, "LevelNumber": 1, "LevelName": "Разминка", "Dismissed": false, "IsPassed": true },
         { "LevelId": 2, "LevelNumber": 2, "LevelName": "Двор-колодец", "Dismissed": false, "IsPassed": true },

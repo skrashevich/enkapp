@@ -27,10 +27,29 @@ struct CodeResultFeedback: Equatable {
     let id: UUID
 }
 
+struct TeammateCodePopup: Equatable {
+    let title: String
+    let message: String
+    let isCorrect: Bool
+    let id: UUID
+}
+
 struct NewHintPopup: Identifiable, Equatable {
     let id = UUID()
     let title: String
     let message: String
+}
+
+struct FinalTeamStanding: Equatable {
+    let place: Int
+    let teamsCount: Int
+
+    var displayText: String {
+        if teamsCount > 0 {
+            return "Место команды: \(place) из \(teamsCount)"
+        }
+        return "Место команды: \(place)"
+    }
 }
 
 enum SessionRecoveryError: LocalizedError {
@@ -91,11 +110,13 @@ final class EncounterViewModel {
     var antiSpamVerificationURL: URL?
     var showAntiSpamVerification = false
     var lastCodeResult: CodeResultFeedback?
+    var teammateCodePopup: TeammateCodePopup?
     var newHintPopup: NewHintPopup?
     var codeLogActions: [CodeAction] = []
     var isCodeLogLoading = false
     var codeLogStatusMessage = ""
     var knownDomains: [String] = []
+    var finalTeamStanding: FinalTeamStanding?
     /// Last successful engine round-trip (ping or code send), for the Codes tab.
     var serverRoundTripMs: Int?
     /// Number of captured HAR entries (updated from settings/debug actions).
@@ -116,6 +137,8 @@ final class EncounterViewModel {
     private var reloginTask: Task<Void, Error>?
     private var lastGamePollDate: Date?
     private var codeLogLoadedGameID: Int64?
+    private var finalStandingLoadedGameID: Int64?
+    private var finalStandingTask: Task<Void, Never>?
     private let gamePollInterval: TimeInterval = 20
     /// Backoff for queue retries while the engine is unreachable (cap keeps UI responsive).
     private var queueRetryBackoffSeconds: TimeInterval = 0.4
@@ -123,7 +146,9 @@ final class EncounterViewModel {
     private var liveActivityModelAnchor = Date()
     private var lastSyncedLiveActivityState: QueueActivityAttributes.ContentState?
     private var hintUnlockRefreshTask: Task<Void, Never>?
+    private var levelTimeoutRefreshTask: Task<Void, Never>?
     private var harEntryCountRefreshTask: Task<Void, Never>?
+    private var teammateCodePopupDismissTask: Task<Void, Never>?
 
     var shouldKeepScreenAwake: Bool {
         get { keepScreenAwake }
@@ -342,6 +367,12 @@ final class EncounterViewModel {
     }
 
     private func selectGame(_ gameID: Int64?) {
+        if selectedGameID != gameID {
+            finalTeamStanding = nil
+            finalStandingLoadedGameID = nil
+            finalStandingTask?.cancel()
+            finalStandingTask = nil
+        }
         selectedGameID = gameID
         EncounterSessionStore.saveSelectedGameID(gameID)
         scheduleHintUnlockRefresh(for: currentModel)
@@ -690,13 +721,22 @@ final class EncounterViewModel {
         let stoppedGameID = selectedGameID
         selectGame(nil)
         currentModel = nil
+        finalTeamStanding = nil
+        finalStandingLoadedGameID = nil
+        finalStandingTask?.cancel()
+        finalStandingTask = nil
         resetCodeLog()
         gameStartCountdown = nil
         hintUnlockRefreshTask?.cancel()
         hintUnlockRefreshTask = nil
+        levelTimeoutRefreshTask?.cancel()
+        levelTimeoutRefreshTask = nil
         lastGamePollDate = nil
         lastSyncedLiveActivityState = nil
         lastCodeResult = nil
+        teammateCodePopup = nil
+        teammateCodePopupDismissTask?.cancel()
+        teammateCodePopupDismissTask = nil
         newHintPopup = nil
         serverRoundTripMs = nil
         statusMessage = ""
@@ -1164,14 +1204,19 @@ final class EncounterViewModel {
         let waitingForLevelOrStart = selectedScreen == .game
             && currentModel?.level == nil
             && currentModel?.isGameComplete != true
+        let activeLevelOnScreen = selectedScreen == .game
+            && currentModel?.level != nil
+            && currentModel?.isGameComplete != true
         guard settings.pushOnNewLevel || settings.pushOnNewHint || settings.liveActivityEnabled
-            || waitingForFinishTransition || waitingForLevelOrStart else {
+            || waitingForFinishTransition || waitingForLevelOrStart || activeLevelOnScreen else {
             return
         }
         guard queue.isOnline, !queue.isFlushing else { return }
         if skipWhenQueuePending, !queue.pending.isEmpty { return }
 
-        let pollInterval = waitingForFinishTransition || waitingForLevelOrStart ? 5.0 : gamePollInterval
+        let pollInterval = waitingForFinishTransition || waitingForLevelOrStart || activeLevelOnScreen
+            ? 5.0
+            : gamePollInterval
         if !force, let lastGamePollDate,
            Date().timeIntervalSince(lastGamePollDate) < pollInterval {
             return
@@ -1369,12 +1414,15 @@ final class EncounterViewModel {
         let wasPlayable = currentModel?.isPlayable ?? true
         currentModel = model
         updateNewHintPopup(previousModel: previousModel, currentModel: model)
+        updateTeammateCodePopup(previousModel: previousModel, currentModel: model)
         mergeCodeLogActions(model.level?.mixedActions ?? [], gameID: selectedGameID)
         liveActivityModelAnchor = Date()
         lastSyncedLiveActivityState = nil
         scheduleHintUnlockRefresh(for: model)
+        scheduleLevelTimeoutRefresh(for: model)
 
         if model.isGameComplete {
+            updateFinalStanding(from: model)
             if wasPlayable {
                 statusMessage = EncounterClient.eventText(for: model.event)
                 Task { try? await refreshGamesNow() }
@@ -1384,8 +1432,71 @@ final class EncounterViewModel {
             }
             updateScreenWakeLock()
         } else if model.level == nil {
+            finalTeamStanding = nil
+            finalStandingLoadedGameID = nil
+            finalStandingTask?.cancel()
+            finalStandingTask = nil
+            teammateCodePopupDismissTask?.cancel()
+            teammateCodePopupDismissTask = nil
+            teammateCodePopup = nil
             statusMessage = Self.waitingStatusMessage(for: model)
         }
+    }
+
+    private func updateFinalStanding(from model: GameModel) {
+        if let place = model.finishPlace, place > 0 {
+            finalTeamStanding = FinalTeamStanding(place: place, teamsCount: 0)
+            return
+        }
+
+        let gameID = Int64(model.gameID)
+        guard finalStandingLoadedGameID != gameID else { return }
+        guard finalStandingTask == nil || finalStandingTask?.isCancelled == true else { return }
+
+        finalStandingTask = Task { [weak self, gameID, teamName = model.teamName, login = model.login] in
+            await self?.loadFinalStanding(gameID: gameID, teamName: teamName, login: login)
+        }
+    }
+
+    private func loadFinalStanding(gameID: Int64, teamName: String, login: String) async {
+        defer { finalStandingTask = nil }
+        guard queue.isOnline else { return }
+
+        do {
+            let stats = try await withSessionRecovery { try await $0.gameStatistics(gameID: gameID) }
+            guard selectedGameID == gameID else { return }
+            finalStandingLoadedGameID = gameID
+            finalTeamStanding = Self.finalStanding(from: stats, teamName: teamName, login: login)
+            try saveCookies(from: try ensureClient())
+            markEngineReachable()
+        } catch {
+            // Keep retrying on later refreshes; the finish screen can still be shown without standings.
+        }
+    }
+
+    private static func finalStanding(from stats: GameStatisticsResponse, teamName: String, login: String) -> FinalTeamStanding? {
+        let rows = stats.statItems.filter { !$0.isEmpty }
+        guard !rows.isEmpty else { return nil }
+
+        let normalizedTeamName = normalizeStandingName(teamName)
+        let normalizedLogin = normalizeStandingName(login)
+
+        for (index, row) in rows.enumerated() {
+            let matchesTeam = !normalizedTeamName.isEmpty
+                && row.contains { normalizeStandingName($0.teamName) == normalizedTeamName }
+            let matchesLogin = normalizedTeamName.isEmpty
+                && !normalizedLogin.isEmpty
+                && row.contains { normalizeStandingName($0.userName) == normalizedLogin }
+            if matchesTeam || matchesLogin {
+                return FinalTeamStanding(place: index + 1, teamsCount: rows.count)
+            }
+        }
+
+        return nil
+    }
+
+    private static func normalizeStandingName(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private func scheduleHintUnlockRefresh(for model: GameModel?) {
@@ -1422,12 +1533,50 @@ final class EncounterViewModel {
         await refreshLevel(showUI: false)
     }
 
+    private func scheduleLevelTimeoutRefresh(for model: GameModel?) {
+        levelTimeoutRefreshTask?.cancel()
+        levelTimeoutRefreshTask = nil
+
+        guard let selectedGameID,
+              let model,
+              model.gameID == Int(selectedGameID),
+              model.isPlayable,
+              let level = model.level,
+              level.timeoutSecondsRemain > 0 else {
+            return
+        }
+
+        levelTimeoutRefreshTask = Task { [weak self, selectedGameID, levelID = level.levelID] in
+            try? await Task.sleep(for: .seconds(level.timeoutSecondsRemain + 1))
+            guard !Task.isCancelled else { return }
+            await self?.refreshAfterLevelTimeout(gameID: selectedGameID, levelID: levelID)
+        }
+    }
+
+    private func refreshAfterLevelTimeout(gameID: Int64, levelID: Int) async {
+        guard selectedGameID == gameID,
+              selectedScreen == .game,
+              currentModel?.gameID == Int(gameID),
+              currentModel?.level?.levelID == levelID,
+              currentModel?.isGameComplete != true,
+              queue.isOnline else {
+            return
+        }
+
+        await refreshLevel(showUI: false)
+    }
+
     private func updateNewHintPopup(previousModel: GameModel?, currentModel: GameModel) {
         guard selectedScreen == .game,
               currentModel.isPlayable,
               let previousLevel = previousModel?.level,
               let currentLevel = currentModel.level,
               previousLevel.levelID == currentLevel.levelID else {
+            if previousModel?.level?.levelID != currentModel.level?.levelID {
+                teammateCodePopupDismissTask?.cancel()
+                teammateCodePopupDismissTask = nil
+                teammateCodePopup = nil
+            }
             return
         }
 
@@ -1455,6 +1604,55 @@ final class EncounterViewModel {
 
     private static func visibleUnlockedHints(in level: Level) -> [Help] {
         (level.helps + level.penaltyHelps).filter { $0.unlockedText != nil }
+    }
+
+    private func updateTeammateCodePopup(previousModel: GameModel?, currentModel: GameModel) {
+        guard selectedScreen == .game,
+              currentModel.isPlayable,
+              let previousLevel = previousModel?.level,
+              let currentLevel = currentModel.level,
+              previousLevel.levelID == currentLevel.levelID else {
+            return
+        }
+
+        let previousActionIDs = Set(previousLevel.mixedActions.map(\.actionID))
+        let currentLogin = currentModel.login.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let newActions = currentLevel.mixedActions
+            .filter { !previousActionIDs.contains($0.actionID) }
+            .filter { action in
+                let actionLogin = action.login.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return actionLogin.isEmpty || actionLogin != currentLogin
+            }
+            .sorted { $0.actionID > $1.actionID }
+
+        guard let latest = newActions.first else { return }
+
+        let answer = latest.answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let login = latest.login.trimmingCharacters(in: .whitespacesAndNewlines)
+        let codeText = answer.isEmpty ? "код" : answer
+        let author = login.isEmpty ? "Игрок команды" : login
+        let levelPrefix = latest.levelNumber > 0 ? "Ур. \(latest.levelNumber) · " : ""
+        let title = latest.isCorrect ? "Код принят" : "Код не подошёл"
+        let suffix = newActions.count > 1 ? "  +\(newActions.count - 1)" : ""
+        let message = "\(levelPrefix)\(author): \(codeText)\(suffix)"
+        let popup = TeammateCodePopup(
+            title: title,
+            message: message,
+            isCorrect: latest.isCorrect,
+            id: UUID()
+        )
+
+        teammateCodePopupDismissTask?.cancel()
+        teammateCodePopup = popup
+        teammateCodePopupDismissTask = Task { [weak self, popupID = popup.id] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard self?.teammateCodePopup?.id == popupID else { return }
+                self?.teammateCodePopup = nil
+                self?.teammateCodePopupDismissTask = nil
+            }
+        }
     }
 
     private func mergeCodeLogActions(_ actions: [CodeAction], gameID: Int64) {

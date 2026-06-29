@@ -261,6 +261,7 @@ nonisolated struct GameModel: Decodable {
     let gameTitle: String
     let login: String
     let teamName: String
+    let finishPlace: Int?
     let levels: [LevelSummary]
     let level: Level?
     let engineAction: EngineAction?
@@ -292,6 +293,7 @@ nonisolated struct GameModel: Decodable {
         case gameTitle = "GameTitle"
         case login = "Login"
         case teamName = "TeamName"
+        case finishPlace = "FinishPlace"
         case levels = "Levels"
         case level = "Level"
         case engineAction = "EngineAction"
@@ -311,9 +313,47 @@ nonisolated struct GameModel: Decodable {
         gameTitle = try container.decodeIfPresent(String.self, forKey: .gameTitle) ?? ""
         login = try container.decodeIfPresent(String.self, forKey: .login) ?? ""
         teamName = try container.decodeIfPresent(String.self, forKey: .teamName) ?? ""
+        finishPlace = Self.decodeFinishPlace(from: decoder)
         levels = try container.decodeIfPresent([LevelSummary].self, forKey: .levels) ?? []
         level = try container.decodeIfPresent(Level.self, forKey: .level)
         engineAction = try container.decodeIfPresent(EngineAction.self, forKey: .engineAction)
+    }
+
+    private static func decodeFinishPlace(from decoder: Decoder) -> Int? {
+        struct DynamicKey: CodingKey {
+            let stringValue: String
+            let intValue: Int? = nil
+
+            init?(stringValue: String) {
+                self.stringValue = stringValue
+            }
+
+            init?(intValue: Int) {
+                return nil
+            }
+        }
+
+        guard let container = try? decoder.container(keyedBy: DynamicKey.self) else { return nil }
+        let possibleKeys = [
+            "FinishPlace",
+            "FinishedPlace",
+            "TeamPlace",
+            "Place",
+            "Position",
+            "Rank"
+        ]
+        for keyName in possibleKeys {
+            guard let key = DynamicKey(stringValue: keyName) else { continue }
+            if let value = try? container.decodeIfPresent(Int.self, forKey: key), value > 0 {
+                return value
+            }
+            if let string = try? container.decodeIfPresent(String.self, forKey: key),
+               let value = Int(string.trimmingCharacters(in: .whitespacesAndNewlines)),
+               value > 0 {
+                return value
+            }
+        }
+        return nil
     }
 }
 

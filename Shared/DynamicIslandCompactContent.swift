@@ -22,15 +22,29 @@ struct DynamicIslandCompactTrailing: View {
 
     var body: some View {
         Group {
-            if state.hasActiveLevelTimer, let endsAt = state.levelEndsAt {
-                compactCountdown(endsAt: endsAt, tint: .primary)
-            } else if state.hasActiveHintTimer, let endsAt = state.nextHintUnlocksAt {
-                HStack(spacing: 2) {
-                    Image(systemName: "lightbulb.fill")
-                        .font(.caption2)
-                        .foregroundStyle(WidgetTheme.hint)
-                    compactCountdown(endsAt: endsAt, tint: .primary)
+            if state.hasActiveHintTimer, state.hasActiveLevelTimer,
+               let hintEndsAt = state.nextHintUnlocksAt,
+               let levelEndsAt = state.levelEndsAt {
+                VStack(alignment: .trailing, spacing: -1) {
+                    compactCountdownRow(
+                        endsAt: hintEndsAt,
+                        systemImage: "lightbulb.fill",
+                        tint: WidgetTheme.hint
+                    )
+                    compactCountdownRow(
+                        endsAt: levelEndsAt,
+                        systemImage: "timer",
+                        tint: WidgetTheme.warning
+                    )
                 }
+            } else if state.hasActiveHintTimer, let endsAt = state.nextHintUnlocksAt {
+                compactCountdownRow(
+                    endsAt: endsAt,
+                    systemImage: "lightbulb.fill",
+                    tint: WidgetTheme.hint
+                )
+            } else if state.hasActiveLevelTimer, let endsAt = state.levelEndsAt {
+                compactCountdown(endsAt: endsAt, tint: .primary)
             } else if state.pendingCount > 0 {
                 HStack(spacing: 2) {
                     Image(systemName: "tray.full")
@@ -67,6 +81,15 @@ struct DynamicIslandCompactTrailing: View {
                         .font(.caption2.bold().monospacedDigit())
                 }
             }
+        }
+    }
+
+    private func compactCountdownRow(endsAt: Date, systemImage: String, tint: Color) -> some View {
+        HStack(spacing: 2) {
+            Image(systemName: systemImage)
+                .font(.caption2)
+                .foregroundStyle(tint)
+            compactCountdown(endsAt: endsAt, tint: .primary)
         }
     }
 
