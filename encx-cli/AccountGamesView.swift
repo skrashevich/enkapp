@@ -104,9 +104,21 @@ struct AccountGamesView: View {
                     .foregroundStyle(GameTheme.text, GameTheme.muted)
             }
 
-            if !model.activeGames.isEmpty {
+            if let currentGame = currentActiveGame {
+                SectionTitle("Текущая игра")
+                GameActionRow(game: currentGame, badge: "Активна", model: model)
+                    .padding(12)
+                    .background(GameTheme.accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(GameTheme.accent.opacity(0.65), lineWidth: 1)
+                    }
+            }
+
+            if !visibleActiveGames.isEmpty {
                 SectionTitle("Активные")
-                ForEach(model.activeGames) { game in
+                    .padding(.top, currentActiveGame == nil ? 0 : 6)
+                ForEach(visibleActiveGames) { game in
                     GameActionRow(game: game, badge: "Активна", model: model)
                         .padding(12)
                         .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 12))
@@ -140,6 +152,16 @@ struct AccountGamesView: View {
     private var filteredDomainGames: [DomainGame] {
         let ids = Set(model.games.map(\.id))
         return model.domainGames.filter { !ids.contains($0.id) }
+    }
+
+    private var currentActiveGame: GameInfo? {
+        guard let selectedGameID = model.selectedGameID else { return nil }
+        return model.activeGames.first { $0.id == Int(selectedGameID) }
+    }
+
+    private var visibleActiveGames: [GameInfo] {
+        guard let currentActiveGame else { return model.activeGames }
+        return model.activeGames.filter { $0.id != currentActiveGame.id }
     }
 
     private var loginHintSection: some View {

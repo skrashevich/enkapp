@@ -8,12 +8,31 @@ struct DisconnectFromGameButton: View {
             Task { await model.stopGameMonitoring() }
         } label: {
             Label("Отключиться от игры", systemImage: "rectangle.portrait.and.arrow.forward")
+                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.bordered)
         .tint(.orange)
         .disabled(model.isBusy)
         .accessibilityLabel("Отключиться от игры")
         .accessibilityHint("Прекратить мониторинг, Live Activity и уведомления об уровнях")
+    }
+}
+
+struct OpenMonitoredGameButton: View {
+    let model: EncounterViewModel
+
+    var body: some View {
+        Button {
+            guard let gameID = model.selectedGameID else { return }
+            Task { await model.openGame(gameID) }
+        } label: {
+            Label("Перейти в игру", systemImage: "gamecontroller.fill")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(GameTheme.accent)
+        .disabled(model.isBusy || model.selectedGameID == nil)
+        .accessibilityLabel("Перейти в игру")
     }
 }
 
@@ -50,8 +69,12 @@ struct GameMonitoringBanner: View {
                 }
                 Spacer(minLength: 0)
             }
-            DisconnectFromGameButton(model: model)
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(spacing: 8) {
+                OpenMonitoredGameButton(model: model)
+                DisconnectFromGameButton(model: model)
+                    .frame(maxWidth: .infinity)
+            }
         }
         .sectionPanel()
     }
