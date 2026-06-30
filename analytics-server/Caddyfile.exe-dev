@@ -1,0 +1,23 @@
+:8000 {
+	handle /glitchtip/* {
+		request_body {
+			max_size 40MB
+		}
+		reverse_proxy glitchtip-prefix:8080
+	}
+
+	handle /api/0/* {
+		reverse_proxy glitchtip-web:8000
+	}
+
+	handle /api/*/store/ {
+		request_body {
+			max_size 40MB
+		}
+		reverse_proxy glitchtip-web:8000
+	}
+
+	handle {
+		reverse_proxy aptabase:8080
+	}
+}

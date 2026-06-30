@@ -1,0 +1,10 @@
+{$ANALYTICS_DOMAIN} {
+	reverse_proxy aptabase:8080
+}
+
+{$ERRORS_DOMAIN} {
+	request_body {
+		max_size 40MB
+	}
+	reverse_proxy glitchtip-web:8000
+}

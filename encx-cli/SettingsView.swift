@@ -33,6 +33,7 @@ struct SettingsView: View {
                 connectionSection
                 notificationsSection
                 liveActivitySection
+                analyticsSection
                 debugSection
                 automationSection
                 aboutSection
@@ -358,6 +359,23 @@ struct SettingsView: View {
             }
         }
         .sectionPanel()
+    }
+
+    @ViewBuilder
+    private var analyticsSection: some View {
+        if TelemetryService.isCompiledIn {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionTitle("Аналитика")
+                settingToggleRow(
+                    title: "Аналитика и ошибки",
+                    subtitle: "Обезличенные события использования и технические сбои.",
+                    systemImage: "chart.line.uptrend.xyaxis",
+                    tint: GameTheme.bonusTitle,
+                    isOn: $model.settings.analyticsEnabled
+                )
+            }
+            .sectionPanel()
+        }
     }
 
     private var automationSection: some View {

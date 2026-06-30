@@ -52,6 +52,8 @@ nonisolated struct DomainSettings: Codable, Equatable {
     var liveActivityDisplay = LiveActivityDisplayOptions()
     var pushOnNewLevel = true
     var pushOnNewHint = true
+    /// Sends anonymized usage and error telemetry when the app is built with analytics support.
+    var analyticsEnabled = true
     /// Records Encounter HTTP traffic as HAR 1.2 for debugging and mock-server development.
     var harRecordingEnabled = false
 }

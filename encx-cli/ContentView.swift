@@ -217,6 +217,10 @@ private struct SettingsChangeObserver: ViewModifier {
                 model.applyHARRecordingSetting()
                 model.persistAuthorizationSettings()
             }
+            .onChange(of: model.settings.analyticsEnabled) {
+                model.persistAuthorizationSettings()
+                TelemetryService.updateEnabled(model.settings.analyticsEnabled)
+            }
             .onChange(of: model.login) {
                 model.persistAuthorizationSettings()
             }

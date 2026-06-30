@@ -17,6 +17,14 @@
 			</array>
 		</dict>
 	</array>
+	<key>ENKAPPAptabaseAppKey</key>
+	<string>$(ENKAPP_APTABASE_APP_KEY)</string>
+	<key>ENKAPPAptabaseHost</key>
+	<string>$(ENKAPP_APTABASE_HOST)</string>
+	<key>ENKAPPGlitchtipDSN</key>
+	<string>$(ENKAPP_GLITCHTIP_DSN)</string>
+	<key>ENKAPPTelemetryEnvironment</key>
+	<string>$(ENKAPP_TELEMETRY_ENVIRONMENT)</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

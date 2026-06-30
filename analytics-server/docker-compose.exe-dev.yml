@@ -1,0 +1,16 @@
+services:
+  glitchtip-prefix:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - glitchtip-web
+    expose:
+      - "8080"
+    volumes:
+      - ./nginx-glitchtip-prefix.conf:/etc/nginx/conf.d/default.conf:ro
+
+  caddy:
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./Caddyfile.exe-dev:/etc/caddy/Caddyfile:ro

@@ -490,8 +490,15 @@ final class EncounterViewModel {
             try await refreshGamesNow()
         }
         if succeeded {
+            TelemetryService.track("login_success", properties: [
+                "domain": settings.domain,
+            ])
             selectedScreen = .games
             syncWidgetSnapshot()
+        } else {
+            TelemetryService.track("login_failure", properties: [
+                "domain": settings.domain,
+            ])
         }
         return succeeded
     }
@@ -695,7 +702,7 @@ final class EncounterViewModel {
             return
         }
 
-        await runBusy(moderated ? "Подача заявки..." : "Вход в игру...") {
+        let succeeded = await runBusy(moderated ? "Подача заявки..." : "Вход в игру...") {
             if needsGameEntry(gameID: gameID) {
                 try await submitGameEntry(gameID: gameID)
             }
@@ -715,6 +722,11 @@ final class EncounterViewModel {
             await flushQueueNow(silent: true)
             await syncLiveActivity()
         }
+        TelemetryService.track(succeeded ? "game_enter_success" : "game_enter_failure", properties: [
+            "game_id": gameID,
+            "domain": settings.domain,
+            "moderated": moderated,
+        ])
     }
 
     func stopGameMonitoring() async {
@@ -752,7 +764,7 @@ final class EncounterViewModel {
     func openGame(_ gameID: Int64, presentErrors: Bool = true) async -> Bool {
         await ensureGameModerationLoaded(gameID: gameID)
 
-        return await runBusy("Загрузка уровня...", presentErrors: presentErrors) {
+        let succeeded = await runBusy("Загрузка уровня...", presentErrors: presentErrors) {
             selectGame(gameID)
             gameStartCountdown = nil
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: gameID) })
@@ -770,6 +782,11 @@ final class EncounterViewModel {
             await flushQueueNow(silent: true)
             await syncLiveActivity()
         }
+        TelemetryService.track(succeeded ? "game_open_success" : "game_open_failure", properties: [
+            "game_id": gameID,
+            "domain": settings.domain,
+        ])
+        return succeeded
     }
 
     func refreshLevel() async {
@@ -987,6 +1004,12 @@ final class EncounterViewModel {
 
         if !queue.isOnline {
             queue.enqueue(submission)
+            TelemetryService.track("code_queued", properties: [
+                "game_id": submission.gameID,
+                "level_number": submission.levelNumber,
+                "kind": submission.kind.rawValue,
+                "reason": "offline",
+            ])
             statusMessage = queueAddedMessage()
             Task { await syncLiveActivity() }
             BackgroundQueueService.shared.scheduleProcessing()
@@ -996,6 +1019,12 @@ final class EncounterViewModel {
         // Skip a 1s network attempt when we already know the engine is down — enqueue immediately.
         if !engineReachable {
             queue.enqueue(submission)
+            TelemetryService.track("code_queued", properties: [
+                "game_id": submission.gameID,
+                "level_number": submission.levelNumber,
+                "kind": submission.kind.rawValue,
+                "reason": "engine_unreachable",
+            ])
             statusMessage = queueAddedMessage(engineUnreachable: true)
             Task { await syncLiveActivity() }
             BackgroundQueueService.shared.scheduleProcessing()
@@ -1015,6 +1044,13 @@ final class EncounterViewModel {
             markEngineReachable()
             statusMessage = resultMessage(from: updated)
             lastCodeResult = feedback(from: updated)
+            TelemetryService.track("code_submit_success", properties: [
+                "game_id": submission.gameID,
+                "level_number": submission.levelNumber,
+                "kind": submission.kind.rawValue,
+                "correct": lastCodeResult?.isCorrect ?? false,
+                "round_trip_ms": serverRoundTripMs ?? 0,
+            ])
             await refreshAfterTransientLevelEventIfNeeded(gameID: submission.gameID)
             updateScreenWakeLock()
             if let gameID = selectedGameID {
@@ -1024,6 +1060,18 @@ final class EncounterViewModel {
         } catch {
             markEngineUnreachable()
             queue.enqueue(submission)
+            TelemetryService.capture(error, context: [
+                "operation": "code_submit",
+                "game_id": submission.gameID,
+                "level_number": submission.levelNumber,
+                "kind": submission.kind.rawValue,
+            ])
+            TelemetryService.track("code_queued", properties: [
+                "game_id": submission.gameID,
+                "level_number": submission.levelNumber,
+                "kind": submission.kind.rawValue,
+                "reason": "send_error",
+            ])
             statusMessage = queueAddedMessage(error: error)
             await syncLiveActivity()
             BackgroundQueueService.shared.scheduleProcessing()
@@ -1307,6 +1355,10 @@ final class EncounterViewModel {
                     statusMessage = message
                 }
                 lastCodeResult = feedback(from: model)
+                TelemetryService.track("queue_flush_success", properties: [
+                    "sent_count": pendingBefore - queue.pending.count,
+                    "remaining_count": queue.pending.count,
+                ])
                 shouldSyncLiveActivity = true
             } else if !queue.pending.isEmpty {
                 markEngineUnreachable()
@@ -1319,6 +1371,11 @@ final class EncounterViewModel {
         } catch {
             markEngineUnreachable()
             recordQueueRetryFailure()
+            TelemetryService.capture(error, context: [
+                "operation": "queue_flush",
+                "pending_count": pendingBefore,
+                "silent": silent,
+            ])
             if !silent {
                 presentError(error)
                 shouldSyncLiveActivity = true
@@ -1772,19 +1829,23 @@ final class EncounterViewModel {
 
         switch url.host?.lowercased() {
         case "game":
+            TelemetryService.track("widget_open", properties: ["route": "game"])
             if let gameID = selectedGameID {
                 _ = await openGame(gameID, presentErrors: false)
             } else {
                 selectedScreen = .games
             }
         case "flush-queue":
+            TelemetryService.track("widget_open", properties: ["route": "flush_queue"])
             if selectedGameID != nil {
                 selectedScreen = .game
                 _ = await flushQueueNow(silent: false)
             }
         case "codes":
+            TelemetryService.track("widget_open", properties: ["route": "codes"])
             await openCodesFromWidget()
         default:
+            TelemetryService.track("widget_open", properties: ["route": "unknown"])
             if selectedGameID != nil {
                 selectedScreen = .game
             }
@@ -2067,6 +2128,12 @@ final class EncounterViewModel {
     }
 
     func presentError(_ error: Error) {
+        TelemetryService.capture(error, context: [
+            "operation": "present_error",
+            "screen": selectedScreen.title,
+            "domain": settings.domain,
+            "has_game": selectedGameID != nil,
+        ])
         if EncounterClient.isAntiSpamError(error) {
             antiSpamVerificationURL = EncounterClient.antiSpamURL(from: error, settings: settings)
                 ?? EncounterClient.defaultAntiSpamURL(settings: settings)

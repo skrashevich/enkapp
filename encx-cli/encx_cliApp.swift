@@ -11,6 +11,8 @@ struct encx_cliApp: App {
 
     init() {
         BackgroundQueueService.shared.register()
+        TelemetryService.configure(settings: EncounterSessionStore.loadSettings())
+        TelemetryService.track("app_launch")
     }
 
     var body: some Scene {
