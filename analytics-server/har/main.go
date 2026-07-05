@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -15,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -127,6 +129,7 @@ type nameValue struct {
 type listItem struct {
 	ID         string
 	ReceivedAt string
+	GameID     string
 	Domain     string
 	Login      string
 	Version    string
@@ -196,6 +199,7 @@ func main() {
 	mux.HandleFunc("/", srv.requireViewerAuth(srv.handleIndex))
 	mux.HandleFunc("/sessions/", srv.requireViewerAuth(srv.handleSession))
 	mux.HandleFunc("/api/state", srv.requireViewerAuth(srv.handleState))
+	mux.HandleFunc("/api/sessions/archive", srv.requireViewerAuth(srv.handleArchive))
 	mux.HandleFunc("/api/har", srv.handleHAR)
 
 	log.Printf("har telemetry listening on %s, data_dir=%s", addr, dataDir)
@@ -292,6 +296,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		items = append(items, listItem{
 			ID:         sub.ID,
 			ReceivedAt: sub.ReceivedAt.Local().Format("2006-01-02 15:04:05"),
+			GameID:     emptyDash(gameID(sub)),
 			Domain:     emptyDash(sub.Domain),
 			Login:      emptyDash(sub.Login),
 			Version:    appVersion(sub),
@@ -360,6 +365,70 @@ func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(s.state())
+}
+
+func (s *server) handleArchive(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	ids := r.Form["ids"]
+	if len(ids) == 0 {
+		http.Error(w, "no sessions selected", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.RLock()
+	subs := make([]*submission, 0, len(ids))
+	for _, id := range ids {
+		sub := s.sessions[id]
+		if sub == nil {
+			s.mu.RUnlock()
+			http.Error(w, "unknown session: "+id, http.StatusNotFound)
+			return
+		}
+		subs = append(subs, sub)
+	}
+	s.mu.RUnlock()
+
+	name := "enkapp-har-" + time.Now().UTC().Format("20060102T150405Z") + ".zip"
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+
+	zw := zip.NewWriter(w)
+	defer func() {
+		if err := zw.Close(); err != nil {
+			log.Printf("close archive: %v", err)
+		}
+	}()
+	usedNames := map[string]int{}
+	for _, sub := range subs {
+		data := sub.Raw
+		if len(data) == 0 {
+			fallback, err := json.MarshalIndent(sub.HAR, "", "  ")
+			if err != nil {
+				log.Printf("marshal HAR fallback %s: %v", sub.ID, err)
+				continue
+			}
+			data = fallback
+		}
+
+		entryName := uniqueArchiveName(archiveEntryName(sub), usedNames)
+		fw, err := zw.Create(entryName)
+		if err != nil {
+			log.Printf("archive entry %s: %v", sub.ID, err)
+			continue
+		}
+		if _, err := fw.Write(data); err != nil {
+			log.Printf("write archive entry %s: %v", sub.ID, err)
+		}
+	}
 }
 
 func (s *server) state() stateResponse {
@@ -476,6 +545,29 @@ func compactURL(raw string) string {
 	return result
 }
 
+func gameID(sub *submission) string {
+	for _, entry := range sub.HAR.Log.Entries {
+		if id := gameIDFromURL(entry.Request.URL); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+func gameIDFromURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	for i := 0; i < len(parts)-1; i++ {
+		if strings.EqualFold(parts[i], "play") && isDigits(parts[i+1]) {
+			return parts[i+1]
+		}
+	}
+	return ""
+}
+
 func appVersion(sub *submission) string {
 	if sub.Version == "" && sub.Build == "" {
 		return "-"
@@ -494,6 +586,50 @@ func emptyDash(value string) string {
 		return "-"
 	}
 	return value
+}
+
+func archiveEntryName(sub *submission) string {
+	parts := []string{
+		sub.ReceivedAt.Local().Format("2006-01-02_15-04-05"),
+		emptyDash(sub.Domain),
+		"game-" + emptyDash(gameID(sub)),
+		sub.ID,
+	}
+	return sanitizeFilename(strings.Join(parts, "_")) + ".har"
+}
+
+func uniqueArchiveName(name string, used map[string]int) string {
+	count := used[name]
+	used[name] = count + 1
+	if count == 0 {
+		return name
+	}
+	ext := filepath.Ext(name)
+	base := strings.TrimSuffix(name, ext)
+	return fmt.Sprintf("%s-%d%s", base, count+1, ext)
+}
+
+var unsafeFilenameChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+func sanitizeFilename(value string) string {
+	value = unsafeFilenameChars.ReplaceAllString(value, "-")
+	value = strings.Trim(value, ".-")
+	if value == "" {
+		return "capture"
+	}
+	return value
+}
+
+func isDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, ch := range value {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func truncate(value string, limit int) string {
@@ -540,49 +676,183 @@ var indexTemplate = template.Must(template.New("index").Parse(pagePrefix + `
       <p>Received HAR captures from mobile clients. <span id="live-status">Live updates enabled.</span></p>
     </div>
   </header>
-  <table class="captures">
-    <colgroup>
-      <col class="received-col">
-      <col class="domain-col">
-      <col class="login-col">
-      <col class="version-col">
-      <col class="entries-col">
-      <col class="first-url-col">
-      <col class="client-col">
-    </colgroup>
-    <thead>
-      <tr>
-        <th>Received</th>
-        <th>Domain</th>
-        <th>Login</th>
-        <th>Version</th>
-        <th>Entries</th>
-        <th>First request</th>
-        <th>Client</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .Items}}
-      <tr>
-        <td class="received"><a href="/sessions/{{.ID}}">{{.ReceivedAt}}</a></td>
-        <td class="domain">{{.Domain}}</td>
-        <td class="login">{{.Login}}</td>
-        <td class="version">{{.Version}}</td>
-        <td class="entries">{{.EntryCount}}</td>
-        <td class="url" title="{{.FirstURL}}">{{.FirstURL}}</td>
-        <td class="client">{{.RemoteAddr}}</td>
-      </tr>
-      {{else}}
-      <tr><td colspan="7" class="empty">No HAR captures yet.</td></tr>
-      {{end}}
-    </tbody>
-  </table>
+  <form id="captures-form" method="post" action="/api/sessions/archive">
+    <div class="toolbar">
+      <label class="select-all"><input id="select-all" type="checkbox"> Select visible</label>
+      <button id="download-selected" type="submit" disabled>Download selected ZIP</button>
+      <button id="clear-filters" type="button">Clear filters</button>
+      <span id="selection-count">0 selected</span>
+    </div>
+    <table class="captures">
+      <colgroup>
+        <col class="select-col">
+        <col class="received-col">
+        <col class="game-col">
+        <col class="domain-col">
+        <col class="login-col">
+        <col class="version-col">
+        <col class="entries-col">
+        <col class="first-url-col">
+        <col class="client-col">
+      </colgroup>
+      <thead>
+        <tr class="sort-row">
+          <th></th>
+          <th><button type="button" data-sort="received">Received</button></th>
+          <th><button type="button" data-sort="game">Game ID</button></th>
+          <th><button type="button" data-sort="domain">Domain</button></th>
+          <th><button type="button" data-sort="login">Login</button></th>
+          <th><button type="button" data-sort="version">Version</button></th>
+          <th><button type="button" data-sort="entries">Entries</button></th>
+          <th><button type="button" data-sort="url">First request</button></th>
+          <th><button type="button" data-sort="client">Client</button></th>
+        </tr>
+        <tr class="filter-row">
+          <th></th>
+          <th><input data-filter="received" aria-label="Filter received"></th>
+          <th><input data-filter="game" aria-label="Filter game ID"></th>
+          <th><input data-filter="domain" aria-label="Filter domain"></th>
+          <th><input data-filter="login" aria-label="Filter login"></th>
+          <th><input data-filter="version" aria-label="Filter version"></th>
+          <th><input data-filter="entries" aria-label="Filter entries"></th>
+          <th><input data-filter="url" aria-label="Filter first request"></th>
+          <th><input data-filter="client" aria-label="Filter client"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Items}}
+        <tr data-received="{{.ReceivedAt}}" data-game="{{.GameID}}" data-domain="{{.Domain}}" data-login="{{.Login}}" data-version="{{.Version}}" data-entries="{{.EntryCount}}" data-url="{{.FirstURL}}" data-client="{{.RemoteAddr}}">
+          <td class="select"><input type="checkbox" name="ids" value="{{.ID}}" aria-label="Select capture {{.ReceivedAt}}"></td>
+          <td class="received"><a href="/sessions/{{.ID}}">{{.ReceivedAt}}</a></td>
+          <td class="game">{{.GameID}}</td>
+          <td class="domain">{{.Domain}}</td>
+          <td class="login">{{.Login}}</td>
+          <td class="version">{{.Version}}</td>
+          <td class="entries">{{.EntryCount}}</td>
+          <td class="url" title="{{.FirstURL}}">{{.FirstURL}}</td>
+          <td class="client">{{.RemoteAddr}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="9" class="empty">No HAR captures yet.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </form>
 </main>
 <script>
 (() => {
   const root = document.querySelector("main[data-page='index']");
   const status = document.getElementById("live-status");
+  const form = document.getElementById("captures-form");
+  const table = document.querySelector(".captures");
+  const tbody = table?.querySelector("tbody");
+  const selectAll = document.getElementById("select-all");
+  const downloadButton = document.getElementById("download-selected");
+  const clearFiltersButton = document.getElementById("clear-filters");
+  const selectionCount = document.getElementById("selection-count");
+  const rows = tbody ? [...tbody.querySelectorAll("tr[data-received]")] : [];
+  const filters = [...document.querySelectorAll("[data-filter]")];
+  const sortButtons = [...document.querySelectorAll("[data-sort]")];
   let latestID = root?.dataset.latestId || "";
+  let sortKey = "received";
+  let sortDirection = "desc";
+
+  function rowValue(row, key) {
+    return row.dataset[key] || "";
+  }
+
+  function compareRows(a, b) {
+    let left = rowValue(a, sortKey);
+    let right = rowValue(b, sortKey);
+    let result;
+    if (sortKey === "entries" || sortKey === "game") {
+      result = (Number(left) || 0) - (Number(right) || 0);
+    } else {
+      result = left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+    }
+    return sortDirection === "asc" ? result : -result;
+  }
+
+  function applyTableState() {
+    const activeFilters = filters
+      .map((input) => [input.dataset.filter, input.value.trim().toLowerCase()])
+      .filter(([, value]) => value !== "");
+    rows.sort(compareRows);
+    for (const row of rows) {
+      const matches = activeFilters.every(([key, value]) => rowValue(row, key).toLowerCase().includes(value));
+      row.hidden = !matches;
+      tbody.appendChild(row);
+    }
+    for (const button of sortButtons) {
+      const active = button.dataset.sort === sortKey;
+      button.dataset.direction = active ? sortDirection : "";
+      button.setAttribute("aria-sort", active ? sortDirection : "none");
+    }
+    updateSelection();
+  }
+
+  function visibleRows() {
+    return rows.filter((row) => !row.hidden);
+  }
+
+  function selectedRows() {
+    return rows.filter((row) => row.querySelector("input[type='checkbox']")?.checked);
+  }
+
+  function updateSelection() {
+    const visible = visibleRows();
+    const selected = selectedRows();
+    downloadButton.disabled = selected.length === 0;
+    selectionCount.textContent = selected.length + " selected";
+    if (visible.length === 0) {
+      selectAll.checked = false;
+      selectAll.indeterminate = false;
+      return;
+    }
+    const visibleSelected = visible.filter((row) => row.querySelector("input[type='checkbox']")?.checked).length;
+    selectAll.checked = visibleSelected === visible.length;
+    selectAll.indeterminate = visibleSelected > 0 && visibleSelected < visible.length;
+  }
+
+  for (const button of sortButtons) {
+    button.addEventListener("click", () => {
+      const nextKey = button.dataset.sort;
+      if (sortKey === nextKey) {
+        sortDirection = sortDirection === "asc" ? "desc" : "asc";
+      } else {
+        sortKey = nextKey;
+        sortDirection = nextKey === "received" ? "desc" : "asc";
+      }
+      applyTableState();
+    });
+  }
+
+  for (const input of filters) {
+    input.addEventListener("input", applyTableState);
+  }
+
+  for (const row of rows) {
+    row.querySelector("input[type='checkbox']")?.addEventListener("change", updateSelection);
+  }
+
+  selectAll?.addEventListener("change", () => {
+    for (const row of visibleRows()) {
+      const checkbox = row.querySelector("input[type='checkbox']");
+      if (checkbox) checkbox.checked = selectAll.checked;
+    }
+    updateSelection();
+  });
+
+  clearFiltersButton?.addEventListener("click", () => {
+    for (const input of filters) input.value = "";
+    applyTableState();
+  });
+
+  form?.addEventListener("submit", (event) => {
+    if (selectedRows().length === 0) {
+      event.preventDefault();
+    }
+  });
 
   async function poll() {
     try {
@@ -604,6 +874,7 @@ var indexTemplate = template.Must(template.New("index").Parse(pagePrefix + `
     }
   }
 
+  applyTableState();
   setInterval(poll, 2000);
 })();
 </script>
@@ -690,30 +961,63 @@ const pagePrefix = `<!doctype html>
 <style>
 :root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 body { margin: 0; background: #0f1115; color: #e7e9ee; }
-main { width: min(1180px, calc(100vw - 32px)); margin: 0 auto; padding: 28px 0 48px; }
+main { width: min(1320px, calc(100vw - 32px)); margin: 0 auto; padding: 28px 0 48px; }
 a { color: #8ab4ff; text-decoration: none; }
 a:hover { text-decoration: underline; }
+button, input { font: inherit; }
+button { cursor: pointer; }
 .top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 20px; }
 h1 { margin: 0 0 6px; font-size: 28px; }
 h2 { margin: 10px 0 4px; font-size: 18px; overflow-wrap: anywhere; }
 h3 { margin: 16px 0 8px; font-size: 14px; color: #aeb6c8; }
 p { margin: 0; color: #aeb6c8; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin-bottom: 12px; color: #aeb6c8; }
+.toolbar button { border: 1px solid #394150; border-radius: 6px; padding: 6px 10px; background: #202632; color: #e7e9ee; }
+.toolbar button:disabled { cursor: default; opacity: 0.55; }
+.select-all { display: inline-flex; gap: 6px; align-items: center; color: #e7e9ee; }
 table { width: 100%; border-collapse: collapse; background: #171a21; border: 1px solid #2a2f3a; }
 th, td { padding: 10px 12px; border-bottom: 1px solid #2a2f3a; text-align: left; vertical-align: top; }
 th { color: #aeb6c8; font-size: 13px; font-weight: 600; }
 .captures { table-layout: fixed; }
 .captures th, .captures td { overflow: hidden; }
-.captures .received-col { width: 176px; }
-.captures .domain-col { width: 126px; }
-.captures .login-col { width: 112px; }
+.captures .select-col { width: 42px; }
+.captures .received-col { width: 172px; }
+.captures .game-col { width: 82px; }
+.captures .domain-col { width: 120px; }
+.captures .login-col { width: 108px; }
 .captures .version-col { width: 78px; }
 .captures .entries-col { width: 70px; }
-.captures .client-col { width: 136px; }
-.captures .received, .captures .domain, .captures .login, .captures .version, .captures .entries, .captures .client {
+.captures .client-col { width: 132px; }
+.captures .select { text-align: center; }
+.captures .sort-row th { padding-bottom: 6px; }
+.captures .sort-row button {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+.captures .sort-row button[data-direction="asc"]::after { content: " ↑"; }
+.captures .sort-row button[data-direction="desc"]::after { content: " ↓"; }
+.captures .filter-row th { padding-top: 0; }
+.captures .filter-row input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #2f3643;
+  border-radius: 5px;
+  padding: 5px 6px;
+  background: #10131a;
+  color: #e7e9ee;
+}
+.captures .received, .captures .game, .captures .domain, .captures .login, .captures .version, .captures .entries, .captures .client {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.captures .entries { text-align: right; }
+.captures .game, .captures .entries { text-align: right; }
 .captures .url {
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -740,11 +1044,12 @@ pre { margin: 0; padding: 12px; overflow: auto; max-height: 520px; background: #
   colgroup { display: none; }
   thead { display: none; }
   tr { border-bottom: 1px solid #2a2f3a; }
-  .captures .received, .captures .domain, .captures .login, .captures .version, .captures .entries, .captures .client, .captures .url {
+  .captures .select { text-align: left; }
+  .captures .received, .captures .game, .captures .domain, .captures .login, .captures .version, .captures .entries, .captures .client, .captures .url {
     white-space: normal;
     text-overflow: clip;
   }
-  .captures .entries { text-align: left; }
+  .captures .game, .captures .entries { text-align: left; }
   dl { grid-template-columns: 1fr; }
 }
 </style>
