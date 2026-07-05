@@ -175,6 +175,10 @@ type entryView struct {
 	ResponseBodyJSON string
 	HasResponseBody  bool
 	HasResponseJSON  bool
+	ResponseView     string
+	IsRawView        bool
+	IsHTMLView       bool
+	IsJSONView       bool
 }
 
 func main() {
@@ -343,6 +347,7 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 	for i, entry := range sub.HAR.Log.Entries {
 		responseBody := entry.Response.Content.Text
 		responseBodyJSON := prettyJSON(responseBody)
+		responseView := defaultResponseView(responseContentType(entry), responseBodyJSON != "")
 		page.Entries = append(page.Entries, entryView{
 			Index:            i + 1,
 			Method:           entry.Request.Method,
@@ -360,6 +365,10 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 			ResponseBodyJSON: responseBodyJSON,
 			HasResponseBody:  responseBody != "",
 			HasResponseJSON:  responseBodyJSON != "",
+			ResponseView:     responseView,
+			IsRawView:        responseView == "raw",
+			IsHTMLView:       responseView == "html",
+			IsJSONView:       responseView == "json",
 		})
 	}
 	render(w, detailTemplate, page)
@@ -653,6 +662,29 @@ func prettyJSON(value string) string {
 	return buf.String()
 }
 
+func responseContentType(entry harEntry) string {
+	for _, header := range entry.Response.Headers {
+		if strings.EqualFold(header.Name, "content-type") {
+			if value := strings.TrimSpace(header.Value); value != "" {
+				return value
+			}
+		}
+	}
+	return entry.Response.Content.MimeType
+}
+
+func defaultResponseView(contentType string, hasJSON bool) string {
+	mimeType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	switch {
+	case hasJSON && (mimeType == "application/json" || strings.HasSuffix(mimeType, "+json")):
+		return "json"
+	case mimeType == "text/html":
+		return "html"
+	default:
+		return "raw"
+	}
+}
+
 func newID(now time.Time) string {
 	var buf [4]byte
 	if _, err := rand.Read(buf[:]); err != nil {
@@ -934,13 +966,13 @@ var detailTemplate = template.Must(template.New("detail").Parse(pagePrefix + `
       <h3>Body</h3>
       <div class="body-viewer" data-body-viewer>
         <div class="body-tabs">
-          <button type="button" data-body-tab="raw" aria-pressed="true">Raw</button>
-          <button type="button" data-body-tab="html" aria-pressed="false">HTML</button>
-          {{if .HasResponseJSON}}<button type="button" data-body-tab="json" aria-pressed="false">JSON</button>{{end}}
+          <button type="button" data-body-tab="raw" aria-pressed="{{.IsRawView}}">Raw</button>
+          <button type="button" data-body-tab="html" aria-pressed="{{.IsHTMLView}}">HTML</button>
+          {{if .HasResponseJSON}}<button type="button" data-body-tab="json" aria-pressed="{{.IsJSONView}}">JSON</button>{{end}}
         </div>
-        <pre data-body-panel="raw">{{.ResponseBody}}</pre>
-        <iframe data-body-panel="html" sandbox srcdoc="{{.ResponseBody}}" hidden></iframe>
-        {{if .HasResponseJSON}}<pre data-body-panel="json" hidden>{{.ResponseBodyJSON}}</pre>{{end}}
+        <pre data-body-panel="raw"{{if not .IsRawView}} hidden{{end}}>{{.ResponseBody}}</pre>
+        <iframe data-body-panel="html" sandbox srcdoc="{{.ResponseBody}}"{{if not .IsHTMLView}} hidden{{end}}></iframe>
+        {{if .HasResponseJSON}}<pre data-body-panel="json"{{if not .IsJSONView}} hidden{{end}}>{{.ResponseBodyJSON}}</pre>{{end}}
       </div>
       {{end}}
     </details>

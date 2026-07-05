@@ -53,3 +53,37 @@ func TestPrettyJSON(t *testing.T) {
 		t.Fatalf("prettyJSON(invalid) = %q, want empty", got)
 	}
 }
+
+func TestDefaultResponseView(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		hasJSON     bool
+		want        string
+	}{
+		{name: "json", contentType: "application/json; charset=utf-8", hasJSON: true, want: "json"},
+		{name: "json invalid body fallback", contentType: "application/json", hasJSON: false, want: "raw"},
+		{name: "html", contentType: "text/html; charset=utf-8", hasJSON: false, want: "html"},
+		{name: "other", contentType: "text/plain", hasJSON: false, want: "raw"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := defaultResponseView(tt.contentType, tt.hasJSON); got != tt.want {
+				t.Fatalf("defaultResponseView(%q, %v) = %q, want %q", tt.contentType, tt.hasJSON, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResponseContentTypePrefersHeader(t *testing.T) {
+	entry := harEntry{
+		Response: harResponse{
+			Headers: []nameValue{{Name: "Content-Type", Value: "application/json"}},
+			Content: harContent{MimeType: "text/html"},
+		},
+	}
+	if got := responseContentType(entry); got != "application/json" {
+		t.Fatalf("responseContentType() = %q, want header value", got)
+	}
+}
