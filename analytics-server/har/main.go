@@ -1263,7 +1263,7 @@ th { color: #aeb6c8; font-size: 13px; font-weight: 600; }
 .captures .game-col { width: 82px; }
 .captures .domain-col { width: 120px; }
 .captures .login-col { width: 108px; }
-.captures .version-col { width: 78px; }
+.captures .version-col { width: 100px; }
 .captures .entries-col { width: 70px; }
 .captures .client-col { width: 132px; }
 .captures .select { text-align: center; }
