@@ -622,19 +622,49 @@ nonisolated final class EncounterClient {
     }
 
     static func isAntiSpamError(_ error: Error) -> Bool {
-        let message = (error as NSError).localizedDescription.lowercased()
-        return message.contains("anti-spam") || message.contains("nothumanrequest")
+        let nsError = error as NSError
+        #if canImport(Encx)
+        if EncxmobileIsAntiSpamError(nsError) {
+            return true
+        }
+        #endif
+
+        let message = nsError.localizedDescription.lowercased()
+        return message.contains("nothumanrequest")
+            || message.contains("not human request")
+            || message.contains("/nothumanrequest.aspx")
+            || message.contains("anti-spam verification required")
+            || message.contains("anti spam verification required")
+            || (
+                message.contains("requests have been classified")
+                    && message.contains("robot")
+            )
+            || message.contains("запросы классифицированы как запросы робота")
     }
 
     static func antiSpamURL(from error: Error, settings: DomainSettings) -> URL? {
         guard isAntiSpamError(error) else { return nil }
-        let message = (error as NSError).localizedDescription
-        if let range = message.range(of: "https://") ?? message.range(of: "http://") {
+        let nsError = error as NSError
+        #if canImport(Encx)
+        let frameworkURL = EncxmobileAntiSpamURLFromError(nsError)
+        if !frameworkURL.isEmpty, let url = URL(string: frameworkURL) {
+            return url
+        }
+        #endif
+
+        let message = nsError.localizedDescription
+        for scheme in ["https://", "http://"] {
+            guard let range = message.range(of: scheme) else { continue }
             let tail = message[range.lowerBound...]
-            let urlString = tail.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? String(tail)
-            if let url = URL(string: urlString) {
-                return url
+            let urlString = tail
+                .split(whereSeparator: { $0.isWhitespace || $0 == "\"" || $0 == "'" || $0 == "<" })
+                .first
+                .map(String.init) ?? String(tail)
+            guard urlString.localizedCaseInsensitiveContains("NotHumanRequest.aspx"),
+                  let url = URL(string: urlString) else {
+                continue
             }
+            return url
         }
         return defaultAntiSpamURL(settings: settings)
     }
