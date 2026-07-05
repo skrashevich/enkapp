@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -24,9 +25,11 @@ import (
 const maxHARBytes = 25 << 20
 
 type server struct {
-	mu       sync.RWMutex
-	dataDir  string
-	sessions map[string]*submission
+	mu           sync.RWMutex
+	dataDir      string
+	viewUsername string
+	viewPassword string
+	sessions     map[string]*submission
 }
 
 type submission struct {
@@ -168,10 +171,17 @@ type entryView struct {
 func main() {
 	addr := env("ADDR", ":8080")
 	dataDir := env("DATA_DIR", "data")
+	viewUsername := env("VIEW_USERNAME", "admin")
+	viewPassword := os.Getenv("VIEW_PASSWORD")
+	if viewPassword == "" {
+		log.Print("VIEW_PASSWORD is not set; HAR viewer endpoints will refuse access")
+	}
 
 	srv := &server{
-		dataDir:  dataDir,
-		sessions: map[string]*submission{},
+		dataDir:      dataDir,
+		viewUsername: viewUsername,
+		viewPassword: viewPassword,
+		sessions:     map[string]*submission{},
 	}
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		log.Fatal(err)
@@ -181,13 +191,31 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", srv.handleIndex)
-	mux.HandleFunc("/sessions/", srv.handleSession)
-	mux.HandleFunc("/api/state", srv.handleState)
+	mux.HandleFunc("/", srv.requireViewerAuth(srv.handleIndex))
+	mux.HandleFunc("/sessions/", srv.requireViewerAuth(srv.handleSession))
+	mux.HandleFunc("/api/state", srv.requireViewerAuth(srv.handleState))
 	mux.HandleFunc("/api/har", srv.handleHAR)
 
 	log.Printf("har telemetry listening on %s, data_dir=%s", addr, dataDir)
 	log.Fatal(http.ListenAndServe(addr, logRequest(mux)))
+}
+
+func (s *server) requireViewerAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.viewPassword == "" {
+			http.Error(w, "HAR viewer authentication is not configured", http.StatusServiceUnavailable)
+			return
+		}
+
+		username, password, ok := r.BasicAuth()
+		if !ok || !constantTimeEqual(username, s.viewUsername) || !constantTimeEqual(password, s.viewPassword) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="enkapp HAR telemetry", charset="UTF-8"`)
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+			return
+		}
+
+		next(w, r)
+	}
 }
 
 func (s *server) handleHAR(w http.ResponseWriter, r *http.Request) {
@@ -484,6 +512,13 @@ func env(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func constantTimeEqual(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 func logRequest(next http.Handler) http.Handler {
