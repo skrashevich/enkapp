@@ -214,6 +214,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/share/", srv.handleSharedSession)
+	mux.HandleFunc("/favicon.ico", srv.handleFavicon)
 	mux.HandleFunc("/", srv.requireViewerAuth(srv.handleIndex))
 	mux.HandleFunc("/sessions/", srv.requireViewerAuth(srv.handleSession))
 	mux.HandleFunc("/api/state", srv.requireViewerAuth(srv.handleState))
@@ -241,6 +242,12 @@ func (s *server) requireViewerAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		next(w, r)
 	}
+}
+
+func (s *server) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
+	w.Header().Set("Content-Type", "image/x-icon")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) handleHAR(w http.ResponseWriter, r *http.Request) {
@@ -1219,6 +1226,7 @@ const pagePrefix = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>enkapp HAR telemetry</title>
 <style>
 :root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
