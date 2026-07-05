@@ -156,6 +156,11 @@ Zero or negative values reset to the default (1 second).
  */
 - (void)setCodeSendTimeoutSeconds:(int64_t)seconds;
 /**
+ * SetGameRequestMinIntervalMillis sets the minimum interval between mobile game-engine requests.
+Zero or negative values disable pacing.
+ */
+- (void)setGameRequestMinIntervalMillis:(int64_t)milliseconds;
+/**
  * SetHARRecordingEnabled toggles HAR 1.2 capture for Encounter HTTP traffic.
  */
 - (void)setHARRecordingEnabled:(BOOL)enabled;
