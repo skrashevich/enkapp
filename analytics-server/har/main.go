@@ -540,7 +540,16 @@ var indexTemplate = template.Must(template.New("index").Parse(pagePrefix + `
       <p>Received HAR captures from mobile clients. <span id="live-status">Live updates enabled.</span></p>
     </div>
   </header>
-  <table>
+  <table class="captures">
+    <colgroup>
+      <col class="received-col">
+      <col class="domain-col">
+      <col class="login-col">
+      <col class="version-col">
+      <col class="entries-col">
+      <col class="first-url-col">
+      <col class="client-col">
+    </colgroup>
     <thead>
       <tr>
         <th>Received</th>
@@ -555,13 +564,13 @@ var indexTemplate = template.Must(template.New("index").Parse(pagePrefix + `
     <tbody>
       {{range .Items}}
       <tr>
-        <td><a href="/sessions/{{.ID}}">{{.ReceivedAt}}</a></td>
-        <td>{{.Domain}}</td>
-        <td>{{.Login}}</td>
-        <td>{{.Version}}</td>
-        <td>{{.EntryCount}}</td>
-        <td class="url">{{.FirstURL}}</td>
-        <td>{{.RemoteAddr}}</td>
+        <td class="received"><a href="/sessions/{{.ID}}">{{.ReceivedAt}}</a></td>
+        <td class="domain">{{.Domain}}</td>
+        <td class="login">{{.Login}}</td>
+        <td class="version">{{.Version}}</td>
+        <td class="entries">{{.EntryCount}}</td>
+        <td class="url" title="{{.FirstURL}}">{{.FirstURL}}</td>
+        <td class="client">{{.RemoteAddr}}</td>
       </tr>
       {{else}}
       <tr><td colspan="7" class="empty">No HAR captures yet.</td></tr>
@@ -692,6 +701,23 @@ p { margin: 0; color: #aeb6c8; }
 table { width: 100%; border-collapse: collapse; background: #171a21; border: 1px solid #2a2f3a; }
 th, td { padding: 10px 12px; border-bottom: 1px solid #2a2f3a; text-align: left; vertical-align: top; }
 th { color: #aeb6c8; font-size: 13px; font-weight: 600; }
+.captures { table-layout: fixed; }
+.captures th, .captures td { overflow: hidden; }
+.captures .received-col { width: 176px; }
+.captures .domain-col { width: 126px; }
+.captures .login-col { width: 112px; }
+.captures .version-col { width: 78px; }
+.captures .entries-col { width: 70px; }
+.captures .client-col { width: 136px; }
+.captures .received, .captures .domain, .captures .login, .captures .version, .captures .entries, .captures .client {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.captures .entries { text-align: right; }
+.captures .url {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .url, .full-url { overflow-wrap: anywhere; }
 .empty { color: #aeb6c8; text-align: center; padding: 28px; }
 .banner { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; padding: 10px 12px; background: #203d2d; color: #d6f6dc; border: 1px solid #3f8152; border-radius: 8px; }
@@ -711,8 +737,14 @@ dd { margin: 0; overflow-wrap: anywhere; }
 pre { margin: 0; padding: 12px; overflow: auto; max-height: 520px; background: #0b0d12; border: 1px solid #2a2f3a; border-radius: 6px; white-space: pre-wrap; }
 @media (max-width: 760px) {
   table, thead, tbody, tr, th, td { display: block; }
+  colgroup { display: none; }
   thead { display: none; }
   tr { border-bottom: 1px solid #2a2f3a; }
+  .captures .received, .captures .domain, .captures .login, .captures .version, .captures .entries, .captures .client, .captures .url {
+    white-space: normal;
+    text-overflow: clip;
+  }
+  .captures .entries { text-align: left; }
   dl { grid-template-columns: 1fr; }
 }
 </style>
