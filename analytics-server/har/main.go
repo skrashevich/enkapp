@@ -44,6 +44,7 @@ type submission struct {
 	Build      string          `json:"build"`
 	RemoteAddr string          `json:"remote_addr"`
 	EntryCount int             `json:"entry_count"`
+	ShareToken string          `json:"share_token,omitempty"`
 	HAR        harFile         `json:"har"`
 	Raw        json.RawMessage `json:"raw"`
 }
@@ -145,9 +146,17 @@ type indexPage struct {
 }
 
 type detailPage struct {
-	Session *submission
-	Entries []entryView
-	State   stateResponse
+	Session    *submission
+	Entries    []entryView
+	State      stateResponse
+	IsPublic   bool
+	RawURL     string
+	ShareURL   string
+	PublicPath string
+}
+
+type shareResponse struct {
+	URL string `json:"url"`
 }
 
 type stateResponse struct {
@@ -204,10 +213,12 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/share/", srv.handleSharedSession)
 	mux.HandleFunc("/", srv.requireViewerAuth(srv.handleIndex))
 	mux.HandleFunc("/sessions/", srv.requireViewerAuth(srv.handleSession))
 	mux.HandleFunc("/api/state", srv.requireViewerAuth(srv.handleState))
 	mux.HandleFunc("/api/sessions/archive", srv.requireViewerAuth(srv.handleArchive))
+	mux.HandleFunc("/api/sessions/share", srv.requireViewerAuth(srv.handleShare))
 	mux.HandleFunc("/api/har", srv.handleHAR)
 
 	log.Printf("har telemetry listening on %s, data_dir=%s", addr, dataDir)
@@ -343,7 +354,105 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page := detailPage{Session: sub, State: s.state()}
+	page := s.detailPage(sub, false)
+	page.RawURL = "/sessions/" + sub.ID + "?raw=1"
+	if sub.ShareToken != "" {
+		page.PublicPath = "/share/" + sub.ShareToken
+		page.ShareURL = absoluteURL(r, page.PublicPath)
+	}
+	render(w, detailTemplate, page)
+}
+
+func (s *server) handleSharedSession(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimPrefix(r.URL.Path, "/share/")
+	if token == "" || strings.Contains(token, "/") {
+		http.NotFound(w, r)
+		return
+	}
+
+	sub := s.findByShareToken(token)
+	if sub == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if r.URL.Query().Get("raw") == "1" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(sub.Raw)
+		return
+	}
+
+	page := s.detailPage(sub, true)
+	page.RawURL = "/share/" + token + "?raw=1"
+	page.PublicPath = "/share/" + token
+	page.ShareURL = absoluteURL(r, page.PublicPath)
+	render(w, detailTemplate, page)
+}
+
+func (s *server) handleShare(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	id := strings.TrimSpace(r.Form.Get("id"))
+	if id == "" || strings.Contains(id, "/") {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.RLock()
+	sub := s.sessions[id]
+	s.mu.RUnlock()
+	if sub == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if sub.ShareToken == "" {
+		sub.ShareToken = newShareToken()
+		if err := s.save(sub); err != nil {
+			log.Printf("save share token %s: %v", id, err)
+			http.Error(w, "failed to save share link", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	path := "/share/" + sub.ShareToken
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(shareResponse{URL: absoluteURL(r, path)})
+}
+
+func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(s.state())
+}
+
+func (s *server) findByShareToken(token string) *submission {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sub := range s.sessions {
+		if sub.ShareToken != "" && constantTimeEqual(sub.ShareToken, token) {
+			return sub
+		}
+	}
+	return nil
+}
+
+func (s *server) detailPage(sub *submission, isPublic bool) detailPage {
+	page := detailPage{Session: sub, State: s.state(), IsPublic: isPublic}
 	for i, entry := range sub.HAR.Log.Entries {
 		responseBody := entry.Response.Content.Text
 		responseBodyJSON := prettyJSON(responseBody)
@@ -371,18 +480,7 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 			IsJSONView:       responseView == "json",
 		})
 	}
-	render(w, detailTemplate, page)
-}
-
-func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(s.state())
+	return page
 }
 
 func (s *server) handleArchive(w http.ResponseWriter, r *http.Request) {
@@ -693,6 +791,30 @@ func newID(now time.Time) string {
 	return now.Format("20060102T150405.000000000Z") + "-" + hex.EncodeToString(buf[:])
 }
 
+func newShareToken() string {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		panic(errors.Join(errors.New("random share token"), err))
+	}
+	return hex.EncodeToString(buf[:])
+}
+
+func absoluteURL(r *http.Request, path string) string {
+	proto := r.Header.Get("X-Forwarded-Proto")
+	if proto == "" {
+		if r.TLS != nil {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
+	}
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	return proto + "://" + host + path
+}
+
 func env(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value
@@ -927,12 +1049,25 @@ var indexTemplate = template.Must(template.New("index").Parse(pagePrefix + `
 ` + pageSuffix))
 
 var detailTemplate = template.Must(template.New("detail").Parse(pagePrefix + `
-<main data-page="detail" data-latest-id="{{.State.LatestID}}" data-current-id="{{.Session.ID}}">
+<main data-page="detail" data-latest-id="{{.State.LatestID}}" data-current-id="{{.Session.ID}}" data-public="{{.IsPublic}}" data-share-url="{{.ShareURL}}">
+  {{if not .IsPublic}}
   <div id="new-capture-banner" class="banner" hidden>
     <span id="new-capture-text"></span>
     <a id="new-capture-link" href="/">Open</a>
   </div>
-  <p><a href="/">Back to captures</a> · <a href="/sessions/{{.Session.ID}}?raw=1">Raw JSON</a></p>
+  {{end}}
+  <nav class="session-nav">
+    {{if not .IsPublic}}<a href="/">Back to captures</a><span>·</span>{{end}}
+    <a href="{{.RawURL}}">Raw JSON</a>
+    {{if not .IsPublic}}<span>·</span><button id="generate-share-link" type="button" data-session-id="{{.Session.ID}}">Generate share link</button>{{end}}
+  </nav>
+  {{if not .IsPublic}}
+  <div id="share-link-panel" class="share-link"{{if not .ShareURL}} hidden{{end}}>
+    <input id="share-link-input" readonly value="{{.ShareURL}}" aria-label="Share link">
+    <button id="copy-share-link" type="button">Copy</button>
+    <span id="share-link-status"></span>
+  </div>
+  {{end}}
   <header class="top">
     <div>
       <h1>{{.Session.Domain}}</h1>
@@ -985,8 +1120,21 @@ var detailTemplate = template.Must(template.New("detail").Parse(pagePrefix + `
   const banner = document.getElementById("new-capture-banner");
   const bannerText = document.getElementById("new-capture-text");
   const bannerLink = document.getElementById("new-capture-link");
+  const generateShareButton = document.getElementById("generate-share-link");
+  const sharePanel = document.getElementById("share-link-panel");
+  const shareInput = document.getElementById("share-link-input");
+  const copyShareButton = document.getElementById("copy-share-link");
+  const shareStatus = document.getElementById("share-link-status");
   let latestID = root?.dataset.latestId || "";
   const currentID = root?.dataset.currentId || "";
+  const isPublic = root?.dataset.public === "true";
+
+  function showShareLink(url, message) {
+    if (!sharePanel || !shareInput) return;
+    shareInput.value = url;
+    sharePanel.hidden = false;
+    if (shareStatus) shareStatus.textContent = message || "";
+  }
 
   for (const viewer of document.querySelectorAll("[data-body-viewer]")) {
     const buttons = [...viewer.querySelectorAll("[data-body-tab]")];
@@ -1004,6 +1152,45 @@ var detailTemplate = template.Must(template.New("detail").Parse(pagePrefix + `
     }
   }
 
+  generateShareButton?.addEventListener("click", async () => {
+    const id = generateShareButton.dataset.sessionId || "";
+    generateShareButton.disabled = true;
+    if (shareStatus) shareStatus.textContent = "Generating...";
+    try {
+      const body = new URLSearchParams({ id });
+      const response = await fetch("/api/sessions/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+      if (!response.ok) throw new Error("share request failed");
+      const payload = await response.json();
+      showShareLink(payload.url, "Share link is ready.");
+      try {
+        await navigator.clipboard?.writeText(payload.url);
+        if (shareStatus) shareStatus.textContent = "Copied.";
+      } catch {
+        // The visible input remains selected manually-copyable.
+      }
+    } catch {
+      if (shareStatus) shareStatus.textContent = "Could not generate share link.";
+    } finally {
+      generateShareButton.disabled = false;
+    }
+  });
+
+  copyShareButton?.addEventListener("click", async () => {
+    if (!shareInput?.value) return;
+    shareInput.select();
+    try {
+      await navigator.clipboard?.writeText(shareInput.value);
+      if (shareStatus) shareStatus.textContent = "Copied.";
+    } catch {
+      if (shareStatus) shareStatus.textContent = "Select and copy manually.";
+    }
+  });
+
+  {{if not .IsPublic}}
   async function poll() {
     try {
       const response = await fetch("/api/state", { cache: "no-store" });
@@ -1022,6 +1209,7 @@ var detailTemplate = template.Must(template.New("detail").Parse(pagePrefix + `
   }
 
   setInterval(poll, 2000);
+  {{end}}
 })();
 </script>
 ` + pageSuffix))
@@ -1045,6 +1233,14 @@ h1 { margin: 0 0 6px; font-size: 28px; }
 h2 { margin: 10px 0 4px; font-size: 18px; overflow-wrap: anywhere; }
 h3 { margin: 16px 0 8px; font-size: 14px; color: #aeb6c8; }
 p { margin: 0; color: #aeb6c8; }
+.session-nav { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; color: #aeb6c8; }
+.session-nav button { padding: 0; border: 0; background: transparent; color: #8ab4ff; }
+.session-nav button:hover { text-decoration: underline; }
+.session-nav button:disabled { cursor: default; opacity: 0.65; text-decoration: none; }
+.share-link { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.share-link input { flex: 1 1 360px; min-width: 0; border: 1px solid #2f3643; border-radius: 6px; padding: 7px 8px; background: #10131a; color: #e7e9ee; }
+.share-link button { border: 1px solid #394150; border-radius: 6px; padding: 7px 10px; background: #202632; color: #e7e9ee; }
+.share-link span { color: #aeb6c8; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin-bottom: 12px; color: #aeb6c8; }
 .toolbar button { border: 1px solid #394150; border-radius: 6px; padding: 6px 10px; background: #202632; color: #e7e9ee; }
 .toolbar button:disabled { cursor: default; opacity: 0.55; }

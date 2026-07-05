@@ -9,6 +9,9 @@ Endpoints:
 - `GET /sessions/{id}` shows requests and responses in a readable HTML view. Requires Basic Auth.
 - `GET /sessions/{id}?raw=1` returns the original HAR JSON. Requires Basic Auth.
 - `GET /api/state` returns live-update state for the viewer. Requires Basic Auth.
+- `POST /api/sessions/share` creates a public share link for one session. Requires Basic Auth.
+- `GET /share/{token}` shows a shared session without authentication.
+- `GET /share/{token}?raw=1` returns the shared session HAR JSON without authentication.
 
 Run locally:
 
