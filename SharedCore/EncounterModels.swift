@@ -259,6 +259,7 @@ nonisolated struct GameModel: Decodable {
     let event: Int
     let gameID: Int
     let gameTitle: String
+    let gameDateTimeStart: Date?
     let login: String
     let teamName: String
     let finishPlace: Int?
@@ -270,6 +271,18 @@ nonisolated struct GameModel: Decodable {
     var isGameFinished: Bool { event == GameEvent.gameFinished }
     var isGameEnded: Bool { event == GameEvent.gameEnded }
     var isGameComplete: Bool { isGameFinished || isGameEnded }
+
+    var startCountdown: SyncedSecondsCountdown? {
+        guard level == nil,
+              !isGameComplete,
+              let gameDateTimeStart else {
+            return nil
+        }
+        let now = Date()
+        let remainSeconds = Int(ceil(gameDateTimeStart.timeIntervalSince(now)))
+        guard remainSeconds > 0 else { return nil }
+        return SyncedSecondsCountdown(remainSeconds: remainSeconds, syncedAt: now)
+    }
 
     /// Player is in the game but the engine has not opened a level yet (normal event, no level payload).
     var isAwaitingLevelOpen: Bool {
@@ -291,6 +304,7 @@ nonisolated struct GameModel: Decodable {
         case event = "Event"
         case gameID = "GameId"
         case gameTitle = "GameTitle"
+        case gameDateTimeStart = "GameDateTimeStart"
         case login = "Login"
         case teamName = "TeamName"
         case finishPlace = "FinishPlace"
@@ -311,12 +325,28 @@ nonisolated struct GameModel: Decodable {
         }
         gameID = try container.decode(Int.self, forKey: .gameID)
         gameTitle = try container.decodeIfPresent(String.self, forKey: .gameTitle) ?? ""
+        gameDateTimeStart = Self.decodeUnixDate(from: container, forKey: .gameDateTimeStart)
         login = try container.decodeIfPresent(String.self, forKey: .login) ?? ""
         teamName = try container.decodeIfPresent(String.self, forKey: .teamName) ?? ""
         finishPlace = Self.decodeFinishPlace(from: decoder)
         levels = try container.decodeIfPresent([LevelSummary].self, forKey: .levels) ?? []
         level = try container.decodeIfPresent(Level.self, forKey: .level)
         engineAction = try container.decodeIfPresent(EngineAction.self, forKey: .engineAction)
+    }
+
+    private static func decodeUnixDate(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Date? {
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key), value > 0 {
+            return Date(timeIntervalSince1970: TimeInterval(value))
+        }
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key), value > 0 {
+            return Date(timeIntervalSince1970: value)
+        }
+        if let string = try? container.decodeIfPresent(String.self, forKey: key),
+           let value = TimeInterval(string.trimmingCharacters(in: .whitespacesAndNewlines)),
+           value > 0 {
+            return Date(timeIntervalSince1970: value)
+        }
+        return nil
     }
 
     private static func decodeFinishPlace(from decoder: Decoder) -> Int? {

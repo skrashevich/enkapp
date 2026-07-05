@@ -100,7 +100,7 @@ final class EncounterViewModel {
     @ObservationIgnored private var moderationByGameID: [Int: Bool] = [:]
     var selectedGameID: Int64?
     var currentModel: GameModel?
-    /// Countdown until game start from `GetTimeoutToGame`, when the game has not begun yet.
+    /// Countdown until game start derived from the latest game model.
     var gameStartCountdown: SyncedSecondsCountdown?
     var selectedScreen: AppScreen = .games
     var navigationPath: [AppRoute] = []
@@ -306,7 +306,7 @@ final class EncounterViewModel {
             setCurrentModel(model)
             try saveCookies(from: try ensureClient())
             await refreshAfterTransientLevelEventIfNeeded(gameID: gameID)
-            await updateGameStartCountdown(for: gameID)
+            updateGameStartCountdown(from: currentModel, gameID: gameID)
         } catch {
             // Keep the current UI if the probe fails.
         }
@@ -713,7 +713,7 @@ final class EncounterViewModel {
             lastCodeResult = nil
             selectedScreen = .game
             updateScreenWakeLock()
-            await updateGameStartCountdown(for: gameID)
+            updateGameStartCountdown(from: currentModel, gameID: gameID)
             await processGameEvents(for: gameID)
             await flushQueueNow(silent: true)
             await syncLiveActivity()
@@ -768,7 +768,7 @@ final class EncounterViewModel {
             lastCodeResult = nil
             selectedScreen = .game
             updateScreenWakeLock()
-            await updateGameStartCountdown(for: gameID)
+            updateGameStartCountdown(from: currentModel, gameID: gameID)
             await processGameEvents(for: gameID)
             await flushQueueNow(silent: true)
             await syncLiveActivity()
@@ -847,7 +847,9 @@ final class EncounterViewModel {
     }
 
     func pollWaitingGameState(gameID: Int64) async {
-        await refreshLevelSilently()
+        if currentModel?.gameID != Int(gameID) {
+            await refreshLevelSilently()
+        }
 
         while !Task.isCancelled {
             guard shouldContinueWaitingPoll(gameID: gameID) else { return }
@@ -915,7 +917,7 @@ final class EncounterViewModel {
             if currentModel?.level != nil {
                 statusMessage = ""
             }
-            await updateGameStartCountdown(for: selectedGameID)
+            updateGameStartCountdown(from: currentModel, gameID: selectedGameID)
             await processGameEvents(for: selectedGameID)
             await syncLiveActivity()
         }
@@ -928,24 +930,14 @@ final class EncounterViewModel {
         }
     }
 
-    private func updateGameStartCountdown(for gameID: Int64) async {
-        guard !isGameActive(gameID: gameID) else {
+    private func updateGameStartCountdown(from model: GameModel?, gameID: Int64) {
+        guard let model,
+              model.gameID == Int(gameID),
+              let countdown = model.startCountdown else {
             gameStartCountdown = nil
             return
         }
-        do {
-            let seconds = try await withSessionRecovery { try await $0.timeoutToGame(gameID: gameID) }
-            if seconds >= 0 {
-                gameStartCountdown = SyncedSecondsCountdown(
-                    remainSeconds: Int(seconds),
-                    syncedAt: Date()
-                )
-            } else {
-                gameStartCountdown = nil
-            }
-        } catch {
-            // Keep the previous countdown on transient failures.
-        }
+        gameStartCountdown = countdown
     }
 
     private enum CachedLevelStatusReason {
@@ -1244,7 +1236,7 @@ final class EncounterViewModel {
             try saveCookies(from: try ensureClient())
             markEngineReachable()
             await refreshAfterTransientLevelEventIfNeeded(gameID: gameID)
-            await updateGameStartCountdown(for: gameID)
+            updateGameStartCountdown(from: currentModel, gameID: gameID)
             await processGameEvents(for: gameID)
             await syncLiveActivity()
         } catch {
