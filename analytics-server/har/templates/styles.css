@@ -1,0 +1,142 @@
+:root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+body { margin: 0; background: #0f1115; color: #e7e9ee; }
+main { width: min(1320px, calc(100vw - 32px)); margin: 0 auto; padding: 28px 0 48px; }
+a { color: #8ab4ff; text-decoration: none; }
+a:hover { text-decoration: underline; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+.top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 20px; }
+h1 { margin: 0 0 6px; font-size: 28px; }
+h2 { margin: 10px 0 4px; font-size: 18px; overflow-wrap: anywhere; }
+h3 { margin: 16px 0 8px; font-size: 14px; color: #aeb6c8; }
+p { margin: 0; color: #aeb6c8; }
+.session-nav { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; color: #aeb6c8; }
+.session-nav button { padding: 0; border: 0; background: transparent; color: #8ab4ff; }
+.session-nav button:hover { text-decoration: underline; }
+.session-nav button:disabled { cursor: default; opacity: 0.65; text-decoration: none; }
+.share-link { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.share-link input { flex: 1 1 360px; min-width: 0; border: 1px solid #2f3643; border-radius: 6px; padding: 7px 8px; background: #10131a; color: #e7e9ee; }
+.share-link button { border: 1px solid #394150; border-radius: 6px; padding: 7px 10px; background: #202632; color: #e7e9ee; }
+.share-link span { color: #aeb6c8; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin-bottom: 12px; color: #aeb6c8; }
+.toolbar button { border: 1px solid #394150; border-radius: 6px; padding: 6px 10px; background: #202632; color: #e7e9ee; }
+.toolbar button:disabled { cursor: default; opacity: 0.55; }
+.select-all { display: inline-flex; gap: 6px; align-items: center; color: #e7e9ee; }
+table { width: 100%; border-collapse: collapse; background: #171a21; border: 1px solid #2a2f3a; }
+th, td { padding: 10px 12px; border-bottom: 1px solid #2a2f3a; text-align: left; vertical-align: top; }
+th { color: #aeb6c8; font-size: 13px; font-weight: 600; }
+.captures { table-layout: fixed; }
+.captures th, .captures td { overflow: hidden; }
+.captures .select-col { width: 42px; }
+.captures .received-col { width: 172px; }
+.captures .game-col { width: 82px; }
+.captures .domain-col { width: 120px; }
+.captures .login-col { width: 108px; }
+.captures .version-col { width: 100px; }
+.captures .entries-col { width: 70px; }
+.captures .client-col { width: 132px; }
+.captures .select { text-align: center; }
+.captures .sort-row th { position: relative; padding-bottom: 6px; }
+.captures .sort-row button {
+  display: inline-flex;
+  max-width: calc(100% - 8px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+.captures .sort-row button[data-direction="asc"]::after { content: " ↑"; }
+.captures .sort-row button[data-direction="desc"]::after { content: " ↓"; }
+.column-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  z-index: 1;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+.column-resizer::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  right: 3px;
+  width: 1px;
+  height: calc(100% - 16px);
+  background: transparent;
+}
+.column-resizer:hover::after,
+.column-resizer:active::after { background: #59657a; }
+.resizing-columns,
+.resizing-columns * { cursor: col-resize !important; user-select: none; }
+.captures .filter-row th { padding-top: 0; }
+.captures .filter-row input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #2f3643;
+  border-radius: 5px;
+  padding: 5px 6px;
+  background: #10131a;
+  color: #e7e9ee;
+}
+.captures .received, .captures .game, .captures .domain, .captures .login, .captures .version, .captures .entries, .captures .client {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.captures .game, .captures .entries { text-align: right; }
+.captures .url {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.url, .full-url { overflow-wrap: anywhere; }
+.empty { color: #aeb6c8; text-align: center; padding: 28px; }
+.banner { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; padding: 10px 12px; background: #203d2d; color: #d6f6dc; border: 1px solid #3f8152; border-radius: 8px; }
+.banner[hidden] { display: none; }
+.entry { background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px; padding: 14px; margin: 14px 0; }
+.summary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.method, .status, .time { border-radius: 6px; padding: 3px 8px; font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.method { background: #27364f; color: #b8d3ff; }
+.status { background: #463123; color: #ffd1a8; }
+.status-200, .status-201, .status-204, .status-302 { background: #203d2d; color: #a8e6b1; }
+.time { background: #262b35; color: #d9deea; }
+details { margin-top: 10px; border-top: 1px solid #2a2f3a; padding-top: 10px; }
+summary { cursor: pointer; color: #d9deea; font-weight: 600; }
+dl { display: grid; grid-template-columns: minmax(140px, 260px) 1fr; gap: 6px 12px; margin: 0; }
+dt { color: #aeb6c8; overflow-wrap: anywhere; }
+dd { margin: 0; overflow-wrap: anywhere; }
+pre { margin: 0; padding: 12px; overflow: auto; max-height: 520px; background: #0b0d12; border: 1px solid #2a2f3a; border-radius: 6px; white-space: pre-wrap; }
+.body-viewer { display: grid; gap: 8px; }
+.body-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.body-tabs button {
+  border: 1px solid #394150;
+  border-radius: 6px;
+  padding: 5px 9px;
+  background: #202632;
+  color: #d9deea;
+}
+.body-tabs button[aria-pressed="true"] { background: #27364f; color: #b8d3ff; border-color: #42628d; }
+.body-viewer iframe {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 520px;
+  background: #ffffff;
+  border: 1px solid #2a2f3a;
+  border-radius: 6px;
+}
+@media (max-width: 760px) {
+  table, thead, tbody, tr, th, td { display: block; }
+  colgroup { display: none; }
+  thead { display: none; }
+  tr { border-bottom: 1px solid #2a2f3a; }
+  .captures .select { text-align: left; }
+  .captures .received, .captures .game, .captures .domain, .captures .login, .captures .version, .captures .entries, .captures .client, .captures .url {
+    white-space: normal;
+    text-overflow: clip;
+  }
+  .captures .game, .captures .entries { text-align: left; }
+  dl { grid-template-columns: 1fr; }
+}

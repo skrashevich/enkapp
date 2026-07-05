@@ -1,0 +1,280 @@
+{{template "page_start" .}}
+<main data-page="index" data-latest-id="{{.State.LatestID}}" data-latest-revision="{{.State.LatestRevision}}">
+  <header class="top">
+    <div>
+      <h1>enkapp HAR telemetry</h1>
+      <p>Received HAR captures from mobile clients. <span id="live-status">Live updates enabled.</span></p>
+    </div>
+  </header>
+  <form id="captures-form" method="post" action="/api/sessions/archive">
+    <div class="toolbar">
+      <label class="select-all"><input id="select-all" type="checkbox"> Select visible</label>
+      <button id="download-selected" type="submit" disabled>Download selected ZIP</button>
+      <button id="clear-filters" type="button">Clear filters</button>
+      <span id="selection-count">0 selected</span>
+    </div>
+    <table class="captures">
+      <colgroup>
+        <col class="select-col" data-column="select">
+        <col class="received-col" data-column="received">
+        <col class="game-col" data-column="game">
+        <col class="domain-col" data-column="domain">
+        <col class="login-col" data-column="login">
+        <col class="version-col" data-column="version">
+        <col class="entries-col" data-column="entries">
+        <col class="first-url-col" data-column="url">
+        <col class="client-col" data-column="client">
+      </colgroup>
+      <thead>
+        <tr class="sort-row">
+          <th data-column="select"><span class="column-label"></span><span class="column-resizer" role="separator" aria-hidden="true"></span></th>
+          <th data-column="received"><button type="button" data-sort="received">Received</button><span class="column-resizer" role="separator" aria-hidden="true"></span></th>
+          <th data-column="game"><button type="button" data-sort="game">Game ID</button><span class="column-resizer" role="separator" aria-hidden="true"></span></th>
+          <th data-column="domain"><button type="button" data-sort="domain">Domain</button><span class="column-resizer" role="separator" aria-hidden="true"></span></th>
+          <th data-column="login"><button type="button" data-sort="login">Login</button><span class="column-resizer" role="separator" aria-hidden="true"></span></th>
+          <th data-column="version"><button type="button" data-sort="version">Version</button><span class="column-resizer" role="separator" aria-hidden="true"></span></th>
+          <th data-column="entries"><button type="button" data-sort="entries">Entries</button><span class="column-resizer" role="separator" aria-hidden="true"></span></th>
+          <th data-column="url"><button type="button" data-sort="url">First request</button><span class="column-resizer" role="separator" aria-hidden="true"></span></th>
+          <th data-column="client"><button type="button" data-sort="client">Client</button><span class="column-resizer" role="separator" aria-hidden="true"></span></th>
+        </tr>
+        <tr class="filter-row">
+          <th></th>
+          <th><input data-filter="received" aria-label="Filter received"></th>
+          <th><input data-filter="game" aria-label="Filter game ID"></th>
+          <th><input data-filter="domain" aria-label="Filter domain"></th>
+          <th><input data-filter="login" aria-label="Filter login"></th>
+          <th><input data-filter="version" aria-label="Filter version"></th>
+          <th><input data-filter="entries" aria-label="Filter entries"></th>
+          <th><input data-filter="url" aria-label="Filter first request"></th>
+          <th><input data-filter="client" aria-label="Filter client"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Items}}
+        <tr data-received="{{.ReceivedAt}}" data-game="{{.GameID}}" data-domain="{{.Domain}}" data-login="{{.Login}}" data-version="{{.Version}}" data-entries="{{.EntryCount}}" data-url="{{.FirstURL}}" data-client="{{.RemoteAddr}}">
+          <td class="select"><input type="checkbox" name="ids" value="{{.ID}}" aria-label="Select capture {{.ReceivedAt}}"></td>
+          <td class="received"><a href="/sessions/{{.ID}}">{{.ReceivedAt}}</a></td>
+          <td class="game">{{.GameID}}</td>
+          <td class="domain">{{.Domain}}</td>
+          <td class="login">{{.Login}}</td>
+          <td class="version">{{.Version}}</td>
+          <td class="entries">{{.EntryCount}}</td>
+          <td class="url" title="{{.FirstURL}}">{{.FirstURL}}</td>
+          <td class="client">{{.RemoteAddr}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="9" class="empty">No HAR captures yet.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </form>
+</main>
+<script>
+(() => {
+  const root = document.querySelector("main[data-page='index']");
+  const status = document.getElementById("live-status");
+  const form = document.getElementById("captures-form");
+  const table = document.querySelector(".captures");
+  const tbody = table?.querySelector("tbody");
+  const selectAll = document.getElementById("select-all");
+  const downloadButton = document.getElementById("download-selected");
+  const clearFiltersButton = document.getElementById("clear-filters");
+  const selectionCount = document.getElementById("selection-count");
+  const rows = tbody ? [...tbody.querySelectorAll("tr[data-received]")] : [];
+  const filters = [...document.querySelectorAll("[data-filter]")];
+  const sortButtons = [...document.querySelectorAll("[data-sort]")];
+  let latestRevision = root?.dataset.latestRevision || "";
+  let sortKey = "received";
+  let sortDirection = "desc";
+  const columnWidthStorageKey = "enkapp.har.columnWidths.v1";
+  const minColumnWidths = {
+    select: 42,
+    received: 116,
+    game: 72,
+    domain: 88,
+    login: 88,
+    version: 78,
+    entries: 64,
+    url: 180,
+    client: 104,
+  };
+
+  function loadColumnWidths() {
+    try {
+      return JSON.parse(localStorage.getItem(columnWidthStorageKey) || "{}") || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function saveColumnWidths(widths) {
+    localStorage.setItem(columnWidthStorageKey, JSON.stringify(widths));
+  }
+
+  function applyColumnWidths(widths) {
+    for (const col of table.querySelectorAll("col[data-column]")) {
+      const key = col.dataset.column;
+      const width = Number(widths[key]);
+      if (width > 0) col.style.width = width + "px";
+    }
+  }
+
+  function setupColumnResize() {
+    const widths = loadColumnWidths();
+    applyColumnWidths(widths);
+    for (const handle of table.querySelectorAll(".column-resizer")) {
+      handle.addEventListener("pointerdown", (event) => {
+        const header = handle.closest("th[data-column]");
+        const key = header?.dataset.column;
+        const col = table.querySelector("col[data-column='" + key + "']");
+        if (!header || !key || !col) return;
+        event.preventDefault();
+        handle.setPointerCapture(event.pointerId);
+        document.body.classList.add("resizing-columns");
+        const startX = event.clientX;
+        const startWidth = col.getBoundingClientRect().width || header.getBoundingClientRect().width;
+        const minWidth = minColumnWidths[key] || 64;
+
+        const move = (moveEvent) => {
+          const nextWidth = Math.max(minWidth, Math.round(startWidth + moveEvent.clientX - startX));
+          col.style.width = nextWidth + "px";
+          widths[key] = nextWidth;
+        };
+        const finish = () => {
+          saveColumnWidths(widths);
+          document.body.classList.remove("resizing-columns");
+          handle.removeEventListener("pointermove", move);
+          handle.removeEventListener("pointerup", finish);
+          handle.removeEventListener("pointercancel", finish);
+        };
+
+        handle.addEventListener("pointermove", move);
+        handle.addEventListener("pointerup", finish);
+        handle.addEventListener("pointercancel", finish);
+      });
+    }
+  }
+
+  function rowValue(row, key) {
+    return row.dataset[key] || "";
+  }
+
+  function compareRows(a, b) {
+    let left = rowValue(a, sortKey);
+    let right = rowValue(b, sortKey);
+    let result;
+    if (sortKey === "entries" || sortKey === "game") {
+      result = (Number(left) || 0) - (Number(right) || 0);
+    } else {
+      result = left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+    }
+    return sortDirection === "asc" ? result : -result;
+  }
+
+  function applyTableState() {
+    const activeFilters = filters
+      .map((input) => [input.dataset.filter, input.value.trim().toLowerCase()])
+      .filter(([, value]) => value !== "");
+    rows.sort(compareRows);
+    for (const row of rows) {
+      const matches = activeFilters.every(([key, value]) => rowValue(row, key).toLowerCase().includes(value));
+      row.hidden = !matches;
+      tbody.appendChild(row);
+    }
+    for (const button of sortButtons) {
+      const active = button.dataset.sort === sortKey;
+      button.dataset.direction = active ? sortDirection : "";
+      button.setAttribute("aria-sort", active ? sortDirection : "none");
+    }
+    updateSelection();
+  }
+
+  function visibleRows() {
+    return rows.filter((row) => !row.hidden);
+  }
+
+  function selectedRows() {
+    return rows.filter((row) => row.querySelector("input[type='checkbox']")?.checked);
+  }
+
+  function updateSelection() {
+    const visible = visibleRows();
+    const selected = selectedRows();
+    downloadButton.disabled = selected.length === 0;
+    selectionCount.textContent = selected.length + " selected";
+    if (visible.length === 0) {
+      selectAll.checked = false;
+      selectAll.indeterminate = false;
+      return;
+    }
+    const visibleSelected = visible.filter((row) => row.querySelector("input[type='checkbox']")?.checked).length;
+    selectAll.checked = visibleSelected === visible.length;
+    selectAll.indeterminate = visibleSelected > 0 && visibleSelected < visible.length;
+  }
+
+  for (const button of sortButtons) {
+    button.addEventListener("click", () => {
+      const nextKey = button.dataset.sort;
+      if (sortKey === nextKey) {
+        sortDirection = sortDirection === "asc" ? "desc" : "asc";
+      } else {
+        sortKey = nextKey;
+        sortDirection = nextKey === "received" ? "desc" : "asc";
+      }
+      applyTableState();
+    });
+  }
+
+  for (const input of filters) {
+    input.addEventListener("input", applyTableState);
+  }
+
+  for (const row of rows) {
+    row.querySelector("input[type='checkbox']")?.addEventListener("change", updateSelection);
+  }
+
+  selectAll?.addEventListener("change", () => {
+    for (const row of visibleRows()) {
+      const checkbox = row.querySelector("input[type='checkbox']");
+      if (checkbox) checkbox.checked = selectAll.checked;
+    }
+    updateSelection();
+  });
+
+  clearFiltersButton?.addEventListener("click", () => {
+    for (const input of filters) input.value = "";
+    applyTableState();
+  });
+
+  form?.addEventListener("submit", (event) => {
+    if (selectedRows().length === 0) {
+      event.preventDefault();
+    }
+  });
+
+  async function poll() {
+    try {
+      const response = await fetch("/api/state", { cache: "no-store" });
+      if (!response.ok) return;
+      const state = await response.json();
+      if (state.latest_revision && latestRevision && state.latest_revision !== latestRevision) {
+        status.textContent = "New capture received. Refreshing...";
+        window.location.reload();
+        return;
+      }
+      if (!latestRevision && state.latest_revision) {
+        window.location.reload();
+        return;
+      }
+      status.textContent = "Live updates enabled.";
+    } catch {
+      status.textContent = "Live updates temporarily unavailable.";
+    }
+  }
+
+  setupColumnResize();
+  applyTableState();
+  setInterval(poll, 2000);
+})();
+</script>
+{{template "page_end" .}}

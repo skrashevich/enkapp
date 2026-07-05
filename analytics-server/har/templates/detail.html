@@ -1,0 +1,172 @@
+{{template "page_start" .}}
+<main data-page="detail" data-latest-id="{{.State.LatestID}}" data-latest-revision="{{.State.LatestRevision}}" data-current-id="{{.Session.ID}}" data-public="{{.IsPublic}}" data-share-url="{{.ShareURL}}">
+  {{if not .IsPublic}}
+  <div id="new-capture-banner" class="banner" hidden>
+    <span id="new-capture-text"></span>
+    <a id="new-capture-link" href="/">Open</a>
+  </div>
+  {{end}}
+  <nav class="session-nav">
+    {{if not .IsPublic}}<a href="/">Back to captures</a><span>·</span>{{end}}
+    <a href="{{.RawURL}}">Raw JSON</a>
+    {{if not .IsPublic}}<span>·</span><button id="generate-share-link" type="button" data-session-id="{{.Session.ID}}">Generate share link</button>{{end}}
+  </nav>
+  {{if not .IsPublic}}
+  <div id="share-link-panel" class="share-link"{{if not .ShareURL}} hidden{{end}}>
+    <input id="share-link-input" readonly value="{{.ShareURL}}" aria-label="Share link">
+    <button id="copy-share-link" type="button">Copy</button>
+    <span id="share-link-status"></span>
+  </div>
+  {{end}}
+  <header class="top">
+    <div>
+      <h1>{{.Session.Domain}}</h1>
+      <p>{{.Session.ReceivedAt.Local.Format "2006-01-02 15:04:05"}} · {{if .Session.Login}}{{.Session.Login}}{{else}}-{{end}} · {{.Session.RemoteAddr}} · {{.Session.EntryCount}} entries</p>
+    </div>
+  </header>
+  {{range .Entries}}
+  <section class="entry">
+    <div class="summary">
+      <span class="method">{{.Method}}</span>
+      <span class="status status-{{.Status}}">{{.Status}} {{.StatusText}}</span>
+      <span class="time">{{.Time}}</span>
+    </div>
+    <h2>{{.URLPath}}</h2>
+    <p class="full-url">{{.URL}}</p>
+    <details>
+      <summary>Request</summary>
+      {{if .QueryString}}
+      <h3>Query</h3>
+      <dl>{{range .QueryString}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
+      {{end}}
+      <h3>Headers</h3>
+      <dl>{{range .RequestHeaders}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{else}}<dd>-</dd>{{end}}</dl>
+      {{if .RequestBody}}<h3>Body</h3><pre>{{.RequestBody}}</pre>{{end}}
+    </details>
+    <details>
+      <summary>Response</summary>
+      <h3>Headers</h3>
+      <dl>{{range .ResponseHeaders}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{else}}<dd>-</dd>{{end}}</dl>
+      {{if .HasResponseBody}}
+      <h3>Body</h3>
+      <div class="body-viewer" data-body-viewer>
+        <div class="body-tabs">
+          <button type="button" data-body-tab="raw" aria-pressed="{{.IsRawView}}">Raw</button>
+          <button type="button" data-body-tab="html" aria-pressed="{{.IsHTMLView}}">HTML</button>
+          {{if .HasResponseJSON}}<button type="button" data-body-tab="json" aria-pressed="{{.IsJSONView}}">JSON</button>{{end}}
+        </div>
+        <pre data-body-panel="raw"{{if not .IsRawView}} hidden{{end}}>{{.ResponseBody}}</pre>
+        <iframe data-body-panel="html" sandbox srcdoc="{{.ResponseBody}}"{{if not .IsHTMLView}} hidden{{end}}></iframe>
+        {{if .HasResponseJSON}}<pre data-body-panel="json"{{if not .IsJSONView}} hidden{{end}}>{{.ResponseBodyJSON}}</pre>{{end}}
+      </div>
+      {{end}}
+    </details>
+  </section>
+  {{end}}
+</main>
+<script>
+(() => {
+  const root = document.querySelector("main[data-page='detail']");
+  const banner = document.getElementById("new-capture-banner");
+  const bannerText = document.getElementById("new-capture-text");
+  const bannerLink = document.getElementById("new-capture-link");
+  const generateShareButton = document.getElementById("generate-share-link");
+  const sharePanel = document.getElementById("share-link-panel");
+  const shareInput = document.getElementById("share-link-input");
+  const copyShareButton = document.getElementById("copy-share-link");
+  const shareStatus = document.getElementById("share-link-status");
+  let latestID = root?.dataset.latestId || "";
+  let latestRevision = root?.dataset.latestRevision || "";
+  const currentID = root?.dataset.currentId || "";
+  const isPublic = root?.dataset.public === "true";
+
+  function showShareLink(url, message) {
+    if (!sharePanel || !shareInput) return;
+    shareInput.value = url;
+    sharePanel.hidden = false;
+    if (shareStatus) shareStatus.textContent = message || "";
+  }
+
+  for (const viewer of document.querySelectorAll("[data-body-viewer]")) {
+    const buttons = [...viewer.querySelectorAll("[data-body-tab]")];
+    const panels = [...viewer.querySelectorAll("[data-body-panel]")];
+    for (const button of buttons) {
+      button.addEventListener("click", () => {
+        const mode = button.dataset.bodyTab;
+        for (const item of buttons) {
+          item.setAttribute("aria-pressed", String(item === button));
+        }
+        for (const panel of panels) {
+          panel.hidden = panel.dataset.bodyPanel !== mode;
+        }
+      });
+    }
+  }
+
+  generateShareButton?.addEventListener("click", async () => {
+    const id = generateShareButton.dataset.sessionId || "";
+    generateShareButton.disabled = true;
+    if (shareStatus) shareStatus.textContent = "Generating...";
+    try {
+      const body = new URLSearchParams({ id });
+      const response = await fetch("/api/sessions/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+      if (!response.ok) throw new Error("share request failed");
+      const payload = await response.json();
+      showShareLink(payload.url, "Share link is ready.");
+      try {
+        await navigator.clipboard?.writeText(payload.url);
+        if (shareStatus) shareStatus.textContent = "Copied.";
+      } catch {
+        // The visible input remains selected manually-copyable.
+      }
+    } catch {
+      if (shareStatus) shareStatus.textContent = "Could not generate share link.";
+    } finally {
+      generateShareButton.disabled = false;
+    }
+  });
+
+  copyShareButton?.addEventListener("click", async () => {
+    if (!shareInput?.value) return;
+    shareInput.select();
+    try {
+      await navigator.clipboard?.writeText(shareInput.value);
+      if (shareStatus) shareStatus.textContent = "Copied.";
+    } catch {
+      if (shareStatus) shareStatus.textContent = "Select and copy manually.";
+    }
+  });
+
+  {{if not .IsPublic}}
+  async function poll() {
+    try {
+      const response = await fetch("/api/state", { cache: "no-store" });
+      if (!response.ok) return;
+      const state = await response.json();
+      if (!state.latest_id) return;
+      if (state.latest_id === currentID && state.latest_revision && state.latest_revision !== latestRevision) {
+        window.location.reload();
+        return;
+      }
+      if (state.latest_id === latestID || state.latest_id === currentID) {
+        return;
+      }
+      latestID = state.latest_id;
+      latestRevision = state.latest_revision || "";
+      bannerText.textContent = "New capture from " + (state.latest_domain || "unknown domain") + ": " + (state.latest_first_url || state.latest_id);
+      bannerLink.href = "/sessions/" + state.latest_id;
+      banner.hidden = false;
+    } catch {
+      // Keep the current capture readable if live updates fail.
+    }
+  }
+
+  setInterval(poll, 2000);
+  {{end}}
+})();
+</script>
+{{template "page_end" .}}

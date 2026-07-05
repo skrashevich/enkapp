@@ -178,6 +178,48 @@ func TestHandleSharedSessionRawJSON(t *testing.T) {
 	}
 }
 
+func TestHandleHARMergesSameClientGameUploads(t *testing.T) {
+	srv := &server{
+		dataDir:      t.TempDir(),
+		viewUsername: "admin",
+		viewPassword: "secret",
+		sessions:     map[string]*submission{},
+	}
+
+	postHAR := func(url string, startedAt string) {
+		t.Helper()
+		body := `{"log":{"entries":[{"startedDateTime":"` + startedAt + `","request":{"method":"GET","url":"` + url + `"},"response":{"status":200},"timings":{}},{"startedDateTime":"` + startedAt + `","request":{"method":"POST","url":"` + url + `"},"response":{"status":200},"timings":{}}]}}`
+		req := httptest.NewRequest(http.MethodPost, "/api/har", strings.NewReader(body))
+		req.Header.Set("X-Enkapp-Domain", "encounter.exe.xyz")
+		req.Header.Set("X-Enkapp-Login", "skrashevi")
+		req.Header.Set("X-Enkapp-Version", "0.2")
+		req.Header.Set("X-Enkapp-Build", "46")
+		req.Header.Set("X-Forwarded-For", "46.138.250.50")
+		rec := httptest.NewRecorder()
+
+		srv.handleHAR(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("handleHAR status = %d, body %q", rec.Code, rec.Body.String())
+		}
+	}
+
+	url := "https://encounter.exe.xyz/gameengines/encounter/play/424242?json=1"
+	postHAR(url, "2026-07-05T19:50:00Z")
+	postHAR(url, "2026-07-05T19:50:01Z")
+
+	if got := len(srv.sessions); got != 1 {
+		t.Fatalf("session count = %d, want 1", got)
+	}
+	for _, sub := range srv.sessions {
+		if sub.EntryCount != 4 {
+			t.Fatalf("EntryCount = %d, want 4", sub.EntryCount)
+		}
+		if got := len(sub.HAR.Log.Entries); got != 4 {
+			t.Fatalf("HAR entries = %d, want 4", got)
+		}
+	}
+}
+
 func testServerWithSubmission(t *testing.T) (*server, *submission) {
 	t.Helper()
 	srv := &server{

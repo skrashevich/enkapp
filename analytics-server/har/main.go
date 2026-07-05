@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/subtle"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -26,6 +27,15 @@ import (
 )
 
 const maxHARBytes = 25 << 20
+const sessionMergeWindow = 30 * time.Minute
+
+//go:embed templates/*.html templates/*.css
+var templateFiles embed.FS
+
+type pageTemplate struct {
+	*template.Template
+	name string
+}
 
 type server struct {
 	mu           sync.RWMutex
@@ -162,9 +172,14 @@ type shareResponse struct {
 type stateResponse struct {
 	Count            int    `json:"count"`
 	LatestID         string `json:"latest_id"`
+	LatestRevision   string `json:"latest_revision"`
 	LatestReceivedAt string `json:"latest_received_at"`
 	LatestDomain     string `json:"latest_domain"`
 	LatestFirstURL   string `json:"latest_first_url"`
+}
+
+func (s *submission) revision() string {
+	return s.ID + ":" + strconv.Itoa(s.EntryCount) + ":" + s.ReceivedAt.UTC().Format(time.RFC3339Nano)
 }
 
 type entryView struct {
@@ -293,17 +308,19 @@ func (s *server) handleHAR(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := s.save(sub); err != nil {
+	if saved, err := s.saveWithMerge(sub, sessionMergeWindow); err != nil {
 		log.Printf("save HAR: %v", err)
 		http.Error(w, "failed to save HAR", http.StatusInternalServerError)
 		return
+	} else {
+		sub = saved
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"id":      sub.ID,
-		"entries": len(har.Log.Entries),
+		"entries": sub.EntryCount,
 	})
 }
 
@@ -569,6 +586,7 @@ func (s *server) state() stateResponse {
 		return result
 	}
 	result.LatestID = latest.ID
+	result.LatestRevision = latest.revision()
 	result.LatestReceivedAt = latest.ReceivedAt.Local().Format("2006-01-02 15:04:05")
 	result.LatestDomain = emptyDash(latest.Domain)
 	if len(latest.HAR.Log.Entries) > 0 {
@@ -620,16 +638,7 @@ func (s *server) load() error {
 }
 
 func (s *server) save(sub *submission) error {
-	data, err := json.MarshalIndent(sub, "", "  ")
-	if err != nil {
-		return err
-	}
-	name := filepath.Join(s.dataDir, sub.ID+".json")
-	tmp := name + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, name); err != nil {
+	if err := writeSubmission(s.dataDir, sub); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -638,9 +647,81 @@ func (s *server) save(sub *submission) error {
 	return nil
 }
 
-func render(w http.ResponseWriter, tmpl *template.Template, data any) {
+func (s *server) saveWithMerge(sub *submission, window time.Duration) (*submission, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if target := s.mergeTargetLocked(sub, window); target != nil {
+		target.ReceivedAt = sub.ReceivedAt
+		target.EntryCount += len(sub.HAR.Log.Entries)
+		target.HAR.Log.Entries = append(target.HAR.Log.Entries, sub.HAR.Log.Entries...)
+		raw, err := json.Marshal(target.HAR)
+		if err != nil {
+			return nil, err
+		}
+		target.Raw = append(target.Raw[:0], raw...)
+		if err := writeSubmission(s.dataDir, target); err != nil {
+			return nil, err
+		}
+		return target, nil
+	}
+
+	if err := writeSubmission(s.dataDir, sub); err != nil {
+		return nil, err
+	}
+	s.sessions[sub.ID] = sub
+	return sub, nil
+}
+
+func (s *server) mergeTargetLocked(sub *submission, window time.Duration) *submission {
+	subGameID := gameID(sub)
+	if subGameID == "" {
+		return nil
+	}
+
+	var latest *submission
+	for _, candidate := range s.sessions {
+		if !sameSessionKey(candidate, sub, subGameID) {
+			continue
+		}
+		if sub.ReceivedAt.Sub(candidate.ReceivedAt) < 0 || sub.ReceivedAt.Sub(candidate.ReceivedAt) > window {
+			continue
+		}
+		if latest == nil || candidate.ReceivedAt.After(latest.ReceivedAt) {
+			latest = candidate
+		}
+	}
+	return latest
+}
+
+func sameSessionKey(a, b *submission, bGameID string) bool {
+	return strings.EqualFold(strings.TrimSpace(a.Domain), strings.TrimSpace(b.Domain)) &&
+		strings.EqualFold(strings.TrimSpace(a.Login), strings.TrimSpace(b.Login)) &&
+		a.Version == b.Version &&
+		a.Build == b.Build &&
+		a.RemoteAddr == b.RemoteAddr &&
+		gameID(a) == bGameID
+}
+
+func writeSubmission(dataDir string, sub *submission) error {
+	data, err := json.MarshalIndent(sub, "", "  ")
+	if err != nil {
+		return err
+	}
+	name := filepath.Join(dataDir, sub.ID+".json")
+	tmp := name + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, name); err != nil {
+		return err
+	}
+	return nil
+}
+
+func render(w http.ResponseWriter, tmpl pageTemplate, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.Execute(w, data); err != nil {
+	if err := tmpl.ExecuteTemplate(w, tmpl.name, data); err != nil {
 		log.Printf("render: %v", err)
 	}
 }
@@ -843,513 +924,17 @@ func logRequest(next http.Handler) http.Handler {
 	})
 }
 
-var indexTemplate = template.Must(template.New("index").Parse(pagePrefix + `
-<main data-page="index" data-latest-id="{{.State.LatestID}}">
-  <header class="top">
-    <div>
-      <h1>enkapp HAR telemetry</h1>
-      <p>Received HAR captures from mobile clients. <span id="live-status">Live updates enabled.</span></p>
-    </div>
-  </header>
-  <form id="captures-form" method="post" action="/api/sessions/archive">
-    <div class="toolbar">
-      <label class="select-all"><input id="select-all" type="checkbox"> Select visible</label>
-      <button id="download-selected" type="submit" disabled>Download selected ZIP</button>
-      <button id="clear-filters" type="button">Clear filters</button>
-      <span id="selection-count">0 selected</span>
-    </div>
-    <table class="captures">
-      <colgroup>
-        <col class="select-col">
-        <col class="received-col">
-        <col class="game-col">
-        <col class="domain-col">
-        <col class="login-col">
-        <col class="version-col">
-        <col class="entries-col">
-        <col class="first-url-col">
-        <col class="client-col">
-      </colgroup>
-      <thead>
-        <tr class="sort-row">
-          <th></th>
-          <th><button type="button" data-sort="received">Received</button></th>
-          <th><button type="button" data-sort="game">Game ID</button></th>
-          <th><button type="button" data-sort="domain">Domain</button></th>
-          <th><button type="button" data-sort="login">Login</button></th>
-          <th><button type="button" data-sort="version">Version</button></th>
-          <th><button type="button" data-sort="entries">Entries</button></th>
-          <th><button type="button" data-sort="url">First request</button></th>
-          <th><button type="button" data-sort="client">Client</button></th>
-        </tr>
-        <tr class="filter-row">
-          <th></th>
-          <th><input data-filter="received" aria-label="Filter received"></th>
-          <th><input data-filter="game" aria-label="Filter game ID"></th>
-          <th><input data-filter="domain" aria-label="Filter domain"></th>
-          <th><input data-filter="login" aria-label="Filter login"></th>
-          <th><input data-filter="version" aria-label="Filter version"></th>
-          <th><input data-filter="entries" aria-label="Filter entries"></th>
-          <th><input data-filter="url" aria-label="Filter first request"></th>
-          <th><input data-filter="client" aria-label="Filter client"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {{range .Items}}
-        <tr data-received="{{.ReceivedAt}}" data-game="{{.GameID}}" data-domain="{{.Domain}}" data-login="{{.Login}}" data-version="{{.Version}}" data-entries="{{.EntryCount}}" data-url="{{.FirstURL}}" data-client="{{.RemoteAddr}}">
-          <td class="select"><input type="checkbox" name="ids" value="{{.ID}}" aria-label="Select capture {{.ReceivedAt}}"></td>
-          <td class="received"><a href="/sessions/{{.ID}}">{{.ReceivedAt}}</a></td>
-          <td class="game">{{.GameID}}</td>
-          <td class="domain">{{.Domain}}</td>
-          <td class="login">{{.Login}}</td>
-          <td class="version">{{.Version}}</td>
-          <td class="entries">{{.EntryCount}}</td>
-          <td class="url" title="{{.FirstURL}}">{{.FirstURL}}</td>
-          <td class="client">{{.RemoteAddr}}</td>
-        </tr>
-        {{else}}
-        <tr><td colspan="9" class="empty">No HAR captures yet.</td></tr>
-        {{end}}
-      </tbody>
-    </table>
-  </form>
-</main>
-<script>
-(() => {
-  const root = document.querySelector("main[data-page='index']");
-  const status = document.getElementById("live-status");
-  const form = document.getElementById("captures-form");
-  const table = document.querySelector(".captures");
-  const tbody = table?.querySelector("tbody");
-  const selectAll = document.getElementById("select-all");
-  const downloadButton = document.getElementById("download-selected");
-  const clearFiltersButton = document.getElementById("clear-filters");
-  const selectionCount = document.getElementById("selection-count");
-  const rows = tbody ? [...tbody.querySelectorAll("tr[data-received]")] : [];
-  const filters = [...document.querySelectorAll("[data-filter]")];
-  const sortButtons = [...document.querySelectorAll("[data-sort]")];
-  let latestID = root?.dataset.latestId || "";
-  let sortKey = "received";
-  let sortDirection = "desc";
+var indexTemplate = loadPageTemplate("index.html")
+var detailTemplate = loadPageTemplate("detail.html")
 
-  function rowValue(row, key) {
-    return row.dataset[key] || "";
-  }
-
-  function compareRows(a, b) {
-    let left = rowValue(a, sortKey);
-    let right = rowValue(b, sortKey);
-    let result;
-    if (sortKey === "entries" || sortKey === "game") {
-      result = (Number(left) || 0) - (Number(right) || 0);
-    } else {
-      result = left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
-    }
-    return sortDirection === "asc" ? result : -result;
-  }
-
-  function applyTableState() {
-    const activeFilters = filters
-      .map((input) => [input.dataset.filter, input.value.trim().toLowerCase()])
-      .filter(([, value]) => value !== "");
-    rows.sort(compareRows);
-    for (const row of rows) {
-      const matches = activeFilters.every(([key, value]) => rowValue(row, key).toLowerCase().includes(value));
-      row.hidden = !matches;
-      tbody.appendChild(row);
-    }
-    for (const button of sortButtons) {
-      const active = button.dataset.sort === sortKey;
-      button.dataset.direction = active ? sortDirection : "";
-      button.setAttribute("aria-sort", active ? sortDirection : "none");
-    }
-    updateSelection();
-  }
-
-  function visibleRows() {
-    return rows.filter((row) => !row.hidden);
-  }
-
-  function selectedRows() {
-    return rows.filter((row) => row.querySelector("input[type='checkbox']")?.checked);
-  }
-
-  function updateSelection() {
-    const visible = visibleRows();
-    const selected = selectedRows();
-    downloadButton.disabled = selected.length === 0;
-    selectionCount.textContent = selected.length + " selected";
-    if (visible.length === 0) {
-      selectAll.checked = false;
-      selectAll.indeterminate = false;
-      return;
-    }
-    const visibleSelected = visible.filter((row) => row.querySelector("input[type='checkbox']")?.checked).length;
-    selectAll.checked = visibleSelected === visible.length;
-    selectAll.indeterminate = visibleSelected > 0 && visibleSelected < visible.length;
-  }
-
-  for (const button of sortButtons) {
-    button.addEventListener("click", () => {
-      const nextKey = button.dataset.sort;
-      if (sortKey === nextKey) {
-        sortDirection = sortDirection === "asc" ? "desc" : "asc";
-      } else {
-        sortKey = nextKey;
-        sortDirection = nextKey === "received" ? "desc" : "asc";
-      }
-      applyTableState();
-    });
-  }
-
-  for (const input of filters) {
-    input.addEventListener("input", applyTableState);
-  }
-
-  for (const row of rows) {
-    row.querySelector("input[type='checkbox']")?.addEventListener("change", updateSelection);
-  }
-
-  selectAll?.addEventListener("change", () => {
-    for (const row of visibleRows()) {
-      const checkbox = row.querySelector("input[type='checkbox']");
-      if (checkbox) checkbox.checked = selectAll.checked;
-    }
-    updateSelection();
-  });
-
-  clearFiltersButton?.addEventListener("click", () => {
-    for (const input of filters) input.value = "";
-    applyTableState();
-  });
-
-  form?.addEventListener("submit", (event) => {
-    if (selectedRows().length === 0) {
-      event.preventDefault();
-    }
-  });
-
-  async function poll() {
-    try {
-      const response = await fetch("/api/state", { cache: "no-store" });
-      if (!response.ok) return;
-      const state = await response.json();
-      if (state.latest_id && latestID && state.latest_id !== latestID) {
-        status.textContent = "New capture received. Refreshing...";
-        window.location.reload();
-        return;
-      }
-      if (!latestID && state.latest_id) {
-        window.location.reload();
-        return;
-      }
-      status.textContent = "Live updates enabled.";
-    } catch {
-      status.textContent = "Live updates temporarily unavailable.";
-    }
-  }
-
-  applyTableState();
-  setInterval(poll, 2000);
-})();
-</script>
-` + pageSuffix))
-
-var detailTemplate = template.Must(template.New("detail").Parse(pagePrefix + `
-<main data-page="detail" data-latest-id="{{.State.LatestID}}" data-current-id="{{.Session.ID}}" data-public="{{.IsPublic}}" data-share-url="{{.ShareURL}}">
-  {{if not .IsPublic}}
-  <div id="new-capture-banner" class="banner" hidden>
-    <span id="new-capture-text"></span>
-    <a id="new-capture-link" href="/">Open</a>
-  </div>
-  {{end}}
-  <nav class="session-nav">
-    {{if not .IsPublic}}<a href="/">Back to captures</a><span>·</span>{{end}}
-    <a href="{{.RawURL}}">Raw JSON</a>
-    {{if not .IsPublic}}<span>·</span><button id="generate-share-link" type="button" data-session-id="{{.Session.ID}}">Generate share link</button>{{end}}
-  </nav>
-  {{if not .IsPublic}}
-  <div id="share-link-panel" class="share-link"{{if not .ShareURL}} hidden{{end}}>
-    <input id="share-link-input" readonly value="{{.ShareURL}}" aria-label="Share link">
-    <button id="copy-share-link" type="button">Copy</button>
-    <span id="share-link-status"></span>
-  </div>
-  {{end}}
-  <header class="top">
-    <div>
-      <h1>{{.Session.Domain}}</h1>
-      <p>{{.Session.ReceivedAt.Local.Format "2006-01-02 15:04:05"}} · {{if .Session.Login}}{{.Session.Login}}{{else}}-{{end}} · {{.Session.RemoteAddr}} · {{.Session.EntryCount}} entries</p>
-    </div>
-  </header>
-  {{range .Entries}}
-  <section class="entry">
-    <div class="summary">
-      <span class="method">{{.Method}}</span>
-      <span class="status status-{{.Status}}">{{.Status}} {{.StatusText}}</span>
-      <span class="time">{{.Time}}</span>
-    </div>
-    <h2>{{.URLPath}}</h2>
-    <p class="full-url">{{.URL}}</p>
-    <details>
-      <summary>Request</summary>
-      {{if .QueryString}}
-      <h3>Query</h3>
-      <dl>{{range .QueryString}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
-      {{end}}
-      <h3>Headers</h3>
-      <dl>{{range .RequestHeaders}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{else}}<dd>-</dd>{{end}}</dl>
-      {{if .RequestBody}}<h3>Body</h3><pre>{{.RequestBody}}</pre>{{end}}
-    </details>
-    <details>
-      <summary>Response</summary>
-      <h3>Headers</h3>
-      <dl>{{range .ResponseHeaders}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{else}}<dd>-</dd>{{end}}</dl>
-      {{if .HasResponseBody}}
-      <h3>Body</h3>
-      <div class="body-viewer" data-body-viewer>
-        <div class="body-tabs">
-          <button type="button" data-body-tab="raw" aria-pressed="{{.IsRawView}}">Raw</button>
-          <button type="button" data-body-tab="html" aria-pressed="{{.IsHTMLView}}">HTML</button>
-          {{if .HasResponseJSON}}<button type="button" data-body-tab="json" aria-pressed="{{.IsJSONView}}">JSON</button>{{end}}
-        </div>
-        <pre data-body-panel="raw"{{if not .IsRawView}} hidden{{end}}>{{.ResponseBody}}</pre>
-        <iframe data-body-panel="html" sandbox srcdoc="{{.ResponseBody}}"{{if not .IsHTMLView}} hidden{{end}}></iframe>
-        {{if .HasResponseJSON}}<pre data-body-panel="json"{{if not .IsJSONView}} hidden{{end}}>{{.ResponseBodyJSON}}</pre>{{end}}
-      </div>
-      {{end}}
-    </details>
-  </section>
-  {{end}}
-</main>
-<script>
-(() => {
-  const root = document.querySelector("main[data-page='detail']");
-  const banner = document.getElementById("new-capture-banner");
-  const bannerText = document.getElementById("new-capture-text");
-  const bannerLink = document.getElementById("new-capture-link");
-  const generateShareButton = document.getElementById("generate-share-link");
-  const sharePanel = document.getElementById("share-link-panel");
-  const shareInput = document.getElementById("share-link-input");
-  const copyShareButton = document.getElementById("copy-share-link");
-  const shareStatus = document.getElementById("share-link-status");
-  let latestID = root?.dataset.latestId || "";
-  const currentID = root?.dataset.currentId || "";
-  const isPublic = root?.dataset.public === "true";
-
-  function showShareLink(url, message) {
-    if (!sharePanel || !shareInput) return;
-    shareInput.value = url;
-    sharePanel.hidden = false;
-    if (shareStatus) shareStatus.textContent = message || "";
-  }
-
-  for (const viewer of document.querySelectorAll("[data-body-viewer]")) {
-    const buttons = [...viewer.querySelectorAll("[data-body-tab]")];
-    const panels = [...viewer.querySelectorAll("[data-body-panel]")];
-    for (const button of buttons) {
-      button.addEventListener("click", () => {
-        const mode = button.dataset.bodyTab;
-        for (const item of buttons) {
-          item.setAttribute("aria-pressed", String(item === button));
-        }
-        for (const panel of panels) {
-          panel.hidden = panel.dataset.bodyPanel !== mode;
-        }
-      });
-    }
-  }
-
-  generateShareButton?.addEventListener("click", async () => {
-    const id = generateShareButton.dataset.sessionId || "";
-    generateShareButton.disabled = true;
-    if (shareStatus) shareStatus.textContent = "Generating...";
-    try {
-      const body = new URLSearchParams({ id });
-      const response = await fetch("/api/sessions/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body,
-      });
-      if (!response.ok) throw new Error("share request failed");
-      const payload = await response.json();
-      showShareLink(payload.url, "Share link is ready.");
-      try {
-        await navigator.clipboard?.writeText(payload.url);
-        if (shareStatus) shareStatus.textContent = "Copied.";
-      } catch {
-        // The visible input remains selected manually-copyable.
-      }
-    } catch {
-      if (shareStatus) shareStatus.textContent = "Could not generate share link.";
-    } finally {
-      generateShareButton.disabled = false;
-    }
-  });
-
-  copyShareButton?.addEventListener("click", async () => {
-    if (!shareInput?.value) return;
-    shareInput.select();
-    try {
-      await navigator.clipboard?.writeText(shareInput.value);
-      if (shareStatus) shareStatus.textContent = "Copied.";
-    } catch {
-      if (shareStatus) shareStatus.textContent = "Select and copy manually.";
-    }
-  });
-
-  {{if not .IsPublic}}
-  async function poll() {
-    try {
-      const response = await fetch("/api/state", { cache: "no-store" });
-      if (!response.ok) return;
-      const state = await response.json();
-      if (!state.latest_id || state.latest_id === latestID || state.latest_id === currentID) {
-        return;
-      }
-      latestID = state.latest_id;
-      bannerText.textContent = "New capture from " + (state.latest_domain || "unknown domain") + ": " + (state.latest_first_url || state.latest_id);
-      bannerLink.href = "/sessions/" + state.latest_id;
-      banner.hidden = false;
-    } catch {
-      // Keep the current capture readable if live updates fail.
-    }
-  }
-
-  setInterval(poll, 2000);
-  {{end}}
-})();
-</script>
-` + pageSuffix))
-
-const pagePrefix = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:,">
-<title>enkapp HAR telemetry</title>
-<style>
-:root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-body { margin: 0; background: #0f1115; color: #e7e9ee; }
-main { width: min(1320px, calc(100vw - 32px)); margin: 0 auto; padding: 28px 0 48px; }
-a { color: #8ab4ff; text-decoration: none; }
-a:hover { text-decoration: underline; }
-button, input { font: inherit; }
-button { cursor: pointer; }
-.top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 20px; }
-h1 { margin: 0 0 6px; font-size: 28px; }
-h2 { margin: 10px 0 4px; font-size: 18px; overflow-wrap: anywhere; }
-h3 { margin: 16px 0 8px; font-size: 14px; color: #aeb6c8; }
-p { margin: 0; color: #aeb6c8; }
-.session-nav { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; color: #aeb6c8; }
-.session-nav button { padding: 0; border: 0; background: transparent; color: #8ab4ff; }
-.session-nav button:hover { text-decoration: underline; }
-.session-nav button:disabled { cursor: default; opacity: 0.65; text-decoration: none; }
-.share-link { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
-.share-link input { flex: 1 1 360px; min-width: 0; border: 1px solid #2f3643; border-radius: 6px; padding: 7px 8px; background: #10131a; color: #e7e9ee; }
-.share-link button { border: 1px solid #394150; border-radius: 6px; padding: 7px 10px; background: #202632; color: #e7e9ee; }
-.share-link span { color: #aeb6c8; }
-.toolbar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin-bottom: 12px; color: #aeb6c8; }
-.toolbar button { border: 1px solid #394150; border-radius: 6px; padding: 6px 10px; background: #202632; color: #e7e9ee; }
-.toolbar button:disabled { cursor: default; opacity: 0.55; }
-.select-all { display: inline-flex; gap: 6px; align-items: center; color: #e7e9ee; }
-table { width: 100%; border-collapse: collapse; background: #171a21; border: 1px solid #2a2f3a; }
-th, td { padding: 10px 12px; border-bottom: 1px solid #2a2f3a; text-align: left; vertical-align: top; }
-th { color: #aeb6c8; font-size: 13px; font-weight: 600; }
-.captures { table-layout: fixed; }
-.captures th, .captures td { overflow: hidden; }
-.captures .select-col { width: 42px; }
-.captures .received-col { width: 172px; }
-.captures .game-col { width: 82px; }
-.captures .domain-col { width: 120px; }
-.captures .login-col { width: 108px; }
-.captures .version-col { width: 100px; }
-.captures .entries-col { width: 70px; }
-.captures .client-col { width: 132px; }
-.captures .select { text-align: center; }
-.captures .sort-row th { padding-bottom: 6px; }
-.captures .sort-row button {
-  display: inline-flex;
-  max-width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-weight: 600;
-  text-align: left;
+func loadPageTemplate(name string) pageTemplate {
+	files := []string{
+		"templates/layout.html",
+		"templates/styles.css",
+		"templates/" + name,
+	}
+	return pageTemplate{
+		Template: template.Must(template.ParseFS(templateFiles, files...)),
+		name:     name,
+	}
 }
-.captures .sort-row button[data-direction="asc"]::after { content: " ↑"; }
-.captures .sort-row button[data-direction="desc"]::after { content: " ↓"; }
-.captures .filter-row th { padding-top: 0; }
-.captures .filter-row input {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  border: 1px solid #2f3643;
-  border-radius: 5px;
-  padding: 5px 6px;
-  background: #10131a;
-  color: #e7e9ee;
-}
-.captures .received, .captures .game, .captures .domain, .captures .login, .captures .version, .captures .entries, .captures .client {
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.captures .game, .captures .entries { text-align: right; }
-.captures .url {
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.url, .full-url { overflow-wrap: anywhere; }
-.empty { color: #aeb6c8; text-align: center; padding: 28px; }
-.banner { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; padding: 10px 12px; background: #203d2d; color: #d6f6dc; border: 1px solid #3f8152; border-radius: 8px; }
-.banner[hidden] { display: none; }
-.entry { background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px; padding: 14px; margin: 14px 0; }
-.summary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.method, .status, .time { border-radius: 6px; padding: 3px 8px; font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
-.method { background: #27364f; color: #b8d3ff; }
-.status { background: #463123; color: #ffd1a8; }
-.status-200, .status-201, .status-204, .status-302 { background: #203d2d; color: #a8e6b1; }
-.time { background: #262b35; color: #d9deea; }
-details { margin-top: 10px; border-top: 1px solid #2a2f3a; padding-top: 10px; }
-summary { cursor: pointer; color: #d9deea; font-weight: 600; }
-dl { display: grid; grid-template-columns: minmax(140px, 260px) 1fr; gap: 6px 12px; margin: 0; }
-dt { color: #aeb6c8; overflow-wrap: anywhere; }
-dd { margin: 0; overflow-wrap: anywhere; }
-pre { margin: 0; padding: 12px; overflow: auto; max-height: 520px; background: #0b0d12; border: 1px solid #2a2f3a; border-radius: 6px; white-space: pre-wrap; }
-.body-viewer { display: grid; gap: 8px; }
-.body-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
-.body-tabs button {
-  border: 1px solid #394150;
-  border-radius: 6px;
-  padding: 5px 9px;
-  background: #202632;
-  color: #d9deea;
-}
-.body-tabs button[aria-pressed="true"] { background: #27364f; color: #b8d3ff; border-color: #42628d; }
-.body-viewer iframe {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 520px;
-  background: #ffffff;
-  border: 1px solid #2a2f3a;
-  border-radius: 6px;
-}
-@media (max-width: 760px) {
-  table, thead, tbody, tr, th, td { display: block; }
-  colgroup { display: none; }
-  thead { display: none; }
-  tr { border-bottom: 1px solid #2a2f3a; }
-  .captures .select { text-align: left; }
-  .captures .received, .captures .game, .captures .domain, .captures .login, .captures .version, .captures .entries, .captures .client, .captures .url {
-    white-space: normal;
-    text-overflow: clip;
-  }
-  .captures .game, .captures .entries { text-align: left; }
-  dl { grid-template-columns: 1fr; }
-}
-</style>
-</head>
-<body>`
-
-const pageSuffix = `</body></html>`
