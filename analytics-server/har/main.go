@@ -130,9 +130,23 @@ type listItem struct {
 	FirstURL   string
 }
 
+type indexPage struct {
+	Items []listItem
+	State stateResponse
+}
+
 type detailPage struct {
 	Session *submission
 	Entries []entryView
+	State   stateResponse
+}
+
+type stateResponse struct {
+	Count            int    `json:"count"`
+	LatestID         string `json:"latest_id"`
+	LatestReceivedAt string `json:"latest_received_at"`
+	LatestDomain     string `json:"latest_domain"`
+	LatestFirstURL   string `json:"latest_first_url"`
 }
 
 type entryView struct {
@@ -169,6 +183,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", srv.handleIndex)
 	mux.HandleFunc("/sessions/", srv.handleSession)
+	mux.HandleFunc("/api/state", srv.handleState)
 	mux.HandleFunc("/api/har", srv.handleHAR)
 
 	log.Printf("har telemetry listening on %s, data_dir=%s", addr, dataDir)
@@ -256,7 +271,10 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 	sort.Slice(items, func(i, j int) bool { return items[i].ID > items[j].ID })
 
-	render(w, indexTemplate, items)
+	render(w, indexTemplate, indexPage{
+		Items: items,
+		State: s.state(),
+	})
 }
 
 func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
@@ -280,7 +298,7 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page := detailPage{Session: sub}
+	page := detailPage{Session: sub, State: s.state()}
 	for i, entry := range sub.HAR.Log.Entries {
 		page.Entries = append(page.Entries, entryView{
 			Index:           i + 1,
@@ -299,6 +317,40 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	render(w, detailTemplate, page)
+}
+
+func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(s.state())
+}
+
+func (s *server) state() stateResponse {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var latest *submission
+	for _, sub := range s.sessions {
+		if latest == nil || sub.ID > latest.ID {
+			latest = sub
+		}
+	}
+	result := stateResponse{Count: len(s.sessions)}
+	if latest == nil {
+		return result
+	}
+	result.LatestID = latest.ID
+	result.LatestReceivedAt = latest.ReceivedAt.Local().Format("2006-01-02 15:04:05")
+	result.LatestDomain = emptyDash(latest.Domain)
+	if len(latest.HAR.Log.Entries) > 0 {
+		result.LatestFirstURL = compactURL(latest.HAR.Log.Entries[0].Request.URL)
+	}
+	return result
 }
 
 func (e harEntry) requestBody() string {
@@ -442,11 +494,11 @@ func logRequest(next http.Handler) http.Handler {
 }
 
 var indexTemplate = template.Must(template.New("index").Parse(pagePrefix + `
-<main>
+<main data-page="index" data-latest-id="{{.State.LatestID}}">
   <header class="top">
     <div>
       <h1>enkapp HAR telemetry</h1>
-      <p>Received HAR captures from mobile clients.</p>
+      <p>Received HAR captures from mobile clients. <span id="live-status">Live updates enabled.</span></p>
     </div>
   </header>
   <table>
@@ -461,7 +513,7 @@ var indexTemplate = template.Must(template.New("index").Parse(pagePrefix + `
       </tr>
     </thead>
     <tbody>
-      {{range .}}
+      {{range .Items}}
       <tr>
         <td><a href="/sessions/{{.ID}}">{{.ReceivedAt}}</a></td>
         <td>{{.Domain}}</td>
@@ -476,10 +528,43 @@ var indexTemplate = template.Must(template.New("index").Parse(pagePrefix + `
     </tbody>
   </table>
 </main>
+<script>
+(() => {
+  const root = document.querySelector("main[data-page='index']");
+  const status = document.getElementById("live-status");
+  let latestID = root?.dataset.latestId || "";
+
+  async function poll() {
+    try {
+      const response = await fetch("/api/state", { cache: "no-store" });
+      if (!response.ok) return;
+      const state = await response.json();
+      if (state.latest_id && latestID && state.latest_id !== latestID) {
+        status.textContent = "New capture received. Refreshing...";
+        window.location.reload();
+        return;
+      }
+      if (!latestID && state.latest_id) {
+        window.location.reload();
+        return;
+      }
+      status.textContent = "Live updates enabled.";
+    } catch {
+      status.textContent = "Live updates temporarily unavailable.";
+    }
+  }
+
+  setInterval(poll, 2000);
+})();
+</script>
 ` + pageSuffix))
 
 var detailTemplate = template.Must(template.New("detail").Parse(pagePrefix + `
-<main>
+<main data-page="detail" data-latest-id="{{.State.LatestID}}" data-current-id="{{.Session.ID}}">
+  <div id="new-capture-banner" class="banner" hidden>
+    <span id="new-capture-text"></span>
+    <a id="new-capture-link" href="/">Open</a>
+  </div>
   <p><a href="/">Back to captures</a> · <a href="/sessions/{{.Session.ID}}?raw=1">Raw JSON</a></p>
   <header class="top">
     <div>
@@ -515,6 +600,35 @@ var detailTemplate = template.Must(template.New("detail").Parse(pagePrefix + `
   </section>
   {{end}}
 </main>
+<script>
+(() => {
+  const root = document.querySelector("main[data-page='detail']");
+  const banner = document.getElementById("new-capture-banner");
+  const bannerText = document.getElementById("new-capture-text");
+  const bannerLink = document.getElementById("new-capture-link");
+  let latestID = root?.dataset.latestId || "";
+  const currentID = root?.dataset.currentId || "";
+
+  async function poll() {
+    try {
+      const response = await fetch("/api/state", { cache: "no-store" });
+      if (!response.ok) return;
+      const state = await response.json();
+      if (!state.latest_id || state.latest_id === latestID || state.latest_id === currentID) {
+        return;
+      }
+      latestID = state.latest_id;
+      bannerText.textContent = "New capture from " + (state.latest_domain || "unknown domain") + ": " + (state.latest_first_url || state.latest_id);
+      bannerLink.href = "/sessions/" + state.latest_id;
+      banner.hidden = false;
+    } catch {
+      // Keep the current capture readable if live updates fail.
+    }
+  }
+
+  setInterval(poll, 2000);
+})();
+</script>
 ` + pageSuffix))
 
 const pagePrefix = `<!doctype html>
@@ -539,6 +653,8 @@ th, td { padding: 10px 12px; border-bottom: 1px solid #2a2f3a; text-align: left;
 th { color: #aeb6c8; font-size: 13px; font-weight: 600; }
 .url, .full-url { overflow-wrap: anywhere; }
 .empty { color: #aeb6c8; text-align: center; padding: 28px; }
+.banner { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; padding: 10px 12px; background: #203d2d; color: #d6f6dc; border: 1px solid #3f8152; border-radius: 8px; }
+.banner[hidden] { display: none; }
 .entry { background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px; padding: 14px; margin: 14px 0; }
 .summary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .method, .status, .time { border-radius: 6px; padding: 3px 8px; font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
