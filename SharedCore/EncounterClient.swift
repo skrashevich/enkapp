@@ -55,6 +55,8 @@ nonisolated struct DomainSettings: Codable, Equatable {
     var pushOnNewHint = true
     /// Records Encounter HTTP traffic as HAR 1.2 for debugging and mock-server development.
     var harRecordingEnabled = false
+    /// Tracks whether HAR recording was enabled implicitly by developer upload.
+    var harRecordingAutoEnabledByUpload = false
     /// Sends captured HAR traffic to the developer diagnostics endpoint.
     var harUploadEnabled = false
     var harUploadEndpoint = DomainSettings.defaultHARUploadEndpoint
@@ -75,6 +77,7 @@ nonisolated struct DomainSettings: Codable, Equatable {
         case pushOnNewLevel
         case pushOnNewHint
         case harRecordingEnabled
+        case harRecordingAutoEnabledByUpload
         case harUploadEnabled
         case harUploadEndpoint
     }
@@ -93,6 +96,10 @@ nonisolated struct DomainSettings: Codable, Equatable {
         pushOnNewLevel = try container.decodeIfPresent(Bool.self, forKey: .pushOnNewLevel) ?? true
         pushOnNewHint = try container.decodeIfPresent(Bool.self, forKey: .pushOnNewHint) ?? true
         harRecordingEnabled = try container.decodeIfPresent(Bool.self, forKey: .harRecordingEnabled) ?? false
+        harRecordingAutoEnabledByUpload = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .harRecordingAutoEnabledByUpload
+        ) ?? false
         harUploadEnabled = try container.decodeIfPresent(Bool.self, forKey: .harUploadEnabled) ?? false
         harUploadEndpoint = try container.decodeIfPresent(
             String.self,
@@ -122,7 +129,12 @@ nonisolated enum HARRemoteUploader {
         return formatter
     }()
 
-    static func upload(harJSON: String, settings: DomainSettings, entryCount: Int? = nil) async throws {
+    static func upload(
+        harJSON: String,
+        settings: DomainSettings,
+        login: String,
+        entryCount: Int? = nil
+    ) async throws {
         guard settings.harUploadEnabled else { return }
         let endpoint = settings.harUploadEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: endpoint), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else {
@@ -137,6 +149,10 @@ nonisolated enum HARRemoteUploader {
         request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(settings.domain, forHTTPHeaderField: "X-Enkapp-Domain")
+        let trimmedLogin = login.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedLogin.isEmpty {
+            request.setValue(trimmedLogin, forHTTPHeaderField: "X-Enkapp-Login")
+        }
         request.setValue(dateFormatter.string(from: Date()), forHTTPHeaderField: "X-Enkapp-Captured-At")
         if let entryCount {
             request.setValue(String(entryCount), forHTTPHeaderField: "X-Enkapp-HAR-Entry-Count")
@@ -247,11 +263,16 @@ nonisolated final class EncounterClient {
         #endif
     }
 
-    func uploadHARSnapshot() async throws -> Int {
+    func uploadHARSnapshot(login: String) async throws -> Int {
         let entryCount = harEntryCount()
         guard entryCount > 0 else { return 0 }
         let json = try exportHAR()
-        try await HARRemoteUploader.upload(harJSON: json, settings: settings, entryCount: entryCount)
+        try await HARRemoteUploader.upload(
+            harJSON: json,
+            settings: settings,
+            login: login,
+            entryCount: entryCount
+        )
         clearHAR()
         return entryCount
     }

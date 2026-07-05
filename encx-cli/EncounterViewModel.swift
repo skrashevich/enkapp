@@ -1134,7 +1134,15 @@ final class EncounterViewModel {
     func applyHARRecordingSetting() {
         do {
             if settings.harUploadEnabled {
-                settings.harRecordingEnabled = true
+                if !settings.harRecordingEnabled {
+                    settings.harRecordingEnabled = true
+                    settings.harRecordingAutoEnabledByUpload = true
+                }
+            } else if settings.harRecordingAutoEnabledByUpload {
+                settings.harRecordingEnabled = false
+                settings.harRecordingAutoEnabledByUpload = false
+            } else if !settings.harRecordingEnabled {
+                settings.harRecordingAutoEnabledByUpload = false
             }
             try ensureClient().setHARRecordingEnabled(settings.harCaptureEnabled)
             refreshHAREntryCount()
@@ -2148,7 +2156,7 @@ final class EncounterViewModel {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             do {
-                let uploadedCount = try await client.uploadHARSnapshot()
+                let uploadedCount = try await client.uploadHARSnapshot(login: login)
                 guard uploadedCount > 0 else { return }
                 lastUploadedHAREntryCount = 0
                 refreshHAREntryCount()

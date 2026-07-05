@@ -36,6 +36,7 @@ type submission struct {
 	ID         string          `json:"id"`
 	ReceivedAt time.Time       `json:"received_at"`
 	Domain     string          `json:"domain"`
+	Login      string          `json:"login"`
 	Version    string          `json:"version"`
 	Build      string          `json:"build"`
 	RemoteAddr string          `json:"remote_addr"`
@@ -127,6 +128,7 @@ type listItem struct {
 	ID         string
 	ReceivedAt string
 	Domain     string
+	Login      string
 	Version    string
 	RemoteAddr string
 	EntryCount int
@@ -247,6 +249,7 @@ func (s *server) handleHAR(w http.ResponseWriter, r *http.Request) {
 		ID:         newID(now),
 		ReceivedAt: now,
 		Domain:     r.Header.Get("X-Enkapp-Domain"),
+		Login:      strings.TrimSpace(r.Header.Get("X-Enkapp-Login")),
 		Version:    r.Header.Get("X-Enkapp-Version"),
 		Build:      r.Header.Get("X-Enkapp-Build"),
 		RemoteAddr: clientIP(r),
@@ -290,6 +293,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			ID:         sub.ID,
 			ReceivedAt: sub.ReceivedAt.Local().Format("2006-01-02 15:04:05"),
 			Domain:     emptyDash(sub.Domain),
+			Login:      emptyDash(sub.Login),
 			Version:    appVersion(sub),
 			RemoteAddr: sub.RemoteAddr,
 			EntryCount: sub.EntryCount,
@@ -541,6 +545,7 @@ var indexTemplate = template.Must(template.New("index").Parse(pagePrefix + `
       <tr>
         <th>Received</th>
         <th>Domain</th>
+        <th>Login</th>
         <th>Version</th>
         <th>Entries</th>
         <th>First request</th>
@@ -552,13 +557,14 @@ var indexTemplate = template.Must(template.New("index").Parse(pagePrefix + `
       <tr>
         <td><a href="/sessions/{{.ID}}">{{.ReceivedAt}}</a></td>
         <td>{{.Domain}}</td>
+        <td>{{.Login}}</td>
         <td>{{.Version}}</td>
         <td>{{.EntryCount}}</td>
         <td class="url">{{.FirstURL}}</td>
         <td>{{.RemoteAddr}}</td>
       </tr>
       {{else}}
-      <tr><td colspan="6" class="empty">No HAR captures yet.</td></tr>
+      <tr><td colspan="7" class="empty">No HAR captures yet.</td></tr>
       {{end}}
     </tbody>
   </table>
@@ -604,7 +610,7 @@ var detailTemplate = template.Must(template.New("detail").Parse(pagePrefix + `
   <header class="top">
     <div>
       <h1>{{.Session.Domain}}</h1>
-      <p>{{.Session.ReceivedAt.Local.Format "2006-01-02 15:04:05"}} · {{.Session.RemoteAddr}} · {{.Session.EntryCount}} entries</p>
+      <p>{{.Session.ReceivedAt.Local.Format "2006-01-02 15:04:05"}} · {{if .Session.Login}}{{.Session.Login}}{{else}}-{{end}} · {{.Session.RemoteAddr}} · {{.Session.EntryCount}} entries</p>
     </div>
   </header>
   {{range .Entries}}
