@@ -121,6 +121,7 @@ final class EncounterViewModel {
     var serverRoundTripMs: Int?
     /// Number of captured HAR entries (updated from settings/debug actions).
     var harEntryCount = 0
+    var harUploadStatusMessage = ""
 
     let queue = CodeQueueStore.shared
     private let liveActivity = QueueLiveActivityManager()
@@ -148,6 +149,8 @@ final class EncounterViewModel {
     private var hintUnlockRefreshTask: Task<Void, Never>?
     private var levelTimeoutRefreshTask: Task<Void, Never>?
     private var harEntryCountRefreshTask: Task<Void, Never>?
+    private var harUploadTask: Task<Void, Never>?
+    private var lastUploadedHAREntryCount = 0
     private var teammateCodePopupDismissTask: Task<Void, Never>?
 
     var shouldKeepScreenAwake: Bool {
@@ -1130,7 +1133,10 @@ final class EncounterViewModel {
 
     func applyHARRecordingSetting() {
         do {
-            try ensureClient().setHARRecordingEnabled(settings.harRecordingEnabled)
+            if settings.harUploadEnabled {
+                settings.harRecordingEnabled = true
+            }
+            try ensureClient().setHARRecordingEnabled(settings.harCaptureEnabled)
             refreshHAREntryCount()
         } catch {
             // Client is created on first login or session restore.
@@ -1143,6 +1149,7 @@ final class EncounterViewModel {
 
     func clearHARCapture() {
         client?.clearHAR()
+        lastUploadedHAREntryCount = 0
         refreshHAREntryCount()
         statusMessage = "HAR очищен"
     }
@@ -2101,26 +2108,53 @@ final class EncounterViewModel {
     private func withSessionRecovery<T>(
         _ operation: (EncounterClient) async throws -> T
     ) async throws -> T {
+        let client = try ensureClient()
         do {
-            let result = try await operation(try ensureClient())
-            scheduleHAREntryCountRefresh()
+            let result = try await operation(client)
+            handleHARCaptureUpdate(client: client)
             return result
         } catch {
+            handleHARCaptureUpdate(client: client)
             guard EncounterClient.isSessionExpiredError(error) else { throw error }
             try await reloginSilently()
-            let result = try await operation(try ensureClient())
-            scheduleHAREntryCountRefresh()
+            let recoveredClient = try ensureClient()
+            let result = try await operation(recoveredClient)
+            handleHARCaptureUpdate(client: recoveredClient)
             return result
         }
     }
 
+    private func handleHARCaptureUpdate(client: EncounterClient) {
+        scheduleHAREntryCountRefresh()
+        scheduleHARUploadIfNeeded(client: client)
+    }
+
     private func scheduleHAREntryCountRefresh() {
-        guard settings.harRecordingEnabled else { return }
+        guard settings.harCaptureEnabled else { return }
         harEntryCountRefreshTask?.cancel()
         harEntryCountRefreshTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             refreshHAREntryCount()
+        }
+    }
+
+    private func scheduleHARUploadIfNeeded(client: EncounterClient) {
+        guard settings.harUploadEnabled else { return }
+        let entryCount = client.harEntryCount()
+        guard entryCount > lastUploadedHAREntryCount else { return }
+        harUploadTask?.cancel()
+        harUploadTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            do {
+                let uploadedCount = try await client.uploadHARSnapshot()
+                guard uploadedCount > 0 else { return }
+                lastUploadedHAREntryCount = uploadedCount
+                harUploadStatusMessage = "HAR отправлен: \(uploadedCount)"
+            } catch {
+                harUploadStatusMessage = "HAR не отправлен: \(error.localizedDescription)"
+            }
         }
     }
 

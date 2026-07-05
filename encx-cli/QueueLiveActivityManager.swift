@@ -9,6 +9,12 @@ final class QueueLiveActivityManager {
         ActivityAuthorizationInfo().areActivitiesEnabled
     }
 
+    static func endAll() async {
+        for activity in Activity<QueueActivityAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+
     func sync(state: QueueActivityAttributes.ContentState?, gameTitle: String) async {
         guard Self.areActivitiesEnabled else { return }
 
@@ -19,7 +25,7 @@ final class QueueLiveActivityManager {
 
         let content = ActivityContent(state: state, staleDate: nil)
 
-        if let activity {
+        if let activity = currentActivity() {
             await activity.update(content)
             return
         }
@@ -33,8 +39,16 @@ final class QueueLiveActivityManager {
     }
 
     func end() async {
-        guard let activity else { return }
-        await activity.end(nil, dismissalPolicy: .immediate)
+        await Self.endAll()
         self.activity = nil
+    }
+
+    private func currentActivity() -> Activity<QueueActivityAttributes>? {
+        if let activity {
+            return activity
+        }
+
+        activity = Activity<QueueActivityAttributes>.activities.first
+        return activity
     }
 }

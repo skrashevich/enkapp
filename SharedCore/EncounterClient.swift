@@ -42,6 +42,7 @@ nonisolated struct LiveActivityDisplayOptions: Codable, Equatable {
 nonisolated struct DomainSettings: Codable, Equatable {
     /// Default Encounter host for development (public mock at https://encounter.exe.xyz).
     static let defaultDomain = "encounter.exe.xyz"
+    static let defaultHARUploadEndpoint = "https://enkapp-telemetry.exe.xyz/api/har"
 
     var domain = DomainSettings.defaultDomain
     /// Player's home/registered Encounter domain (aka "прописка"), if known.
@@ -54,6 +55,105 @@ nonisolated struct DomainSettings: Codable, Equatable {
     var pushOnNewHint = true
     /// Records Encounter HTTP traffic as HAR 1.2 for debugging and mock-server development.
     var harRecordingEnabled = false
+    /// Sends captured HAR traffic to the developer diagnostics endpoint.
+    var harUploadEnabled = false
+    var harUploadEndpoint = DomainSettings.defaultHARUploadEndpoint
+
+    var harCaptureEnabled: Bool {
+        harRecordingEnabled || harUploadEnabled
+    }
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case domain
+        case homeDomain
+        case insecureTLS
+        case useHTTP
+        case liveActivityEnabled
+        case liveActivityDisplay
+        case pushOnNewLevel
+        case pushOnNewHint
+        case harRecordingEnabled
+        case harUploadEnabled
+        case harUploadEndpoint
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        domain = try container.decodeIfPresent(String.self, forKey: .domain) ?? Self.defaultDomain
+        homeDomain = try container.decodeIfPresent(String.self, forKey: .homeDomain)
+        insecureTLS = try container.decodeIfPresent(Bool.self, forKey: .insecureTLS) ?? false
+        useHTTP = try container.decodeIfPresent(Bool.self, forKey: .useHTTP) ?? false
+        liveActivityEnabled = try container.decodeIfPresent(Bool.self, forKey: .liveActivityEnabled) ?? true
+        liveActivityDisplay = try container.decodeIfPresent(
+            LiveActivityDisplayOptions.self,
+            forKey: .liveActivityDisplay
+        ) ?? LiveActivityDisplayOptions()
+        pushOnNewLevel = try container.decodeIfPresent(Bool.self, forKey: .pushOnNewLevel) ?? true
+        pushOnNewHint = try container.decodeIfPresent(Bool.self, forKey: .pushOnNewHint) ?? true
+        harRecordingEnabled = try container.decodeIfPresent(Bool.self, forKey: .harRecordingEnabled) ?? false
+        harUploadEnabled = try container.decodeIfPresent(Bool.self, forKey: .harUploadEnabled) ?? false
+        harUploadEndpoint = try container.decodeIfPresent(
+            String.self,
+            forKey: .harUploadEndpoint
+        ) ?? Self.defaultHARUploadEndpoint
+    }
+}
+
+nonisolated enum HARUploadError: LocalizedError {
+    case invalidEndpoint
+    case httpStatus(Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidEndpoint:
+            return "Некорректный адрес сервера для HAR."
+        case .httpStatus(let status):
+            return "Сервер HAR вернул HTTP \(status)."
+        }
+    }
+}
+
+nonisolated enum HARRemoteUploader {
+    private static let dateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    static func upload(harJSON: String, settings: DomainSettings, entryCount: Int? = nil) async throws {
+        guard settings.harUploadEnabled else { return }
+        let endpoint = settings.harUploadEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: endpoint), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else {
+            throw HARUploadError.invalidEndpoint
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.httpBody = Data(harJSON.utf8)
+        request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(settings.domain, forHTTPHeaderField: "X-Enkapp-Domain")
+        request.setValue(dateFormatter.string(from: Date()), forHTTPHeaderField: "X-Enkapp-Captured-At")
+        if let entryCount {
+            request.setValue(String(entryCount), forHTTPHeaderField: "X-Enkapp-HAR-Entry-Count")
+        }
+        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+            request.setValue(version, forHTTPHeaderField: "X-Enkapp-Version")
+        }
+        if let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
+            request.setValue(build, forHTTPHeaderField: "X-Enkapp-Build")
+        }
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200..<300).contains(httpResponse.statusCode) {
+            throw HARUploadError.httpStatus(httpResponse.statusCode)
+        }
+    }
 }
 
 nonisolated final class EncounterClient {
@@ -78,7 +178,7 @@ nonisolated final class EncounterClient {
             throw EncounterClientError.clientCreationFailed
         }
         client.setCodeSendTimeoutSeconds(EncounterTimeouts.codeSendSeconds)
-        client.setHARRecordingEnabled(settings.harRecordingEnabled)
+        client.setHARRecordingEnabled(settings.harCaptureEnabled)
         self.client = client
         #else
         throw EncounterClientError.bindingsUnavailable
@@ -145,6 +245,14 @@ nonisolated final class EncounterClient {
         #else
         throw EncounterClientError.bindingsUnavailable
         #endif
+    }
+
+    func uploadHARSnapshot() async throws -> Int {
+        let entryCount = harEntryCount()
+        guard entryCount > 0 else { return 0 }
+        let json = try exportHAR()
+        try await HARRemoteUploader.upload(harJSON: json, settings: settings, entryCount: entryCount)
+        return entryCount
     }
 
     func domainGames() throws -> [DomainGame] {
@@ -342,18 +450,27 @@ nonisolated final class EncounterClient {
     }
 
     func sendCode(_ submission: CodeSubmission) throws -> GameModel {
-        guard submission.kind == .level else {
-            throw EncounterClientError.bindingsUnavailable
-        }
         #if canImport(Encx)
         var error: NSError?
-        let json = client.sendCode(
-            submission.gameID,
-            levelID: submission.levelID,
-            levelNumber: submission.levelNumber,
-            code: submission.code,
-            error: &error
-        )
+        let json: String
+        switch submission.kind {
+        case .level:
+            json = client.sendCode(
+                submission.gameID,
+                levelID: submission.levelID,
+                levelNumber: submission.levelNumber,
+                code: submission.code,
+                error: &error
+            )
+        case .bonus:
+            json = client.sendBonusCode(
+                submission.gameID,
+                levelID: submission.levelID,
+                levelNumber: submission.levelNumber,
+                code: submission.code,
+                error: &error
+            )
+        }
         if let error { throw error }
         return try decode(GameModel.self, from: json)
         #else
@@ -362,102 +479,26 @@ nonisolated final class EncounterClient {
     }
 
     func sendCode(_ submission: CodeSubmission) async throws -> GameModel {
-        if submission.kind == .bonus {
-            return try await sendBonusCode(submission)
-        }
         return try await Task.detached(priority: .userInitiated) {
             try self.sendCode(submission)
         }.value
     }
 
     func penaltyHint(gameID: Int64, penaltyID: Int64) throws -> GameModel {
+        #if canImport(Encx)
+        var error: NSError?
+        let json = client.getPenaltyHint(gameID, penaltyID: penaltyID, error: &error)
+        if let error { throw error }
+        return try decode(GameModel.self, from: json)
+        #else
         throw EncounterClientError.bindingsUnavailable
+        #endif
     }
 
     func penaltyHint(gameID: Int64, penaltyID: Int64) async throws -> GameModel {
-        try await requestGameModel(
-            gameID: gameID,
-            method: "GET",
-            queryItems: [
-                URLQueryItem(name: "json", value: "1"),
-                URLQueryItem(name: "pid", value: String(penaltyID)),
-                URLQueryItem(name: "pact", value: "1"),
-            ],
-            formItems: nil,
-            timeout: TimeInterval(max(EncounterTimeouts.httpSeconds, 15))
-        )
-    }
-
-    private func sendBonusCode(_ submission: CodeSubmission) async throws -> GameModel {
-        try await requestGameModel(
-            gameID: submission.gameID,
-            method: "POST",
-            queryItems: [URLQueryItem(name: "json", value: "1")],
-            formItems: [
-                URLQueryItem(name: "LevelId", value: String(submission.levelID)),
-                URLQueryItem(name: "LevelNumber", value: String(submission.levelNumber)),
-                URLQueryItem(name: "BonusAction.Answer", value: submission.code),
-            ],
-            timeout: TimeInterval(EncounterTimeouts.codeSendSeconds)
-        )
-    }
-
-    private struct ExportedCookie: Decodable {
-        let name: String
-        let value: String
-    }
-
-    private func requestGameModel(
-        gameID: Int64,
-        method: String,
-        queryItems: [URLQueryItem],
-        formItems: [URLQueryItem]?,
-        timeout: TimeInterval
-    ) async throws -> GameModel {
-        var components = URLComponents()
-        components.scheme = settings.useHTTP ? "http" : "https"
-        components.host = settings.domain
-        components.path = "/GameEngines/Encounter/Play/\(gameID)"
-        components.queryItems = queryItems
-        guard let url = components.url else {
-            throw EncounterClientError.clientCreationFailed
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.timeoutInterval = timeout
-        request.setValue(try cookieHeader(), forHTTPHeaderField: "Cookie")
-
-        if let formItems {
-            var formComponents = URLComponents()
-            formComponents.queryItems = formItems
-            request.httpBody = formComponents.percentEncodedQuery?.data(using: .utf8)
-            request.setValue(
-                "application/x-www-form-urlencoded; charset=utf-8",
-                forHTTPHeaderField: "Content-Type"
-            )
-        }
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let httpResponse = response as? HTTPURLResponse,
-           !(200..<300).contains(httpResponse.statusCode) {
-            throw NSError(
-                domain: "EncounterClient",
-                code: httpResponse.statusCode,
-                userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResponse.statusCode)"]
-            )
-        }
-        guard let json = String(data: data, encoding: .utf8) else {
-            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Invalid UTF-8 JSON"))
-        }
-        return try decode(GameModel.self, from: json)
-    }
-
-    private func cookieHeader() throws -> String {
-        let cookies = try decoder.decode([ExportedCookie].self, from: exportCookies())
-        return cookies
-            .map { "\($0.name)=\($0.value)" }
-            .joined(separator: "; ")
+        try await Task.detached(priority: .userInitiated) {
+            try self.penaltyHint(gameID: gameID, penaltyID: penaltyID)
+        }.value
     }
 
     func gameStatistics(gameID: Int64) throws -> GameStatisticsResponse {

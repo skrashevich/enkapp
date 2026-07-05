@@ -138,7 +138,7 @@ struct SettingsView: View {
                 )
                 DashboardMetric(
                     title: "HAR",
-                    value: model.settings.harRecordingEnabled ? "\(model.harEntryCount)" : "Выкл",
+                    value: model.settings.harCaptureEnabled ? "\(model.harEntryCount)" : "Выкл",
                     systemImage: "doc.text.magnifyingglass",
                     tint: .orange
                 )
@@ -316,8 +316,33 @@ struct SettingsView: View {
                 tint: .orange,
                 isOn: $model.settings.harRecordingEnabled
             )
+            settingToggleRow(
+                title: "Отправлять HAR разработчику",
+                subtitle: "Сразу отправляет сетевые взаимодействия на сервер диагностики.",
+                systemImage: "arrow.up.doc",
+                tint: .orange,
+                isOn: $model.settings.harUploadEnabled
+            )
 
-            if model.settings.harRecordingEnabled {
+            if model.settings.harUploadEnabled {
+                TextField("Endpoint HAR", text: $model.settings.harUploadEndpoint)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .foregroundStyle(GameTheme.text)
+                    .padding(12)
+                    .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+                Text("HAR может содержать cookies, коды и тексты заданий. Включайте отправку только для диагностики.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                if !model.harUploadStatusMessage.isEmpty {
+                    Label(model.harUploadStatusMessage, systemImage: "arrow.up.doc")
+                        .font(.caption)
+                        .foregroundStyle(GameTheme.muted)
+                }
+            }
+
+            if model.settings.harCaptureEnabled {
                 DashboardSettingsRow(
                     title: "Записей",
                     subtitle: "Пароли скрываются, cookies и коды остаются в файле.",

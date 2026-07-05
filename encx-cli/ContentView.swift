@@ -217,6 +217,13 @@ private struct SettingsChangeObserver: ViewModifier {
                 model.applyHARRecordingSetting()
                 model.persistAuthorizationSettings()
             }
+            .onChange(of: model.settings.harUploadEnabled) {
+                model.applyHARRecordingSetting()
+                model.persistAuthorizationSettings()
+            }
+            .onChange(of: model.settings.harUploadEndpoint) {
+                model.persistAuthorizationSettings()
+            }
             .onChange(of: model.login) {
                 model.persistAuthorizationSettings()
             }

@@ -4,9 +4,11 @@
 //
 
 import SwiftUI
+import UIKit
 
 @main
 struct encx_cliApp: App {
+    @UIApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var appDelegate
     @State private var model = EncounterViewModel.screenshotModelIfRequested() ?? EncounterViewModel()
 
     init() {
@@ -34,6 +36,14 @@ struct encx_cliApp: App {
                         }
                     }
             }
+        }
+    }
+}
+
+private final class AppLifecycleDelegate: NSObject, UIApplicationDelegate {
+    func applicationWillTerminate(_ application: UIApplication) {
+        Task { @MainActor in
+            await QueueLiveActivityManager.endAll()
         }
     }
 }
