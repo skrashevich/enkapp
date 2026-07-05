@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -158,19 +159,22 @@ type stateResponse struct {
 }
 
 type entryView struct {
-	Index           int
-	Method          string
-	URL             string
-	URLPath         string
-	Status          int
-	StatusText      string
-	Time            string
-	StartedAt       string
-	RequestHeaders  []nameValue
-	ResponseHeaders []nameValue
-	QueryString     []nameValue
-	RequestBody     string
-	ResponseBody    string
+	Index            int
+	Method           string
+	URL              string
+	URLPath          string
+	Status           int
+	StatusText       string
+	Time             string
+	StartedAt        string
+	RequestHeaders   []nameValue
+	ResponseHeaders  []nameValue
+	QueryString      []nameValue
+	RequestBody      string
+	ResponseBody     string
+	ResponseBodyJSON string
+	HasResponseBody  bool
+	HasResponseJSON  bool
 }
 
 func main() {
@@ -337,20 +341,25 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 
 	page := detailPage{Session: sub, State: s.state()}
 	for i, entry := range sub.HAR.Log.Entries {
+		responseBody := entry.Response.Content.Text
+		responseBodyJSON := prettyJSON(responseBody)
 		page.Entries = append(page.Entries, entryView{
-			Index:           i + 1,
-			Method:          entry.Request.Method,
-			URL:             entry.Request.URL,
-			URLPath:         compactURL(entry.Request.URL),
-			Status:          entry.Response.Status,
-			StatusText:      entry.Response.StatusText,
-			Time:            fmt.Sprintf("%.0f ms", entry.Time),
-			StartedAt:       entry.StartedDateTime,
-			RequestHeaders:  entry.Request.Headers,
-			ResponseHeaders: entry.Response.Headers,
-			QueryString:     entry.Request.QueryString,
-			RequestBody:     truncate(entry.requestBody(), 20_000),
-			ResponseBody:    truncate(entry.Response.Content.Text, 40_000),
+			Index:            i + 1,
+			Method:           entry.Request.Method,
+			URL:              entry.Request.URL,
+			URLPath:          compactURL(entry.Request.URL),
+			Status:           entry.Response.Status,
+			StatusText:       entry.Response.StatusText,
+			Time:             fmt.Sprintf("%.0f ms", entry.Time),
+			StartedAt:        entry.StartedDateTime,
+			RequestHeaders:   entry.Request.Headers,
+			ResponseHeaders:  entry.Response.Headers,
+			QueryString:      entry.Request.QueryString,
+			RequestBody:      entry.requestBody(),
+			ResponseBody:     responseBody,
+			ResponseBodyJSON: responseBodyJSON,
+			HasResponseBody:  responseBody != "",
+			HasResponseJSON:  responseBodyJSON != "",
 		})
 	}
 	render(w, detailTemplate, page)
@@ -632,11 +641,16 @@ func isDigits(value string) bool {
 	return true
 }
 
-func truncate(value string, limit int) string {
-	if len(value) <= limit {
-		return value
+func prettyJSON(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
 	}
-	return value[:limit] + "\n... truncated ..."
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, []byte(value), "", "  "); err != nil {
+		return ""
+	}
+	return buf.String()
 }
 
 func newID(now time.Time) string {
@@ -916,7 +930,19 @@ var detailTemplate = template.Must(template.New("detail").Parse(pagePrefix + `
       <summary>Response</summary>
       <h3>Headers</h3>
       <dl>{{range .ResponseHeaders}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{else}}<dd>-</dd>{{end}}</dl>
-      {{if .ResponseBody}}<h3>Body</h3><pre>{{.ResponseBody}}</pre>{{end}}
+      {{if .HasResponseBody}}
+      <h3>Body</h3>
+      <div class="body-viewer" data-body-viewer>
+        <div class="body-tabs">
+          <button type="button" data-body-tab="raw" aria-pressed="true">Raw</button>
+          <button type="button" data-body-tab="html" aria-pressed="false">HTML</button>
+          {{if .HasResponseJSON}}<button type="button" data-body-tab="json" aria-pressed="false">JSON</button>{{end}}
+        </div>
+        <pre data-body-panel="raw">{{.ResponseBody}}</pre>
+        <iframe data-body-panel="html" sandbox srcdoc="{{.ResponseBody}}" hidden></iframe>
+        {{if .HasResponseJSON}}<pre data-body-panel="json" hidden>{{.ResponseBodyJSON}}</pre>{{end}}
+      </div>
+      {{end}}
     </details>
   </section>
   {{end}}
@@ -929,6 +955,22 @@ var detailTemplate = template.Must(template.New("detail").Parse(pagePrefix + `
   const bannerLink = document.getElementById("new-capture-link");
   let latestID = root?.dataset.latestId || "";
   const currentID = root?.dataset.currentId || "";
+
+  for (const viewer of document.querySelectorAll("[data-body-viewer]")) {
+    const buttons = [...viewer.querySelectorAll("[data-body-tab]")];
+    const panels = [...viewer.querySelectorAll("[data-body-panel]")];
+    for (const button of buttons) {
+      button.addEventListener("click", () => {
+        const mode = button.dataset.bodyTab;
+        for (const item of buttons) {
+          item.setAttribute("aria-pressed", String(item === button));
+        }
+        for (const panel of panels) {
+          panel.hidden = panel.dataset.bodyPanel !== mode;
+        }
+      });
+    }
+  }
 
   async function poll() {
     try {
@@ -1039,6 +1081,24 @@ dl { display: grid; grid-template-columns: minmax(140px, 260px) 1fr; gap: 6px 12
 dt { color: #aeb6c8; overflow-wrap: anywhere; }
 dd { margin: 0; overflow-wrap: anywhere; }
 pre { margin: 0; padding: 12px; overflow: auto; max-height: 520px; background: #0b0d12; border: 1px solid #2a2f3a; border-radius: 6px; white-space: pre-wrap; }
+.body-viewer { display: grid; gap: 8px; }
+.body-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.body-tabs button {
+  border: 1px solid #394150;
+  border-radius: 6px;
+  padding: 5px 9px;
+  background: #202632;
+  color: #d9deea;
+}
+.body-tabs button[aria-pressed="true"] { background: #27364f; color: #b8d3ff; border-color: #42628d; }
+.body-viewer iframe {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 520px;
+  background: #ffffff;
+  border: 1px solid #2a2f3a;
+  border-radius: 6px;
+}
 @media (max-width: 760px) {
   table, thead, tbody, tr, th, td { display: block; }
   colgroup { display: none; }

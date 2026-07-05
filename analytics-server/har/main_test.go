@@ -41,3 +41,15 @@ func TestSanitizeFilename(t *testing.T) {
 		t.Fatalf("sanitizeFilename() = %q, want %q", got, want)
 	}
 }
+
+func TestPrettyJSON(t *testing.T) {
+	got := prettyJSON(`{"ok":true,"items":[1,2]}`)
+	want := "{\n  \"ok\": true,\n  \"items\": [\n    1,\n    2\n  ]\n}"
+	if got != want {
+		t.Fatalf("prettyJSON() = %q, want %q", got, want)
+	}
+
+	if got := prettyJSON(`<html></html>`); got != "" {
+		t.Fatalf("prettyJSON(invalid) = %q, want empty", got)
+	}
+}
