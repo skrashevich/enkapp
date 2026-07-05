@@ -2150,7 +2150,8 @@ final class EncounterViewModel {
             do {
                 let uploadedCount = try await client.uploadHARSnapshot()
                 guard uploadedCount > 0 else { return }
-                lastUploadedHAREntryCount = uploadedCount
+                lastUploadedHAREntryCount = 0
+                refreshHAREntryCount()
                 harUploadStatusMessage = "HAR отправлен: \(uploadedCount)"
             } catch {
                 harUploadStatusMessage = "HAR не отправлен: \(error.localizedDescription)"

@@ -318,7 +318,7 @@ struct SettingsView: View {
             )
             settingToggleRow(
                 title: "Отправлять HAR разработчику",
-                subtitle: "Сразу отправляет сетевые взаимодействия на сервер диагностики.",
+                subtitle: "Автоматически отправляет сетевые взаимодействия на сервер диагностики.",
                 systemImage: "arrow.up.doc",
                 tint: .orange,
                 isOn: $model.settings.harUploadEnabled
@@ -332,9 +332,9 @@ struct SettingsView: View {
                     .foregroundStyle(GameTheme.text)
                     .padding(12)
                     .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
-                Text("HAR может содержать cookies, коды и тексты заданий. Включайте отправку только для диагностики.")
+                Text("Внимание: включение этой опции позволит разработчику приложения видеть всю информацию во взаимодействии приложения с движком, включая чувствительные данные вроде кодов, и потенциально авторизоваться под вашей учетной записью на движке в течение непродолжительного времени. Используйте только для отладки проблем при прямом взаимодействии с автором приложения либо при запуске собственных тестовых игр, утечка данных из которых некритична. Это поможет в разработке приложения и смежных проектов вроде encx-cli.")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.red)
                 if !model.harUploadStatusMessage.isEmpty {
                     Label(model.harUploadStatusMessage, systemImage: "arrow.up.doc")
                         .font(.caption)

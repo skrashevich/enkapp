@@ -252,6 +252,7 @@ nonisolated final class EncounterClient {
         guard entryCount > 0 else { return 0 }
         let json = try exportHAR()
         try await HARRemoteUploader.upload(harJSON: json, settings: settings, entryCount: entryCount)
+        clearHAR()
         return entryCount
     }
 
