@@ -141,6 +141,17 @@ final class EncounterViewModel {
     private var finalStandingLoadedGameID: Int64?
     private var finalStandingTask: Task<Void, Never>?
     private let gamePollInterval: TimeInterval = 20
+    /// Steady-state poll interval for an active level on screen. Kept well above the transient 5s cadence
+    /// so ordinary play does not trip the Encounter server anti-spam ("NotHumanRequest") wall.
+    private let activeLevelPollInterval: TimeInterval = 12
+    /// Floor for the hint/level-timeout self-rescheduling refreshes so a small (or clock-skewed) server
+    /// `RemainSeconds` cannot spin a tight ~2s refresh loop.
+    private let minTimerRefreshInterval: TimeInterval = 15
+    /// While set to a future date, background polling is suspended because the server returned the
+    /// anti-spam wall; hammering it further only prolongs the block.
+    private var antiSpamBackoffUntil: Date?
+    /// How long background polling pauses after an anti-spam response.
+    private let antiSpamBackoffSeconds: TimeInterval = 90
     /// Backoff for queue retries while the engine is unreachable (cap keeps UI responsive).
     private var queueRetryBackoffSeconds: TimeInterval = 0.4
     /// Anchor for Live Activity countdowns; updated when `currentModel` changes, not on every sync.
@@ -903,6 +914,8 @@ final class EncounterViewModel {
             return
         }
         if !showUI, isBusy { return }
+        // Background refreshes must respect the anti-spam backoff; only an explicit user refresh may retry.
+        if !showUI, isAntiSpamBackoffActive { return }
 
         let hadCachedLevel = currentModel != nil
         let succeeded = await runBusy(
@@ -911,6 +924,7 @@ final class EncounterViewModel {
             presentErrors: showUI && !hadCachedLevel
         ) {
             setCurrentModel(try await withSessionRecovery { try await $0.gameModel(gameID: selectedGameID) })
+            lastGamePollDate = Date()
             try saveCookies(from: try ensureClient())
             markEngineReachable()
             await refreshAfterTransientLevelEventIfNeeded(gameID: selectedGameID)
@@ -1220,10 +1234,18 @@ final class EncounterViewModel {
         }
         guard queue.isOnline, !queue.isFlushing else { return }
         if skipWhenQueuePending, !queue.pending.isEmpty { return }
+        if isAntiSpamBackoffActive { return }
 
-        let pollInterval = waitingForFinishTransition || waitingForLevelOrStart || activeLevelOnScreen
-            ? 5.0
-            : gamePollInterval
+        let pollInterval: TimeInterval
+        if waitingForFinishTransition || waitingForLevelOrStart {
+            // Transient transitions (level being swapped, game about to start) resolve quickly.
+            pollInterval = 5.0
+        } else if activeLevelOnScreen {
+            // Steady play on an open level: poll far less aggressively to stay under anti-spam limits.
+            pollInterval = activeLevelPollInterval
+        } else {
+            pollInterval = gamePollInterval
+        }
         if !force, let lastGamePollDate,
            Date().timeIntervalSince(lastGamePollDate) < pollInterval {
             return
@@ -1521,8 +1543,10 @@ final class EncounterViewModel {
         let nearestHintRemain = level.nearestLockedHintRemainSeconds
         guard nearestHintRemain > 0 else { return }
 
+        // Floor the delay: a persistently small (or clock-skewed) server RemainSeconds must not spin a tight loop.
+        let delay = max(TimeInterval(nearestHintRemain) + 1, minTimerRefreshInterval)
         hintUnlockRefreshTask = Task { [weak self, selectedGameID] in
-            try? await Task.sleep(for: .seconds(nearestHintRemain + 1))
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
             await self?.refreshAfterHintUnlock(gameID: selectedGameID)
         }
@@ -1553,8 +1577,9 @@ final class EncounterViewModel {
             return
         }
 
+        let delay = max(TimeInterval(level.timeoutSecondsRemain) + 1, minTimerRefreshInterval)
         levelTimeoutRefreshTask = Task { [weak self, selectedGameID, levelID = level.levelID] in
-            try? await Task.sleep(for: .seconds(level.timeoutSecondsRemain + 1))
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
             await self?.refreshAfterLevelTimeout(gameID: selectedGameID, levelID: levelID)
         }
@@ -1906,6 +1931,7 @@ final class EncounterViewModel {
     }
 
     private func markEngineReachable() {
+        antiSpamBackoffUntil = nil
         let wasUnreachable = !engineReachable
         engineReachable = true
         if wasUnreachable && !queue.pending.isEmpty {
@@ -2099,6 +2125,7 @@ final class EncounterViewModel {
     func dismissAntiSpamVerification() {
         showAntiSpamVerification = false
         antiSpamVerificationURL = nil
+        antiSpamBackoffUntil = nil
     }
 
     var sessionCookiesData: Data? {
@@ -2115,13 +2142,40 @@ final class EncounterViewModel {
             return result
         } catch {
             handleHARCaptureUpdate(client: client)
+            if EncounterClient.isAntiSpamError(error) {
+                noteAntiSpam(error)
+                throw error
+            }
             guard EncounterClient.isSessionExpiredError(error) else { throw error }
             try await reloginSilently()
             let recoveredClient = try ensureClient()
-            let result = try await operation(recoveredClient)
-            handleHARCaptureUpdate(client: recoveredClient)
-            return result
+            do {
+                let result = try await operation(recoveredClient)
+                handleHARCaptureUpdate(client: recoveredClient)
+                return result
+            } catch {
+                handleHARCaptureUpdate(client: recoveredClient)
+                if EncounterClient.isAntiSpamError(error) {
+                    noteAntiSpam(error)
+                }
+                throw error
+            }
         }
+    }
+
+    /// True while background polling is suspended by an active anti-spam backoff window.
+    private var isAntiSpamBackoffActive: Bool {
+        guard let antiSpamBackoffUntil else { return false }
+        return Date() < antiSpamBackoffUntil
+    }
+
+    /// Records an anti-spam response: pauses background polling and surfaces the verification sheet once.
+    private func noteAntiSpam(_ error: Error) {
+        antiSpamBackoffUntil = Date().addingTimeInterval(antiSpamBackoffSeconds)
+        guard !showAntiSpamVerification else { return }
+        antiSpamVerificationURL = EncounterClient.antiSpamURL(from: error, settings: settings)
+            ?? EncounterClient.defaultAntiSpamURL(settings: settings)
+        showAntiSpamVerification = true
     }
 
     private func handleHARCaptureUpdate(client: EncounterClient) {
