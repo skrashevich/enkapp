@@ -43,6 +43,8 @@ nonisolated struct DomainSettings: Codable, Equatable {
     /// Default Encounter host for development (public mock at https://encounter.exe.xyz).
     static let defaultDomain = "encounter.exe.xyz"
     static let defaultHARUploadEndpoint = "https://enkapp-telemetry.exe.xyz/api/har"
+    static let defaultHARRecordingEnabled = false
+    static let defaultHARUploadEnabled = false
 
     var domain = DomainSettings.defaultDomain
     /// Player's home/registered Encounter domain (aka "прописка"), if known.
@@ -54,11 +56,11 @@ nonisolated struct DomainSettings: Codable, Equatable {
     var pushOnNewLevel = true
     var pushOnNewHint = true
     /// Records Encounter HTTP traffic as HAR 1.2 for debugging and mock-server development.
-    var harRecordingEnabled = false
+    var harRecordingEnabled = DomainSettings.defaultHARRecordingEnabled
     /// Tracks whether HAR recording was enabled implicitly by developer upload.
     var harRecordingAutoEnabledByUpload = false
     /// Sends captured HAR traffic to the developer diagnostics endpoint.
-    var harUploadEnabled = false
+    var harUploadEnabled = DomainSettings.defaultHARUploadEnabled
     var harUploadEndpoint = DomainSettings.defaultHARUploadEndpoint
 
     var harCaptureEnabled: Bool {
@@ -95,12 +97,18 @@ nonisolated struct DomainSettings: Codable, Equatable {
         ) ?? LiveActivityDisplayOptions()
         pushOnNewLevel = try container.decodeIfPresent(Bool.self, forKey: .pushOnNewLevel) ?? true
         pushOnNewHint = try container.decodeIfPresent(Bool.self, forKey: .pushOnNewHint) ?? true
-        harRecordingEnabled = try container.decodeIfPresent(Bool.self, forKey: .harRecordingEnabled) ?? false
+        harRecordingEnabled = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .harRecordingEnabled
+        ) ?? Self.defaultHARRecordingEnabled
         harRecordingAutoEnabledByUpload = try container.decodeIfPresent(
             Bool.self,
             forKey: .harRecordingAutoEnabledByUpload
         ) ?? false
-        harUploadEnabled = try container.decodeIfPresent(Bool.self, forKey: .harUploadEnabled) ?? false
+        harUploadEnabled = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .harUploadEnabled
+        ) ?? Self.defaultHARUploadEnabled
         harUploadEndpoint = try container.decodeIfPresent(
             String.self,
             forKey: .harUploadEndpoint

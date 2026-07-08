@@ -37,14 +37,12 @@ struct AnagramizerView: View {
     private var modeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionTitle("Режим поиска")
-            Picker("Режим", selection: $model.mode) {
-                Text("Шаблон").tag(AnagramMode.pattern)
-                Text("Из букв").tag(AnagramMode.anagram)
-                Text("Подслова").tag(AnagramMode.subword)
-                Text("Комбо").tag(AnagramMode.combined)
+            Picker("Режим", selection: $model.uiMode) {
+                Text("По буквам").tag(AnagramUIMode.letters)
+                Text("По шаблону").tag(AnagramUIMode.pattern)
             }
             .pickerStyle(.segmented)
-            .onChange(of: model.mode) { _, _ in
+            .onChange(of: model.uiMode) { _, _ in
                 model.scheduleSearch()
             }
         }
@@ -53,37 +51,16 @@ struct AnagramizerView: View {
 
     // MARK: - Ввод
 
+    @ViewBuilder
     private var inputSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionTitle("Ввод")
 
-            if showsPatternField {
-                VStack(alignment: .leading, spacing: 6) {
-                    TextField("Шаблон, напр. «к_т»", text: $model.pattern)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .foregroundStyle(GameTheme.text)
-                        .padding(12)
-                        .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
-                        .onChange(of: model.pattern) { _, _ in
-                            model.scheduleSearch()
-                        }
-                    Text("Джокер на одну позицию: «_», «.», «?» или «*».")
-                        .font(.caption)
-                        .foregroundStyle(GameTheme.muted)
-                }
-            }
-
-            if showsLettersField {
-                TextField("Буквы, напр. «автомобиль»", text: $model.letters)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .foregroundStyle(GameTheme.text)
-                    .padding(12)
-                    .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
-                    .onChange(of: model.letters) { _, _ in
-                        model.scheduleSearch()
-                    }
+            switch model.uiMode {
+            case .letters:
+                lettersInput
+            case .pattern:
+                patternInput
             }
 
             Button {
@@ -99,12 +76,68 @@ struct AnagramizerView: View {
         .sectionPanel()
     }
 
-    private var showsPatternField: Bool {
-        model.mode == .pattern || model.mode == .combined
+    // Режим «По буквам»: набор букв + тумблер «использовать все буквы».
+    private var lettersInput: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TextField("Буквы, напр. «автомобиль»", text: $model.letters)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .foregroundStyle(GameTheme.text)
+                .padding(12)
+                .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+                .onChange(of: model.letters) { _, _ in
+                    model.scheduleSearch()
+                }
+
+            DashboardSettingsRow(
+                title: "Использовать все буквы",
+                subtitle: "Только точные анаграммы из всех букв. Иначе — любые слова из части букв.",
+                systemImage: "arrow.left.and.right.text.vertical",
+                tint: GameTheme.bonusTitle
+            ) {
+                Toggle("Использовать все буквы", isOn: $model.useAllLetters)
+                    .labelsHidden()
+                    .tint(GameTheme.accent)
+                    .onChange(of: model.useAllLetters) { _, _ in
+                        model.scheduleSearch()
+                    }
+            }
+        }
     }
 
-    private var showsLettersField: Bool {
-        model.mode == .anagram || model.mode == .subword || model.mode == .combined
+    // Режим «По шаблону»: шаблон с джокерами + опциональный пул букв для джокеров.
+    private var patternInput: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("Шаблон, напр. «к_т»", text: $model.pattern)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .foregroundStyle(GameTheme.text)
+                    .padding(12)
+                    .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+                    .onChange(of: model.pattern) { _, _ in
+                        model.scheduleSearch()
+                    }
+                Text("Джокер на одну позицию: «_», «.», «?» или «*».")
+                    .font(.caption)
+                    .foregroundStyle(GameTheme.muted)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("Буквы для джокеров (необязательно)", text: $model.poolLetters)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .foregroundStyle(GameTheme.text)
+                    .padding(12)
+                    .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+                    .onChange(of: model.poolLetters) { _, _ in
+                        model.scheduleSearch()
+                    }
+                Text("Если заполнить — джокеры берутся только из этих букв.")
+                    .font(.caption)
+                    .foregroundStyle(GameTheme.muted)
+            }
+        }
     }
 
     // MARK: - Опции

@@ -8,14 +8,49 @@ enum AnagramDictionaryState: Equatable {
     case error(String)
 }
 
+/// Видимый пользователю режим поиска. В интерфейсе только два семейства;
+/// четыре движковых режима (`AnagramMode`) выводятся из UI-режима и опций.
+enum AnagramUIMode: Equatable {
+    case letters   // поиск слов из набора букв (подслова / точная анаграмма)
+    case pattern   // поиск по шаблону с джокерами (+ опциональный пул букв)
+}
+
 @Observable
 @MainActor
 final class AnagramizerViewModel {
     // MARK: - Ввод
 
-    var mode: AnagramMode = .pattern
+    /// Видимый режим (2 варианта). Движковый режим считается в `effectiveMode`.
+    var uiMode: AnagramUIMode = .letters
+    /// Только для `.letters`: искать точные анаграммы (использовать все буквы),
+    /// иначе — любые подслова.
+    var useAllLetters: Bool = false
     var pattern: String = ""
+    /// Набор букв для режима «По буквам» (подслова / анаграмма).
     var letters: String = ""
+    /// Пул букв для джокеров в режиме «По шаблону». Хранится отдельно от `letters`,
+    /// чтобы буквы одного режима не протекали в другой и не переключали движковый
+    /// режим неявно (иначе пустой шаблон-поиск молча стал бы `.combined`).
+    var poolLetters: String = ""
+
+    /// Движковый режим, выведенный из видимого режима и опций:
+    /// - `.letters` + все буквы → `.anagram`, иначе → `.subword`;
+    /// - `.pattern` с непустым пулом букв → `.combined`, иначе → `.pattern`.
+    var effectiveMode: AnagramMode {
+        switch uiMode {
+        case .letters:
+            return useAllLetters ? .anagram : .subword
+        case .pattern:
+            let hasPool = !poolLetters.trimmingCharacters(in: .whitespaces).isEmpty
+            return hasPool ? .combined : .pattern
+        }
+    }
+
+    /// Буквы, передаваемые движку. В режиме шаблона движок использует поле `letters`
+    /// как пул для джокеров (`.combined`), поэтому подставляем `poolLetters`.
+    var effectiveLetters: String {
+        uiMode == .pattern ? poolLetters : letters
+    }
 
     // MARK: - Фильтры
 
@@ -108,9 +143,9 @@ final class AnagramizerViewModel {
         let generation = searchGeneration
 
         let query = AnagramQuery(
-            mode: mode,
+            mode: effectiveMode,
             pattern: pattern,
-            letters: letters,
+            letters: effectiveLetters,
             minLength: minLength,
             maxLength: maxLength,
             foldYo: foldYo,
