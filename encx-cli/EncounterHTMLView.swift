@@ -4,16 +4,30 @@ import WebKit
 struct EncounterHTMLView: View {
     let html: String
     @State private var height: CGFloat = 80
+    @State private var zoomImage: ZoomImageTarget?
 
     var body: some View {
-        EncounterHTMLWebView(html: html, contentHeight: $height)
-            .frame(height: max(height, 44))
+        EncounterHTMLWebView(html: html, contentHeight: $height) { url in
+            zoomImage = ZoomImageTarget(url: url)
+        }
+        .frame(height: max(height, 44))
+        .fullScreenCover(item: $zoomImage) { target in
+            ZoomableImageViewer(url: target.url) {
+                zoomImage = nil
+            }
+        }
     }
+}
+
+struct ZoomImageTarget: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
 }
 
 private struct EncounterHTMLWebView: UIViewRepresentable {
     let html: String
     @Binding var contentHeight: CGFloat
+    var onImageTap: (URL) -> Void
 
     private static let measureHeightJS = """
     (() => {
@@ -46,27 +60,67 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
     """
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(contentHeight: $contentHeight)
+        Coordinator(contentHeight: $contentHeight, onImageTap: onImageTap)
     }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
+        let controller = WKUserContentController()
+        controller.add(context.coordinator, name: "imageTapped")
+        controller.addUserScript(
+            WKUserScript(
+                source: Self.imageTapJS,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            )
+        )
+        configuration.userContentController = controller
+
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
         webView.scrollView.isScrollEnabled = true
-        webView.scrollView.alwaysBounceHorizontal = true
+        webView.scrollView.alwaysBounceHorizontal = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.navigationDelegate = context.coordinator
         return webView
     }
+
+    private static let imageTapJS = """
+    (() => {
+        function bind(img) {
+            if (img.dataset.tapBound) { return; }
+            img.dataset.tapBound = '1';
+            img.style.cursor = 'zoom-in';
+            img.addEventListener('click', () => {
+                const src = img.currentSrc || img.src;
+                if (src) {
+                    window.webkit.messageHandlers.imageTapped.postMessage(src);
+                }
+            });
+        }
+        document.querySelectorAll('img').forEach(bind);
+        new MutationObserver(mutations => {
+            for (const m of mutations) {
+                for (const node of m.addedNodes) {
+                    if (node.tagName === 'IMG') { bind(node); }
+                    else if (node.querySelectorAll) { node.querySelectorAll('img').forEach(bind); }
+                }
+            }
+        }).observe(document.body, { childList: true, subtree: true });
+    })()
+    """
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         guard context.coordinator.lastHTML != html else { return }
         context.coordinator.lastHTML = html
         context.coordinator.resetHeight()
         webView.loadHTMLString(wrappedHTML(html), baseURL: nil)
+    }
+
+    static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "imageTapped")
     }
 
     private func wrappedHTML(_ body: String) -> String {
@@ -89,7 +143,14 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
           body { padding-bottom: 12px; box-sizing: border-box; }
           table { border-collapse: collapse; width: 100%; color: #fff; }
           td, th { border: 1px solid #444; padding: 6px 8px; vertical-align: middle; }
-          img { max-width: 100%; height: auto; display: block; }
+          img {
+            max-width: 100%;
+            max-height: 340px;
+            height: auto;
+            width: auto;
+            object-fit: contain;
+            display: block;
+          }
           a { color: #5bc0de; }
           p { margin: 0 0 8px; }
           h1, h2, h3, h4 { margin: 0 0 10px; line-height: 1.25; }
@@ -100,12 +161,24 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
         """
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         @Binding var contentHeight: CGFloat
+        let onImageTap: (URL) -> Void
         var lastHTML = ""
 
-        init(contentHeight: Binding<CGFloat>) {
+        init(contentHeight: Binding<CGFloat>, onImageTap: @escaping (URL) -> Void) {
             _contentHeight = contentHeight
+            self.onImageTap = onImageTap
+        }
+
+        func userContentController(
+            _ userContentController: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {
+            guard message.name == "imageTapped",
+                  let src = message.body as? String,
+                  let url = URL(string: src) else { return }
+            onImageTap(url)
         }
 
         func resetHeight() {
