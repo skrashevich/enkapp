@@ -26,8 +26,15 @@ final class QueueLiveActivityManager {
         let content = ActivityContent(state: state, staleDate: nil)
 
         if let activity = currentActivity() {
-            await activity.update(content)
-            return
+            // `gameTitle` lives in the immutable ActivityAttributes: `update` only touches
+            // ContentState, so a running activity keeps showing the previous game's title after
+            // the player switches game/domain. Restart the activity when the title changed.
+            if activity.attributes.gameTitle == gameTitle {
+                await activity.update(content)
+                return
+            }
+            await Self.endAll()
+            self.activity = nil
         }
 
         let attributes = QueueActivityAttributes(gameTitle: gameTitle)
