@@ -270,6 +270,10 @@ enum MorseCode {
     static func decode(_ text: String, alphabet: CipherAlphabet) -> String {
         let reverse = reverseTable(for: alphabet)
         let normalized = text
+            // Многоточия, которые «умная пунктуация» вставляет вместо групп точек.
+            .replacingOccurrences(of: "…", with: "...")
+            .replacingOccurrences(of: "‥", with: "..")
+            .replacingOccurrences(of: "․", with: ".")
             .replacingOccurrences(of: "·", with: ".")
             .replacingOccurrences(of: "•", with: ".")
             .replacingOccurrences(of: "—", with: "-")
