@@ -2,18 +2,95 @@ import SwiftUI
 import UIKit
 
 /// Многострочное поле ввода в едином стиле утилит.
+///
+/// Использует `UITextView`, чтобы выключить «умную пунктуацию»: SwiftUI `TextField`
+/// не даёт доступа к `smartDashesType`/`smartQuotesType`, из-за чего iOS/macOS
+/// подменяют «---» на «—» и «...» на «…», ломая ввод кода Морзе. Здесь эти
+/// автозамены отключены, поэтому символы попадают в текст ровно как набраны.
 struct CipherInputField: View {
     let placeholder: String
     @Binding var text: String
 
     var body: some View {
-        TextField(placeholder, text: $text, axis: .vertical)
-            .lineLimit(2...6)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .foregroundStyle(GameTheme.text)
+        PlainTextEditor(text: $text, placeholder: placeholder)
             .padding(12)
             .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// Обёртка над `UITextView` без автозамен: авто­коррекции, авто­капитализации и
+/// «умной пунктуации» (умные тире/кавычки/пробелы). Высота растёт от 2 до 6 строк.
+private struct PlainTextEditor: UIViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.delegate = context.coordinator
+        view.backgroundColor = .clear
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.font = UIFont.preferredFont(forTextStyle: .body)
+        view.adjustsFontForContentSizeCategory = true
+        view.textColor = UIColor(GameTheme.text)
+        view.tintColor = UIColor(GameTheme.accent)
+        view.isScrollEnabled = true
+
+        // Ключевое: выключаем все автозамены, ломающие код Морзе и шифры.
+        view.autocorrectionType = .no
+        view.autocapitalizationType = .none
+        view.spellCheckingType = .no
+        view.smartDashesType = .no
+        view.smartQuotesType = .no
+        view.smartInsertDeleteType = .no
+
+        let label = UILabel()
+        label.text = placeholder
+        label.font = view.font
+        label.textColor = UIColor(GameTheme.muted)
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: view.topAnchor),
+            label.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+        context.coordinator.placeholderLabel = label
+
+        return view
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        context.coordinator.parent = self
+        if uiView.text != text {
+            uiView.text = text
+        }
+        context.coordinator.placeholderLabel?.text = placeholder
+        context.coordinator.placeholderLabel?.isHidden = !text.isEmpty
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        let width = proposal.width ?? uiView.bounds.width
+        let lineHeight = uiView.font?.lineHeight ?? 20
+        let minHeight = ceil(lineHeight * 2)
+        let maxHeight = ceil(lineHeight * 6)
+        let fitted = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        return CGSize(width: width, height: min(max(fitted, minHeight), maxHeight))
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: PlainTextEditor
+        weak var placeholderLabel: UILabel?
+
+        init(_ parent: PlainTextEditor) { self.parent = parent }
+
+        func textViewDidChange(_ textView: UITextView) {
+            parent.text = textView.text
+            placeholderLabel?.isHidden = !textView.text.isEmpty
+        }
     }
 }
 
