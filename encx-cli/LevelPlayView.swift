@@ -534,7 +534,9 @@ struct LevelPlayView: View {
                     }
                     .font(.subheadline)
 
-                    LevelDrainCountdown(remainSeconds: level.timeoutSecondsRemain)
+                    LevelDrainCountdown(remainSeconds: level.timeoutSecondsRemain) {
+                        Task { await model.refreshLevelSilently() }
+                    }
                 }
             }
 
@@ -615,6 +617,7 @@ private struct FinishTransitionCountdown: View {
 
 private struct LevelDrainCountdown: View {
     let remainSeconds: Int
+    var onDrain: (() -> Void)?
     @State private var syncedAt = Date()
 
     var body: some View {
@@ -628,9 +631,19 @@ private struct LevelDrainCountdown: View {
             )
             .font(.caption.weight(.semibold))
             .foregroundStyle(GameTheme.accent)
+            .lineLimit(1)
+            // Keep the full "До слива: …" text; let the login·team line on the left truncate instead.
+            .fixedSize(horizontal: true, vertical: false)
             .onAppear { syncedAt = Date() }
             .onChange(of: remainSeconds) { _, _ in
                 syncedAt = Date()
+            }
+            // When the drain countdown hits zero on-screen, force a refresh so the level
+            // never stays stuck on "Слив…" if background polling was paused (e.g. anti-spam backoff).
+            .task(id: remainSeconds) {
+                try? await Task.sleep(for: .seconds(Double(remainSeconds) + 1))
+                guard !Task.isCancelled else { return }
+                onDrain?()
             }
         }
     }
