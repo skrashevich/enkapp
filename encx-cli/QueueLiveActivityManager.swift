@@ -45,6 +45,22 @@ final class QueueLiveActivityManager {
         )
     }
 
+    /// Updates an already-running activity without ever creating a new one.
+    /// Used to keep the plate alive during transient no-level moments (e.g. between levels),
+    /// so it doesn't disappear entirely and then have to be recreated.
+    func updateIfActive(state: QueueActivityAttributes.ContentState, gameTitle: String) async {
+        guard Self.areActivitiesEnabled, let activity = currentActivity() else { return }
+
+        // Title is immutable per activity; if it changed, tear down rather than show a stale title.
+        guard activity.attributes.gameTitle == gameTitle else {
+            await Self.endAll()
+            self.activity = nil
+            return
+        }
+
+        await activity.update(ActivityContent(state: state, staleDate: nil))
+    }
+
     func end() async {
         await Self.endAll()
         self.activity = nil

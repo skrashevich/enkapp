@@ -1383,23 +1383,56 @@ final class EncounterViewModel {
             return
         }
 
-        guard let state = liveActivityContentState() else {
-            lastSyncedLiveActivityState = nil
-            await liveActivity.end()
-            return
-        }
-
-        if state == lastSyncedLiveActivityState {
-            return
-        }
-        lastSyncedLiveActivityState = state
-
         let display = settings.liveActivityDisplay
         let rawTitle = currentModel?.gameTitle
             ?? games.first { $0.id == selectedGameID.map(Int.init) }?.title
             ?? "Encounter"
         let gameTitle = display.showGameTitle ? rawTitle : ""
-        await liveActivity.sync(state: state, gameTitle: gameTitle)
+
+        if let state = liveActivityContentState() {
+            if state == lastSyncedLiveActivityState { return }
+            lastSyncedLiveActivityState = state
+            await liveActivity.sync(state: state, gameTitle: gameTitle)
+            return
+        }
+
+        // No playable level right now (e.g. between levels). Keep an already-running plate
+        // alive with a minimal "waiting" state instead of tearing it down — otherwise the
+        // Dynamic Island / Live Activity vanishes entirely mid-game. Never create a new one here.
+        if let waiting = liveActivityWaitingState() {
+            if waiting == lastSyncedLiveActivityState { return }
+            lastSyncedLiveActivityState = waiting
+            await liveActivity.updateIfActive(state: waiting, gameTitle: gameTitle)
+            return
+        }
+
+        lastSyncedLiveActivityState = nil
+        await liveActivity.end()
+    }
+
+    /// Minimal Live Activity state for transient no-level moments while the game is still in play.
+    /// Returns nil once the game is complete (so the plate is allowed to end).
+    private func liveActivityWaitingState() -> QueueActivityAttributes.ContentState? {
+        guard selectedGameID != nil, let model = currentModel else { return nil }
+        guard !model.isGameComplete else { return nil }
+
+        let display = settings.liveActivityDisplay
+        return QueueActivityAttributes.ContentState(
+            pendingCount: display.showQueue ? queue.pending.count : 0,
+            status: "Ждём открытия уровня…",
+            isOnline: queueConnectionStatus == .ready,
+            levelNumber: 0,
+            levelName: "",
+            teamName: display.showTeam ? model.teamName : "",
+            sectorsPassed: 0,
+            sectorsRequired: 0,
+            bonusesPassed: 0,
+            bonusesTotal: 0,
+            recentCodes: [],
+            hints: [],
+            levelEndsAt: nil,
+            nextHintUnlocksAt: nil
+        )
     }
 
     private func refreshAfterTransientLevelEventIfNeeded(gameID: Int64) async {
