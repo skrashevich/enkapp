@@ -160,6 +160,14 @@ final class AnagramizerViewModel {
         }
     }
 
+    /// Использовать найденное слово как новый набор букв и сразу искать по нему.
+    /// Переключает режим на «По буквам», чтобы слово стало входом движка.
+    func useWordAsInput(_ word: String) {
+        uiMode = .letters
+        letters = word
+        searchNow()
+    }
+
     /// Подгрузить следующую страницу результатов.
     func loadMore() {
         guard hasMore, !isSearching else { return }

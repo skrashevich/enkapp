@@ -19,8 +19,8 @@ struct AnagramizerView: View {
             LazyVStack(alignment: .leading, spacing: 16) {
                 modeSection
                 inputSection
-                optionsSection
                 resultsSection
+                optionsSection
                 attributionSection
             }
             .padding()
@@ -266,23 +266,35 @@ struct AnagramizerView: View {
     }
 
     private func wordRow(_ word: String) -> some View {
-        Button {
-            copyWord(word)
-        } label: {
-            HStack {
-                Text(word)
-                    .font(.body.monospaced())
-                    .foregroundStyle(GameTheme.text)
-                Spacer(minLength: 0)
-                Image(systemName: copiedWord == word ? "checkmark" : "doc.on.doc")
-                    .font(.subheadline)
-                    .foregroundStyle(copiedWord == word ? GameTheme.accent : GameTheme.muted)
+        HStack(spacing: 8) {
+            Button {
+                copyWord(word)
+            } label: {
+                HStack {
+                    Text(word)
+                        .font(.body.monospaced())
+                        .foregroundStyle(GameTheme.text)
+                    Spacer(minLength: 0)
+                    Image(systemName: copiedWord == word ? "checkmark" : "doc.on.doc")
+                        .font(.subheadline)
+                        .foregroundStyle(copiedWord == word ? GameTheme.accent : GameTheme.muted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 8))
+            .buttonStyle(.plain)
+
+            Button {
+                model.useWordAsInput(word)
+            } label: {
+                Image(systemName: "magnifyingglass.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(GameTheme.accent)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Искать по слову \(word)")
         }
-        .buttonStyle(.plain)
+        .padding(10)
+        .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 8))
         .sensoryFeedback(.success, trigger: copiedWord)
     }
 
