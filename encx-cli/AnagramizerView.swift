@@ -110,7 +110,7 @@ struct AnagramizerView: View {
         }
     }
 
-    // Режим «По шаблону»: шаблон с джокерами + опциональный пул букв для джокеров.
+    // Режим «По шаблону»: шаблон с плейсхолдерами + опциональный пул букв для плейсхолдеров.
     private var patternInput: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
@@ -123,13 +123,13 @@ struct AnagramizerView: View {
                     .onChange(of: model.pattern) { _, _ in
                         model.scheduleSearch()
                     }
-                Text("Джокер на одну позицию: «_», «.», «?» или «*».")
+                Text("Плейсхолдер на одну позицию: «_», «.», «?» или «*».")
                     .font(.caption)
                     .foregroundStyle(GameTheme.muted)
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                TextField("Буквы для джокеров (необязательно)", text: $model.poolLetters)
+                TextField("Буквы для плейсхолдеров (необязательно)", text: $model.poolLetters)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .foregroundStyle(GameTheme.text)
@@ -138,7 +138,7 @@ struct AnagramizerView: View {
                     .onChange(of: model.poolLetters) { _, _ in
                         model.scheduleSearch()
                     }
-                Text("Если заполнить — джокеры берутся только из этих букв.")
+                Text("Если заполнить — плейсхолдеры берутся только из этих букв.")
                     .font(.caption)
                     .foregroundStyle(GameTheme.muted)
             }
