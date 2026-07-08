@@ -230,14 +230,24 @@ enum MorseCode {
         return table
     }
 
-    /// Обратная таблица код → буква. При коллизии выигрывает буква (цифры добавляются первыми).
+    /// Буквы, которые уступают канонической букве с тем же кодом при декодировании.
+    /// «ё» в Морзе передаётся как «е» (·) и при обратном переводе неотличима от «е»,
+    /// поэтому результатом декодирования всегда должна быть «е».
+    private static let secondaryLetters: [CipherAlphabet: Set<Character>] = [
+        .ru: ["ё"]
+    ]
+
+    /// Обратная таблица код → буква. При коллизии выигрывает буква (цифры добавляются первыми),
+    /// а вторичные буквы (см. `secondaryLetters`) в таблицу не попадают, чтобы декодирование
+    /// было детерминированным и давало каноническую букву.
     private static func reverseTable(for alphabet: CipherAlphabet) -> [String: Character] {
         var reverse: [String: Character] = [:]
         for (ch, code) in digits {
             reverse[code] = ch
         }
         let letters = alphabet == .ru ? russian : english
-        for (ch, code) in letters {
+        let secondary = secondaryLetters[alphabet] ?? []
+        for (ch, code) in letters where !secondary.contains(ch) {
             reverse[code] = ch
         }
         return reverse
