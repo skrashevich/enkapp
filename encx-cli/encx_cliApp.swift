@@ -23,6 +23,8 @@ struct encx_cliApp: App {
                         SettingsView(model: model)
                     }
                     .preferredColorScheme(.dark)
+                } else if ProcessInfo.processInfo.arguments.contains("--screenshot-tools") {
+                    ToolsHubView()
                 } else if ProcessInfo.processInfo.arguments.contains("--screenshot-anagramizer") {
                     NavigationStack {
                         AnagramizerView(model: .screenshotModel())

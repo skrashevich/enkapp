@@ -66,7 +66,8 @@ make screenshots
   <img src="https://skrashevich.github.io/enkapp/screenshots/iphone/02-game.png" alt="Экран игры" width="260">
   <img src="https://skrashevich.github.io/enkapp/screenshots/iphone/03-settings.png" alt="Настройки" width="260">
   <img src="https://skrashevich.github.io/enkapp/screenshots/iphone/04-team.png" alt="Управление командой" width="260">
-  <img src="https://skrashevich.github.io/enkapp/screenshots/iphone/05-anagramizer.png" alt="Анаграмайзер" width="260">
+  <img src="https://skrashevich.github.io/enkapp/screenshots/iphone/05-tools.png" alt="Инструменты" width="260">
+  <img src="https://skrashevich.github.io/enkapp/screenshots/iphone/06-anagramizer.png" alt="Анаграмайзер" width="260">
 </p>
 
 `make screenshots` собирает Debug-приложение для iOS Simulator, запускает его с `--screenshots` и сохраняет PNG в `build/screenshots/`.
