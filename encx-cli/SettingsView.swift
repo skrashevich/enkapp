@@ -33,7 +33,6 @@ struct SettingsView: View {
                 connectionSection
                 notificationsSection
                 liveActivitySection
-                toolsSection
                 debugSection
                 automationSection
                 aboutSection
@@ -303,29 +302,6 @@ struct SettingsView: View {
                 liveActivityToggle("Подсказки", keyPath: \.showHints)
                 liveActivityToggle("Статус", keyPath: \.showStatus)
             }
-        }
-        .sectionPanel()
-    }
-
-    private var toolsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle("Инструменты")
-
-            NavigationLink {
-                AnagramizerView()
-            } label: {
-                DashboardSettingsRow(
-                    title: "Анаграмайзер",
-                    subtitle: "Поиск слов по шаблону, буквам или их сочетанию.",
-                    systemImage: "textformat.abc.dottedunderline",
-                    tint: GameTheme.bonusTitle
-                ) {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(GameTheme.muted)
-                }
-            }
-            .buttonStyle(.plain)
         }
         .sectionPanel()
     }
