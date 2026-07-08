@@ -12,3 +12,8 @@ build/
 
 # Optional: uncomment to always rebuild Encx from encx-cli
 # encx-cli/Frameworks/Encx.xcframework/
+
+# Anagramizer dictionary generation cache (venv + raw downloads)
+.dict-cache/
+# OMC operational state
+.omc/
