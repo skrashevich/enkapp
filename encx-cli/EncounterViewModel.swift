@@ -109,6 +109,7 @@ final class EncounterViewModel {
     var errorMessage: String?
     var antiSpamVerificationURL: URL?
     var showAntiSpamVerification = false
+    var showToolsSheet = false
     var lastCodeResult: CodeResultFeedback?
     var teammateCodePopup: TeammateCodePopup?
     var newHintPopup: NewHintPopup?

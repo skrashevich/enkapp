@@ -31,6 +31,9 @@ struct ContentView: View {
             .sheet(isPresented: $model.showAntiSpamVerification) {
                 AntiSpamVerificationView(model: model)
             }
+            .sheet(isPresented: $model.showToolsSheet) {
+                ToolsHubView()
+            }
     }
 
     private var screenContent: some View {
@@ -72,6 +75,15 @@ struct ContentView: View {
                         .tint(model.selectedScreen == .team ? GameTheme.accent : GameTheme.text)
                         .disabled(model.isBusy)
                         .accessibilityLabel("Управление командой")
+
+                        Button {
+                            model.showToolsSheet = true
+                        } label: {
+                            Image(systemName: "wrench.and.screwdriver")
+                        }
+                        .tint(GameTheme.text)
+                        .disabled(model.isBusy)
+                        .accessibilityLabel("Инструменты")
 
                         NavigationLink {
                             SettingsView(model: model)
