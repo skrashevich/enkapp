@@ -9,6 +9,11 @@ struct AnagramizerView: View {
         _model = State(initialValue: AnagramizerViewModel(engine: engine))
     }
 
+    /// Инициализатор для скриншотов: принимает засеянную фикстурой модель.
+    init(model: AnagramizerViewModel) {
+        _model = State(initialValue: model)
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {

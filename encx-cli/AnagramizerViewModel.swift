@@ -78,6 +78,8 @@ final class AnagramizerViewModel {
     private var engine: AnagramEngine?
     private var searchTask: Task<Void, Never>?
     private var searchGeneration = 0
+    /// В режиме скриншотов состояние засеяно фикстурой; настоящий словарь не грузим.
+    private var isScreenshotFixture = false
 
     init(engine: AnagramEngine? = nil) {
         self.engine = engine
@@ -86,9 +88,40 @@ final class AnagramizerViewModel {
         }
     }
 
+    // MARK: - Скриншот-фикстура
+
+    /// Готовая модель для скриншотов: детерминированное состояние без движка,
+    /// сети и асинхронной загрузки словаря — по образцу фикстур `EncounterViewModel`.
+    static func screenshotModel() -> AnagramizerViewModel {
+        let model = AnagramizerViewModel()
+        model.applyScreenshotFixture()
+        return model
+    }
+
+    private func applyScreenshotFixture() {
+        isScreenshotFixture = true
+        uiMode = .letters
+        useAllLetters = true // точная анаграмма: все буквы «снегурочки»
+        letters = "снегурочка"
+        foldYo = true
+        sort = .byLengthDesc
+        dictionaryState = .ready
+        hasSearched = true
+        isSearching = false
+        searchErrorMessage = nil
+        // Все варианты — честные анаграммы «снегурочки» (те же 10 букв),
+        words = [
+            "огнесручка", "кочегарнус", "чеснокруга",
+            "огурченска", "негросучка", "сургеночка"
+        ]
+        totalCount = words.count
+        hasMore = false
+    }
+
     // MARK: - Загрузка словаря
 
     func loadDictionaryIfNeeded() {
+        guard !isScreenshotFixture else { return }
         guard engine == nil else { return }
         dictionaryState = .loading
         Task {
