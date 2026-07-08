@@ -7,7 +7,7 @@
 
 ```swift
 enum AnagramMode: Equatable {
-    case pattern            // шаблон: фикс-буквы + джокер на позицию
+    case pattern            // шаблон: фикс-буквы + плейсхолдеры (один символ / любое число)
     case anagram            // точные перестановки заданного набора (длина = |набор|)
     case subword            // любое подмножество заданных букв
     case combined           // часть позиций фиксирована + остальное из набора (Scrabble)
@@ -15,7 +15,7 @@ enum AnagramMode: Equatable {
 
 struct AnagramQuery: Equatable {
     var mode: AnagramMode
-    var pattern: String     // для .pattern/.combined: буквы + символ-джокер (см. jokerChar); напр. "к_т"
+    var pattern: String     // для .pattern/.combined: буквы + плейсхолдеры (см. ниже); напр. "к_т", "к*т"
     var letters: String     // для .anagram/.subword/.combined: доступные буквы (могут включать бланк)
     var minLength: Int?     // фильтр
     var maxLength: Int?     // фильтр
@@ -26,8 +26,10 @@ struct AnagramQuery: Equatable {
 
 enum AnagramSort: Equatable { case byLengthDesc, byLengthAsc, alphabetical }
 
-// Символ-джокер в pattern (одна позиция = любая буква). Договорённость:
-// принимать '_' , '.' , '?' и '*' как джокер одной позиции.
+// Плейсхолдеры в pattern:
+//   '_' , '.' , '?'  — ровно один любой символ (одна позиция).
+//   '*'              — любое число любых символов, включая ноль (glob).
+// В .combined позиции, покрытые плейсхолдерами (в т.ч. '*'), берутся из letters/бланков.
 ```
 
 ## Результат

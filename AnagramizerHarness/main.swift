@@ -235,16 +235,51 @@ do {
     let page = try synth.search(q, limit: 100, offset: 0)
     check(page.words.contains("кот"), "к_т содержит 'кот'")
     check(page.words.allSatisfy { $0.count == 3 }, "к_т: все результаты длины 3")
-    // Другие джокеры дают тот же результат.
-    for j in ["к.т", "к?т", "к*т"] {
+    // Одиночные плейсхолдеры '.' и '?' эквивалентны '_' (ровно один символ).
+    for j in ["к.т", "к?т"] {
         let qj = AnagramQuery(mode: .pattern, pattern: j, sort: .alphabetical)
         let pj = try synth.search(qj, limit: 100, offset: 0)
-        check(words(pj) == words(page), "джокер '\(j)' эквивалентен '_'")
+        check(words(pj) == words(page), "одиночный джокер '\(j)' эквивалентен '_'")
     }
     // Полностью джокерный паттерн длины 2 → все двухбуквенные.
     let q2 = AnagramQuery(mode: .pattern, pattern: "__", sort: .alphabetical)
     let p2 = try synth.search(q2, limit: 100, offset: 0)
     check(words(p2).isSuperset(of: ["от", "то", "но", "он"]), "'__' даёт все 2-буквенные")
+}
+print("")
+
+print("== .pattern со '*' (любое число символов) ==")
+do {
+    // 'к*т' — начинается на к, кончается на т, между — сколько угодно.
+    // В словаре: кот (star='о'). 'кт' нет; кто/ток не подходят.
+    let qStar = AnagramQuery(mode: .pattern, pattern: "к*т", sort: .alphabetical)
+    let pStar = try synth.search(qStar, limit: 100, offset: 0)
+    check(words(pStar) == ["кот"], "'к*т' = [кот] (получено: \(pStar.words))")
+
+    // '*от' — любое (в т.ч. пустое) начало + 'от': от, кот.
+    let qSuf = AnagramQuery(mode: .pattern, pattern: "*от", sort: .alphabetical)
+    let pSuf = try synth.search(qSuf, limit: 100, offset: 0)
+    check(words(pSuf) == ["кот", "от"], "'*от' = [кот, от] (получено: \(pSuf.words))")
+
+    // 'к*' — всё, что начинается на к: к, кот, кто.
+    let qPre = AnagramQuery(mode: .pattern, pattern: "к*", sort: .alphabetical)
+    let pPre = try synth.search(qPre, limit: 100, offset: 0)
+    check(words(pPre) == ["к", "кот", "кто"], "'к*' = [к, кот, кто] (получено: \(pPre.words))")
+
+    // Одиночный '*' матчит все слова словаря.
+    let qAll = AnagramQuery(mode: .pattern, pattern: "*", sort: .alphabetical)
+    let pAll = try synth.search(qAll, limit: 1000, offset: 0)
+    check(pAll.totalCount == syntheticWords.count, "'*' матчит все слова (\(pAll.totalCount) из \(syntheticWords.count))")
+
+    // '**' схлопывается в один '*'.
+    let qDbl = AnagramQuery(mode: .pattern, pattern: "**", sort: .alphabetical)
+    let pDbl = try synth.search(qDbl, limit: 1000, offset: 0)
+    check(pDbl.totalCount == pAll.totalCount, "'**' эквивалентно '*'")
+
+    // Фильтр по длине сужает диапазон '*'.
+    let qLen = AnagramQuery(mode: .pattern, pattern: "к*т", maxLength: 2, sort: .alphabetical)
+    let pLen = try synth.search(qLen, limit: 100, offset: 0)
+    check(pLen.words.isEmpty, "'к*т' + maxLength=2 → пусто (кот длиннее)")
 }
 print("")
 
@@ -294,6 +329,20 @@ do {
     let q3 = AnagramQuery(mode: .combined, pattern: "_о_", letters: "к", blankCount: 1, sort: .alphabetical)
     let p3 = try synth.search(q3, limit: 100, offset: 0)
     check(p3.words.contains("кот"), "combined '_о_'+к+1бланк даёт кот")
+
+    // '*' в combined: позиции под звездой тоже берутся из пула букв.
+    // 'к*т' + буквы 'о': звезда покрывает 'о' из пула → кот.
+    let qs = AnagramQuery(mode: .combined, pattern: "к*т", letters: "о", sort: .alphabetical)
+    let ps = try synth.search(qs, limit: 100, offset: 0)
+    check(ps.words.contains("кот"), "combined 'к*т'+о: звезда берёт 'о' из пула → кот")
+    // Пустой пул без бланка — звезде нечем покрыть 'о' ('кт' в словаре нет) → пусто.
+    let qs2 = AnagramQuery(mode: .combined, pattern: "к*т", letters: "", sort: .alphabetical)
+    let ps2 = try synth.search(qs2, limit: 100, offset: 0)
+    check(!ps2.words.contains("кот"), "combined 'к*т'+пустой пул не даёт кот (нечем покрыть 'о')")
+    // Бланк покрывает позицию под звездой.
+    let qs3 = AnagramQuery(mode: .combined, pattern: "к*т", letters: "", blankCount: 1, sort: .alphabetical)
+    let ps3 = try synth.search(qs3, limit: 100, offset: 0)
+    check(ps3.words.contains("кот"), "combined 'к*т'+1бланк: звезда берёт бланк → кот")
 }
 print("")
 

@@ -24,7 +24,7 @@ final class AnagramizerViewModel {
     var uiMode: AnagramUIMode = .letters
     /// Только для `.letters`: искать точные анаграммы (использовать все буквы),
     /// иначе — любые подслова.
-    var useAllLetters: Bool = false
+    var useAllLetters: Bool = true
     var pattern: String = ""
     /// Набор букв для режима «По буквам» (подслова / анаграмма).
     var letters: String = ""

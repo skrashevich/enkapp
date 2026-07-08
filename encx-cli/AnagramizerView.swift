@@ -123,7 +123,7 @@ struct AnagramizerView: View {
                     .onChange(of: model.pattern) { _, _ in
                         model.scheduleSearch()
                     }
-                Text("Плейсхолдер на одну позицию: «_», «.», «?» или «*».")
+                Text("«_», «.», «?» — один любой символ. «*» — любое число символов (в т.ч. ноль).")
                     .font(.caption)
                     .foregroundStyle(GameTheme.muted)
             }

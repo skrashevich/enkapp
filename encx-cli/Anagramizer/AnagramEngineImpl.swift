@@ -150,58 +150,129 @@ public nonisolated final class AnagramEngineImpl: AnagramEngine, @unchecked Send
         return low...high
     }
 
-    // MARK: - .pattern
+    // MARK: - Разбор шаблона
 
-    /// Джокер-символы для pattern: _ . ? *
-    private static let jokerChars: Set<Character> = ["_", ".", "?", "*"]
+    /// Токен разобранного шаблона.
+    /// - `.fixed` — конкретная буква (должна совпасть точно).
+    /// - `.single` — плейсхолдер на одну позицию (`_`, `.`, `?`).
+    /// - `.star` — плейсхолдер на любое число позиций, включая ноль (`*`).
+    private enum PatternToken: Equatable {
+        case fixed(UInt8)
+        case single
+        case star
+    }
 
-    /// Разбирает pattern в маску: элемент = код буквы (фикс) или nil (джокер).
-    /// Возвращает nil при недопустимых символах (не буква и не джокер).
-    private nonisolated func parsePatternMask(_ pattern: String, foldYo: Bool) -> [UInt8?]? {
-        var mask: [UInt8?] = []
+    /// Одиночные плейсхолдеры: ровно один любой символ.
+    private static let singleJokers: Set<Character> = ["_", ".", "?"]
+    /// Плейсхолдер переменной длины: ноль или более любых символов.
+    private static let starJoker: Character = "*"
+
+    /// Разбирает шаблон в список токенов. Идущие подряд `*` схлопываются в один
+    /// (эквивалентны, а один звёздный токен исключает экспоненциальный перебор).
+    /// Возвращает nil при недопустимом символе (не буква и не плейсхолдер).
+    private nonisolated func parsePatternTokens(_ pattern: String, foldYo: Bool) -> [PatternToken]? {
+        var tokens: [PatternToken] = []
         for ch in pattern.lowercased() {
-            if AnagramEngineImpl.jokerChars.contains(ch) {
-                mask.append(nil)
+            if ch == AnagramEngineImpl.starJoker {
+                if tokens.last == .star { continue } // схлопываем «**» → «*»
+                tokens.append(.star)
+                continue
+            }
+            if AnagramEngineImpl.singleJokers.contains(ch) {
+                tokens.append(.single)
                 continue
             }
             guard let code = AnagramCodec.code(for: ch) else {
                 return nil // недопустимый символ
             }
-            mask.append(AnagramCodec.fold(code, foldYo: foldYo))
+            tokens.append(.fixed(AnagramCodec.fold(code, foldYo: foldYo)))
         }
-        return mask
+        return tokens
     }
 
+    // MARK: - .pattern
+
     private nonisolated func matchPattern(_ query: AnagramQuery) throws -> [[UInt8]] {
-        guard let mask = parsePatternMask(query.pattern, foldYo: query.foldYo), !mask.isEmpty else {
+        guard let tokens = parsePatternTokens(query.pattern, foldYo: query.foldYo), !tokens.isEmpty else {
             throw AnagramEngineError.invalidQuery("empty or invalid pattern")
         }
-        let L = mask.count
-        // Длина фиксирована длиной паттерна; фильтры min/max могут отсечь её целиком.
-        guard clampedLengthRange(lo: L, hi: L, query: query) != nil else {
+        let hasStar = tokens.contains(.star)
+        // Минимальная длина слова = число нестар-токенов (каждый занимает 1 позицию).
+        let minLen = tokens.reduce(0) { $0 + ($1 == .star ? 0 : 1) }
+
+        // Без `*` длина слова фиксирована длиной шаблона; со `*` — диапазон до maxLen.
+        // Фильтры min/max могут отсечь весь диапазон.
+        let hi = hasStar ? reader.maxLen : minLen
+        guard let range = clampedLengthRange(lo: minLen, hi: hi, query: query) else {
             return []
         }
 
         var out: [[UInt8]] = []
         let foldYo = query.foldYo
         var cancelled = false
-        reader.forEachWord(length: L) { buf, index in
-            // Кооперативная отмена: раз в stride проверяем Task.isCancelled.
-            if index & (AnagramEngineImpl.cancellationCheckStride - 1) == 0, Task.isCancelled {
-                cancelled = true
-                return false
+        for L in range {
+            // Проверка отмены между length-бакетами (дешёвая точка выхода).
+            try Self.checkCancellation()
+            reader.forEachWord(length: L) { buf, index in
+                // Кооперативная отмена: раз в stride проверяем Task.isCancelled.
+                if index & (AnagramEngineImpl.cancellationCheckStride - 1) == 0, Task.isCancelled {
+                    cancelled = true
+                    return false
+                }
+                if AnagramEngineImpl.globMatch(word: buf, tokens: tokens, foldYo: foldYo) {
+                    out.append(Array(buf))
+                }
+                return true
             }
-            for i in 0..<L {
-                if let want = mask[i] {
-                    let have = AnagramCodec.fold(buf[i], foldYo: foldYo)
-                    if have != want { return true } // не совпало — следующее слово
+            if cancelled { throw CancellationError() }
+        }
+        return out
+    }
+
+    /// Glob-сопоставление слова с токенами: `.single` = один любой символ,
+    /// `.star` = ноль или более любых символов. Классический двухуказательный
+    /// алгоритм с откатом к последней `*` (O(n·m), без аллокаций).
+    private nonisolated static func globMatch(
+        word: UnsafeBufferPointer<UInt8>,
+        tokens: [PatternToken],
+        foldYo: Bool
+    ) -> Bool {
+        let n = word.count
+        let m = tokens.count
+        var i = 0            // индекс в слове
+        var j = 0            // индекс в токенах
+        var starIdx = -1     // позиция последней `*` в токенах
+        var matchIdx = 0     // индекс в слове, откуда `*` начала поглощать
+        while i < n {
+            if j < m {
+                switch tokens[j] {
+                case .star:
+                    starIdx = j
+                    matchIdx = i
+                    j += 1
+                    continue
+                case .single:
+                    i += 1; j += 1
+                    continue
+                case .fixed(let code):
+                    if AnagramCodec.fold(word[i], foldYo: foldYo) == code {
+                        i += 1; j += 1
+                        continue
+                    }
                 }
             }
-            out.append(Array(buf))
-            return true
+            // Рассогласование или токены кончились — откат к последней `*`.
+            if starIdx != -1 {
+                j = starIdx + 1
+                matchIdx += 1
+                i = matchIdx
+            } else {
+                return false
+            }
         }
-        if cancelled { throw CancellationError() }
-        return out
+        // Хвост из токенов допустим, только если это оставшиеся `*`.
+        while j < m, tokens[j] == .star { j += 1 }
+        return j == m
     }
 
     // MARK: - .anagram
@@ -280,61 +351,153 @@ public nonisolated final class AnagramEngineImpl: AnagramEngine, @unchecked Send
 
     // MARK: - .combined
 
-    /// Часть позиций фиксирована (pattern с джокерами), джокер-позиции заполняются
-    /// из доступного набора letters; blankCount бланков = wildcard-буквы.
+    /// Часть позиций фиксирована (pattern с плейсхолдерами), джокер-позиции
+    /// (одиночные `_ . ?` и позиции под `*`) заполняются из набора letters;
+    /// blankCount бланков = wildcard-буквы.
     private nonisolated func matchCombined(_ query: AnagramQuery) throws -> [[UInt8]] {
-        guard let mask = parsePatternMask(query.pattern, foldYo: query.foldYo), !mask.isEmpty else {
+        guard let tokens = parsePatternTokens(query.pattern, foldYo: query.foldYo), !tokens.isEmpty else {
             throw AnagramEngineError.invalidQuery("empty or invalid pattern")
-        }
-        let L = mask.count
-        guard clampedLengthRange(lo: L, hi: L, query: query) != nil else {
-            return []
         }
         let enc = AnagramCodec.encode(query.letters, foldYo: query.foldYo)
         let pool = histogram(enc.codes)
         let blanks = max(0, query.blankCount)
-        // Число джокер-позиций в маске.
-        let jokerCount = mask.reduce(0) { $0 + ($1 == nil ? 1 : 0) }
-        // Джокер-позиции должны покрываться буквами пула + бланками.
-        guard jokerCount <= enc.codes.count + blanks else {
+
+        var fixedCount = 0
+        var singleCount = 0
+        var hasStar = false
+        for token in tokens {
+            switch token {
+            case .fixed: fixedCount += 1
+            case .single: singleCount += 1
+            case .star: hasStar = true
+            }
+        }
+        // Обязательные джокер-позиции (одиночные) покрываются пулом + бланками.
+        guard singleCount <= enc.codes.count + blanks else {
+            return []
+        }
+
+        // Без `*` длина слова фиксирована длиной шаблона. Со `*` — от minLen
+        // (звёзды пустые) до fixedCount + (буквы пула + бланки): каждая нефикс-
+        // позиция расходует букву пула или бланк, значит их число ограничено.
+        let minLen = fixedCount + singleCount
+        let hi = hasStar ? fixedCount + enc.codes.count + blanks : minLen
+        guard let range = clampedLengthRange(lo: minLen, hi: hi, query: query) else {
             return []
         }
 
         var out: [[UInt8]] = []
         let foldYo = query.foldYo
         var cancelled = false
-        reader.forEachWord(length: L) { buf, index in
-            if index & (AnagramEngineImpl.cancellationCheckStride - 1) == 0, Task.isCancelled {
-                cancelled = true
+        for L in range {
+            try Self.checkCancellation()
+            reader.forEachWord(length: L) { buf, index in
+                if index & (AnagramEngineImpl.cancellationCheckStride - 1) == 0, Task.isCancelled {
+                    cancelled = true
+                    return false
+                }
+                var poolCopy = pool
+                var blanksLeft = blanks
+                if AnagramEngineImpl.combinedMatch(
+                    word: buf, wi: 0, tokens: tokens, ti: 0,
+                    pool: &poolCopy, blanks: &blanksLeft, foldYo: foldYo
+                ) {
+                    out.append(Array(buf))
+                }
+                return true
+            }
+            if cancelled { throw CancellationError() }
+        }
+        return out
+    }
+
+    /// Что израсходовано под джокер-позицию — буква пула или бланк (для отката).
+    private enum ConsumedUnit {
+        case pool(UInt8)
+        case blank
+    }
+
+    /// Расходует один символ `code` под джокер-позицию: сначала из пула (буква
+    /// покрывает только себя), при отсутствии — бланк (покрывает что угодно).
+    /// Предпочтение пула бланку оптимально: бланк выгоднее приберечь под символ,
+    /// которого в пуле нет. Возвращает nil, если покрыть нечем.
+    @inline(__always)
+    private nonisolated static func consume(
+        _ pool: inout [UInt8: Int], _ blanks: inout Int, _ code: UInt8
+    ) -> ConsumedUnit? {
+        if let cnt = pool[code], cnt > 0 {
+            pool[code] = cnt - 1
+            return .pool(code)
+        }
+        if blanks > 0 {
+            blanks -= 1
+            return .blank
+        }
+        return nil
+    }
+
+    @inline(__always)
+    private nonisolated static func restore(
+        _ unit: ConsumedUnit, _ pool: inout [UInt8: Int], _ blanks: inout Int
+    ) {
+        switch unit {
+        case .pool(let code): pool[code, default: 0] += 1
+        case .blank: blanks += 1
+        }
+    }
+
+    /// Рекурсивно проверяет, можно ли выровнять `tokens` на `word`: фикс-токены
+    /// совпадают точно (пул не тратят), одиночные плейсхолдеры и позиции под `*`
+    /// покрываются буквами пула или бланками. Пул/бланки восстанавливаются при
+    /// откате. Слова короткие (≤ maxLen), звёзды схлопнуты — перебор ограничен.
+    private nonisolated static func combinedMatch(
+        word: UnsafeBufferPointer<UInt8>, wi: Int,
+        tokens: [PatternToken], ti: Int,
+        pool: inout [UInt8: Int], blanks: inout Int,
+        foldYo: Bool
+    ) -> Bool {
+        if ti == tokens.count {
+            return wi == word.count
+        }
+        switch tokens[ti] {
+        case .fixed(let code):
+            guard wi < word.count, AnagramCodec.fold(word[wi], foldYo: foldYo) == code else {
                 return false
             }
-            // 1) Фиксированные позиции должны совпасть.
-            var poolCopy = pool
-            var blanksLeft = blanks
-            var ok = true
-            for i in 0..<L {
-                let wordCode = AnagramCodec.fold(buf[i], foldYo: foldYo)
-                if let want = mask[i] {
-                    if wordCode != want { ok = false; break }
-                }
+            return combinedMatch(word: word, wi: wi + 1, tokens: tokens, ti: ti + 1,
+                                  pool: &pool, blanks: &blanks, foldYo: foldYo)
+        case .single:
+            guard wi < word.count else { return false }
+            let code = AnagramCodec.fold(word[wi], foldYo: foldYo)
+            guard let unit = consume(&pool, &blanks, code) else { return false }
+            if combinedMatch(word: word, wi: wi + 1, tokens: tokens, ti: ti + 1,
+                             pool: &pool, blanks: &blanks, foldYo: foldYo) {
+                return true
             }
-            if !ok { return true }
-            // 2) Джокер-позиции покрываются пулом букв (или бланком).
-            for i in 0..<L where mask[i] == nil {
-                let wordCode = AnagramCodec.fold(buf[i], foldYo: foldYo)
-                if let cnt = poolCopy[wordCode], cnt > 0 {
-                    poolCopy[wordCode] = cnt - 1
-                } else if blanksLeft > 0 {
-                    blanksLeft -= 1
-                } else {
-                    ok = false; break
-                }
+            restore(unit, &pool, &blanks)
+            return false
+        case .star:
+            // `*` покрывает 0..k позиций; каждая покрытая позиция расходует пул/бланк.
+            // Пробуем 0 позиций, затем расширяем на одну за раз с откатом.
+            if combinedMatch(word: word, wi: wi, tokens: tokens, ti: ti + 1,
+                             pool: &pool, blanks: &blanks, foldYo: foldYo) {
+                return true
             }
-            if ok { out.append(Array(buf)) }
-            return true
+            var consumed: [ConsumedUnit] = []
+            var k = wi
+            while k < word.count {
+                let code = AnagramCodec.fold(word[k], foldYo: foldYo)
+                guard let unit = consume(&pool, &blanks, code) else { break }
+                consumed.append(unit)
+                if combinedMatch(word: word, wi: k + 1, tokens: tokens, ti: ti + 1,
+                                 pool: &pool, blanks: &blanks, foldYo: foldYo) {
+                    return true
+                }
+                k += 1
+            }
+            for unit in consumed.reversed() { restore(unit, &pool, &blanks) }
+            return false
         }
-        if cancelled { throw CancellationError() }
-        return out
     }
 
     // MARK: - Мультимножество / гистограммы
