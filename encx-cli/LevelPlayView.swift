@@ -452,6 +452,13 @@ struct LevelPlayView: View {
 
             HStack(spacing: 18) {
                 Button {
+                    model.showToolsSheet = true
+                } label: {
+                    headerAction("Инструменты", systemImage: "wrench.and.screwdriver")
+                }
+                .disabled(model.isBusy)
+
+                Button {
                     Task { await model.refreshLevel() }
                 } label: {
                     headerAction("Обновить", systemImage: "arrow.clockwise")
