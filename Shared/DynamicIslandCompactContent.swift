@@ -80,6 +80,11 @@ struct DynamicIslandCompactTrailing: View {
                     Text("\(state.bonusesPassed)/\(state.bonusesTotal)")
                         .font(.caption2.bold().monospacedDigit())
                 }
+            } else {
+                // Fallback so the trailing region is never blank (no timers/queue/codes/bonuses).
+                Image(systemName: "gamecontroller.fill")
+                    .font(.caption2)
+                    .foregroundStyle(WidgetTheme.accent)
             }
         }
     }
