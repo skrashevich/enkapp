@@ -265,7 +265,7 @@ final class AppClipViewModel {
         let count = queue.pending.count
         guard let error else { return "Нет сети. В очереди: \(count)" }
         if EncounterClient.isTimeoutError(error) {
-            return "Нет ответа за 1 сек. В очереди: \(count)"
+            return "Нет ответа за \(EncounterTimeouts.codeSendSeconds) сек. В очереди: \(count)"
         }
         if EncounterClient.isAntiSpamError(error) {
             return "Антиспам. В очереди: \(count)"

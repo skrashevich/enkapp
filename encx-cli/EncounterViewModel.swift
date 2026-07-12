@@ -958,7 +958,7 @@ final class EncounterViewModel {
             return
         }
 
-        // Skip a 1s network attempt when we already know the engine is down — enqueue immediately.
+        // Skip another network attempt when we already know the engine is down — enqueue immediately.
         if !engineReachable {
             queue.enqueue(submission)
             statusMessage = queueAddedMessage(engineUnreachable: true)
@@ -1257,7 +1257,7 @@ final class EncounterViewModel {
         var shouldSyncLiveActivity = false
 
         do {
-            // When codes are queued, send them immediately (1s timeout each). A pre-flush ping only
+            // When codes are queued, send them immediately. A pre-flush ping only
             // blocked real code attempts after the first timeout (e.g. mock PZDC network drop).
             if !engineReachable, queue.pending.isEmpty, let probeGameID = selectedGameID {
                 let started = DispatchTime.now()
@@ -2249,7 +2249,7 @@ final class EncounterViewModel {
         }
         if let error {
             if EncounterClient.isTimeoutError(error) {
-                return "Нет ответа за 1 сек. В очереди: \(count)"
+                return "Нет ответа за \(EncounterTimeouts.codeSendSeconds) сек. В очереди: \(count)"
             }
             if EncounterClient.isSessionExpiredError(error) || error is SessionRecoveryError {
                 return "Сессия истекла. В очереди: \(count)"

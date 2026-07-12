@@ -396,7 +396,7 @@ final class EncounterShortcutService {
         let count = queue.pending.count
         if let error {
             if EncounterClient.isTimeoutError(error) {
-                return "Нет ответа за 1 сек. В очереди: \(count)"
+                return "Нет ответа за \(EncounterTimeouts.codeSendSeconds) сек. В очереди: \(count)"
             }
             if EncounterClient.isSessionExpiredError(error) {
                 return "Сессия истекла. В очереди: \(count)"

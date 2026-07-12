@@ -35,12 +35,8 @@ struct CodesView: View {
             await model.refreshCodeLog()
         }
         .task(id: model.selectedGameID) {
-            while !Task.isCancelled {
-                if model.queueConnectionStatus == .ready, model.queue.pending.isEmpty {
-                    await model.measureServerLatency()
-                }
-                let seconds = model.queue.pending.isEmpty ? 4.0 : 1.0
-                try? await Task.sleep(for: .seconds(seconds))
+            if model.queueConnectionStatus == .ready, model.queue.pending.isEmpty {
+                await model.measureServerLatency()
             }
         }
     }
@@ -122,7 +118,7 @@ struct CodesView: View {
         case .serverUnreachable:
             return "Сеть есть, но сервер игры не отвечает. Коды сохранены, повтор с паузой до 8 сек."
         case .ready:
-            return "Отправятся автоматически каждые 0.4 сек. Таймаут одной попытки — 1 сек."
+            return "Отправятся автоматически. Таймаут одной попытки — \(EncounterTimeouts.codeSendSeconds) сек."
         }
     }
 

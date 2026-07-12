@@ -8,7 +8,8 @@ nonisolated enum EncounterTimeouts {
     /// HTTP client timeout for login and game loads (0 = Go default 15s).
     static let httpSeconds: Int64 = 0
     /// Per-request timeout for code send and engine probes (enforced in Go via context).
-    static let codeSendSeconds: Int64 = 1
+    /// One second caused false failures on LTE even while the server was still processing the code.
+    static let codeSendSeconds: Int64 = 3
 }
 
 enum EncounterClientError: LocalizedError {
