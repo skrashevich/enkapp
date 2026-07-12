@@ -822,14 +822,18 @@ private struct LevelPlayScrollBody: View {
     }
 
     private var bonusesSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let unansweredBonuses = level.bonuses
+            .filter { !$0.isAnswered }
+            .sorted { $0.number < $1.number }
+
+        return VStack(alignment: .leading, spacing: 10) {
             GameSectionHeader(
                 title: "На уровне \(level.bonuses.count) \(LevelPlayWordForms.bonus(level.bonuses.count)) (Выполненные — \(level.passedBonusesCount))"
             )
 
-            ForEach(level.bonuses.sorted(by: { $0.number < $1.number })) { bonus in
+            ForEach(unansweredBonuses) { bonus in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Бонус \(bonus.number): \(bonus.name)\(bonus.isAnswered ? " ✓" : "")")
+                    Text("Бонус \(bonus.number): \(bonus.name)")
                         .font(.body.weight(.semibold))
                         .foregroundStyle(GameTheme.bonusTitle)
 
