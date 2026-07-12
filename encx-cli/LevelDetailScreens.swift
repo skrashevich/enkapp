@@ -211,6 +211,7 @@ private struct HelpRow: View {
                 .font(.body)
                 .foregroundStyle(GameTheme.text)
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

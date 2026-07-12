@@ -428,9 +428,11 @@ final class EncounterViewModel {
     func configureBackgroundDelivery() {
         BackgroundQueueService.shared.flushHandler = { [weak self] in
             guard let self else { return true }
-            await self.flushQueueNow(silent: true)
-            await self.pollActiveGameIfNeeded(force: true, skipWhenQueuePending: true)
-            return self.queue.pending.isEmpty
+            let queueIsEmpty = await self.flushQueueNow(silent: true)
+            if queueIsEmpty {
+                await self.pollActiveGameIfNeeded(skipWhenQueuePending: true)
+            }
+            return queueIsEmpty || self.isAntiSpamBackoffActive
         }
     }
 
@@ -441,11 +443,15 @@ final class EncounterViewModel {
 
     func handleAppBackground() {
         BackgroundQueueService.shared.scheduleProcessing()
-        BackgroundQueueService.shared.runAggressiveFlushLoop { [weak self] in
-            guard let self else { return true }
-            await self.flushQueueNow(silent: true)
-            await self.pollActiveGameIfNeeded(force: true, skipWhenQueuePending: true)
-            return self.queue.pending.isEmpty
+        if !queue.pending.isEmpty {
+            BackgroundQueueService.shared.runAggressiveFlushLoop { [weak self] in
+                guard let self else { return true }
+                let queueIsEmpty = await self.flushQueueNow(silent: true)
+                if queueIsEmpty {
+                    await self.pollActiveGameIfNeeded(skipWhenQueuePending: true)
+                }
+                return queueIsEmpty || self.isAntiSpamBackoffActive
+            }
         }
         if selectedGameID != nil,
            settings.pushOnNewLevel || settings.pushOnNewHint || currentModel?.isGameFinished == true {
@@ -1217,6 +1223,7 @@ final class EncounterViewModel {
             await pollActiveGameIfNeeded()
             return
         }
+        guard !isAntiSpamBackoffActive else { return }
         _ = await flushQueueNow(silent: true)
     }
 
@@ -1294,6 +1301,7 @@ final class EncounterViewModel {
             await syncLiveActivity()
             return queue.pending.isEmpty
         }
+        guard !isAntiSpamBackoffActive else { return false }
         guard !queue.isFlushing else { return queue.pending.isEmpty }
 
         let pendingBefore = queue.pending.count
@@ -1965,7 +1973,6 @@ final class EncounterViewModel {
     }
 
     private func markEngineReachable() {
-        antiSpamBackoffUntil = nil
         let wasUnreachable = !engineReachable
         engineReachable = true
         if wasUnreachable && !queue.pending.isEmpty {
@@ -2159,7 +2166,6 @@ final class EncounterViewModel {
     func dismissAntiSpamVerification() {
         showAntiSpamVerification = false
         antiSpamVerificationURL = nil
-        antiSpamBackoffUntil = nil
     }
 
     var sessionCookiesData: Data? {
