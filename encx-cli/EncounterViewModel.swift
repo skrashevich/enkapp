@@ -801,63 +801,12 @@ final class EncounterViewModel {
         guard let model = currentModel else { return }
         let gameID = Int64(model.gameID)
         guard !isCodeLogLoading else { return }
-        guard queue.isOnline else {
-            codeLogStatusMessage = cachedLevelStatusMessage(reason: .offline)
-            return
-        }
 
         isCodeLogLoading = true
-        codeLogStatusMessage = "Загрузка журнала..."
         defer { isCodeLogLoading = false }
 
-        var actionsByID: [Int: CodeAction] = [:]
-        for action in model.level?.mixedActions ?? [] {
-            actionsByID[action.actionID] = action
-        }
-
-        let levelNumbers = Set(
-            model.levels
-                .map(\.levelNumber)
-                .filter { $0 > 0 }
-        )
-
-        var skippedLevels = 0
-        do {
-            for levelNumber in levelNumbers.sorted() {
-                if Task.isCancelled { return }
-                if model.level?.number == levelNumber {
-                    continue
-                }
-                do {
-                    let levelModel = try await withSessionRecovery {
-                        try await $0.gameModelLevel(gameID: gameID, levelNumber: Int64(levelNumber))
-                    }
-                    for action in levelModel.level?.mixedActions ?? [] {
-                        actionsByID[action.actionID] = action
-                    }
-                } catch {
-                    skippedLevels += 1
-                }
-            }
-
-            guard selectedGameID == gameID else { return }
-            codeLogActions = actionsByID.values.sorted {
-                if $0.levelNumber != $1.levelNumber {
-                    return $0.levelNumber > $1.levelNumber
-                }
-                return $0.actionID > $1.actionID
-            }
-            codeLogLoadedGameID = gameID
-            if skippedLevels > 0 {
-                codeLogStatusMessage = "Часть уровней не удалось загрузить: \(skippedLevels)"
-            } else {
-                codeLogStatusMessage = codeLogActions.isEmpty ? "Пробитых кодов пока нет" : ""
-            }
-            try saveCookies(from: try ensureClient())
-            markEngineReachable()
-        } catch {
-            codeLogStatusMessage = EncounterClient.userFacingDescription(for: error)
-        }
+        mergeCodeLogActions(model.level?.mixedActions ?? [], gameID: gameID)
+        codeLogStatusMessage = codeLogActions.isEmpty ? "Пробитых кодов пока нет" : ""
     }
 
     func refreshLevelSilently() async {

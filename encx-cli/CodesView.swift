@@ -28,8 +28,8 @@ struct CodesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {
             await model.flushQueue()
-            await model.refreshCodeLog()
             await model.refreshLevel()
+            await model.refreshCodeLog()
         }
         .task(id: model.currentModel?.gameID) {
             await model.refreshCodeLog()
