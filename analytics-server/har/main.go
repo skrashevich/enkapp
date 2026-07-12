@@ -28,6 +28,12 @@ import (
 
 const maxHARBytes = 25 << 20
 const sessionMergeWindow = 30 * time.Minute
+const entryBatchSize = 50
+
+var (
+	errInvalidEntryIndex    = errors.New("invalid entry index")
+	errEntryIndexOutOfRange = errors.New("entry index out of range")
+)
 
 //go:embed templates/*.html templates/*.css
 var templateFiles embed.FS
@@ -157,12 +163,12 @@ type indexPage struct {
 
 type detailPage struct {
 	Session    *submission
-	Entries    []entryView
 	State      stateResponse
 	IsPublic   bool
 	RawURL     string
 	ShareURL   string
 	PublicPath string
+	LazyURL    string
 }
 
 type shareResponse struct {
@@ -182,19 +188,35 @@ func (s *submission) revision() string {
 	return s.ID + ":" + strconv.Itoa(s.EntryCount) + ":" + s.ReceivedAt.UTC().Format(time.RFC3339Nano)
 }
 
-type entryView struct {
+type entrySummaryView struct {
+	Index      int
+	Entry      int
+	Method     string
+	URL        string
+	URLPath    string
+	Status     int
+	StatusText string
+	Time       string
+	StartedAt  string
+}
+
+type entryBatchView struct {
+	Entries    []entrySummaryView
+	NextOffset int
+	HasMore    bool
+	LazyURL    string
+}
+
+type requestDetailView struct {
+	Index          int
+	QueryString    []nameValue
+	RequestHeaders []nameValue
+	RequestBody    string
+}
+
+type responseDetailView struct {
 	Index            int
-	Method           string
-	URL              string
-	URLPath          string
-	Status           int
-	StatusText       string
-	Time             string
-	StartedAt        string
-	RequestHeaders   []nameValue
 	ResponseHeaders  []nameValue
-	QueryString      []nameValue
-	RequestBody      string
 	ResponseBody     string
 	ResponseBodyJSON string
 	HasResponseBody  bool
@@ -364,27 +386,23 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rawOnly := r.URL.Query().Get("raw") == "1"
 	s.mu.RLock()
-	sub := s.sessions[id]
+	sub := snapshotSubmission(s.sessions[id], rawOnly)
 	s.mu.RUnlock()
 	if sub == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	if r.URL.Query().Get("raw") == "1" {
+	if rawOnly {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = w.Write(sub.Raw)
 		return
 	}
 
-	page := s.detailPage(sub, false)
-	page.RawURL = "/sessions/" + sub.ID + "?raw=1"
-	if sub.ShareToken != "" {
-		page.PublicPath = "/share/" + sub.ShareToken
-		page.ShareURL = absoluteURL(r, page.PublicPath)
-	}
-	render(w, detailTemplate, page)
+	lazyURL := "/sessions/" + sub.ID
+	s.handleDetailView(w, r, sub, false, lazyURL)
 }
 
 func (s *server) handleSharedSession(w http.ResponseWriter, r *http.Request) {
@@ -394,24 +412,78 @@ func (s *server) handleSharedSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sub := s.findByShareToken(token)
+	rawOnly := r.URL.Query().Get("raw") == "1"
+	sub := s.findByShareToken(token, rawOnly)
 	if sub == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	if r.URL.Query().Get("raw") == "1" {
+	if rawOnly {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write(sub.Raw)
 		return
 	}
 
-	page := s.detailPage(sub, true)
-	page.RawURL = "/share/" + token + "?raw=1"
-	page.PublicPath = "/share/" + token
-	page.ShareURL = absoluteURL(r, page.PublicPath)
-	render(w, detailTemplate, page)
+	lazyURL := "/share/" + token
+	s.handleDetailView(w, r, sub, true, lazyURL)
+}
+
+func (s *server) handleDetailView(
+	w http.ResponseWriter,
+	r *http.Request,
+	sub *submission,
+	isPublic bool,
+	lazyURL string,
+) {
+	switch r.URL.Query().Get("view") {
+	case "":
+		page := s.detailPage(sub, isPublic)
+		page.LazyURL = lazyURL
+		page.RawURL = lazyURL + "?raw=1"
+		if isPublic {
+			page.PublicPath = lazyURL
+			page.ShareURL = absoluteURL(r, lazyURL)
+		} else if sub.ShareToken != "" {
+			page.PublicPath = "/share/" + sub.ShareToken
+			page.ShareURL = absoluteURL(r, page.PublicPath)
+		}
+		render(w, detailTemplate, page)
+	case "entries":
+		offset, err := parseEntryOffset(r, len(sub.HAR.Log.Entries))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		batch := entryBatch(sub, offset)
+		batch.LazyURL = lazyURL
+		renderNamed(w, detailTemplate, "entry_batch", batch)
+	case "request":
+		index, err := parseEntryIndex(r, len(sub.HAR.Log.Entries))
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, errEntryIndexOutOfRange) {
+				status = http.StatusNotFound
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		renderNamed(w, detailTemplate, "request_detail", requestDetail(index, sub.HAR.Log.Entries[index]))
+	case "response":
+		index, err := parseEntryIndex(r, len(sub.HAR.Log.Entries))
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, errEntryIndexOutOfRange) {
+				status = http.StatusNotFound
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		renderNamed(w, detailTemplate, "response_detail", responseDetail(index, sub.HAR.Log.Entries[index]))
+	default:
+		http.Error(w, "invalid detail view", http.StatusBadRequest)
+	}
 }
 
 func (s *server) handleShare(w http.ResponseWriter, r *http.Request) {
@@ -464,47 +536,120 @@ func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(s.state())
 }
 
-func (s *server) findByShareToken(token string) *submission {
+func (s *server) findByShareToken(token string, rawOnly bool) *submission {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, sub := range s.sessions {
 		if sub.ShareToken != "" && constantTimeEqual(sub.ShareToken, token) {
-			return sub
+			return snapshotSubmission(sub, rawOnly)
 		}
 	}
 	return nil
 }
 
 func (s *server) detailPage(sub *submission, isPublic bool) detailPage {
-	page := detailPage{Session: sub, State: s.state(), IsPublic: isPublic}
-	for i, entry := range sub.HAR.Log.Entries {
-		responseBody := entry.Response.Content.Text
-		responseBodyJSON := prettyJSON(responseBody)
-		responseView := defaultResponseView(responseContentType(entry), responseBodyJSON != "")
-		page.Entries = append(page.Entries, entryView{
-			Index:            i + 1,
-			Method:           entry.Request.Method,
-			URL:              entry.Request.URL,
-			URLPath:          compactURL(entry.Request.URL),
-			Status:           entry.Response.Status,
-			StatusText:       entry.Response.StatusText,
-			Time:             fmt.Sprintf("%.0f ms", entry.Time),
-			StartedAt:        entry.StartedDateTime,
-			RequestHeaders:   entry.Request.Headers,
-			ResponseHeaders:  entry.Response.Headers,
-			QueryString:      entry.Request.QueryString,
-			RequestBody:      entry.requestBody(),
-			ResponseBody:     responseBody,
-			ResponseBodyJSON: responseBodyJSON,
-			HasResponseBody:  responseBody != "",
-			HasResponseJSON:  responseBodyJSON != "",
-			ResponseView:     responseView,
-			IsRawView:        responseView == "raw",
-			IsHTMLView:       responseView == "html",
-			IsJSONView:       responseView == "json",
-		})
+	return detailPage{
+		Session:  sub,
+		State:    s.state(),
+		IsPublic: isPublic,
 	}
-	return page
+}
+
+func entrySummary(index int, entry harEntry) entrySummaryView {
+	return entrySummaryView{
+		Index:      index + 1,
+		Entry:      index,
+		Method:     entry.Request.Method,
+		URL:        entry.Request.URL,
+		URLPath:    compactURL(entry.Request.URL),
+		Status:     entry.Response.Status,
+		StatusText: entry.Response.StatusText,
+		Time:       fmt.Sprintf("%.0f ms", entry.Time),
+		StartedAt:  entry.StartedDateTime,
+	}
+}
+
+func entryBatch(sub *submission, offset int) entryBatchView {
+	total := len(sub.HAR.Log.Entries)
+	end := min(offset+entryBatchSize, total)
+	result := entryBatchView{
+		Entries:    make([]entrySummaryView, 0, end-offset),
+		NextOffset: end,
+		HasMore:    end < total,
+	}
+	for index := offset; index < end; index++ {
+		result.Entries = append(result.Entries, entrySummary(index, sub.HAR.Log.Entries[index]))
+	}
+	return result
+}
+
+func requestDetail(index int, entry harEntry) requestDetailView {
+	return requestDetailView{
+		Index:          index + 1,
+		QueryString:    entry.Request.QueryString,
+		RequestHeaders: entry.Request.Headers,
+		RequestBody:    entry.requestBody(),
+	}
+}
+
+func responseDetail(index int, entry harEntry) responseDetailView {
+	responseBody := entry.Response.Content.Text
+	responseBodyJSON := prettyJSON(responseBody)
+	responseView := defaultResponseView(responseContentType(entry), responseBodyJSON != "")
+	return responseDetailView{
+		Index:            index + 1,
+		ResponseHeaders:  entry.Response.Headers,
+		ResponseBody:     responseBody,
+		ResponseBodyJSON: responseBodyJSON,
+		HasResponseBody:  responseBody != "",
+		HasResponseJSON:  responseBodyJSON != "",
+		ResponseView:     responseView,
+		IsRawView:        responseView == "raw",
+		IsHTMLView:       responseView == "html",
+		IsJSONView:       responseView == "json",
+	}
+}
+
+func parseEntryOffset(r *http.Request, total int) (int, error) {
+	raw := r.URL.Query().Get("offset")
+	if raw == "" {
+		return 0, nil
+	}
+	offset, err := strconv.Atoi(raw)
+	if err != nil || offset < 0 || offset > total {
+		return 0, errors.New("invalid entry offset")
+	}
+	return offset, nil
+}
+
+func parseEntryIndex(r *http.Request, total int) (int, error) {
+	raw := r.URL.Query().Get("entry")
+	if raw == "" {
+		return 0, errInvalidEntryIndex
+	}
+	index, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, errInvalidEntryIndex
+	}
+	if index < 0 || index >= total {
+		return 0, errEntryIndexOutOfRange
+	}
+	return index, nil
+}
+
+func snapshotSubmission(sub *submission, rawOnly bool) *submission {
+	if sub == nil {
+		return nil
+	}
+	snapshot := *sub
+	if rawOnly {
+		snapshot.HAR.Log.Entries = nil
+		snapshot.Raw = append(json.RawMessage(nil), sub.Raw...)
+	} else {
+		snapshot.HAR.Log.Entries = append([]harEntry(nil), sub.HAR.Log.Entries...)
+		snapshot.Raw = nil
+	}
+	return &snapshot
 }
 
 func (s *server) handleArchive(w http.ResponseWriter, r *http.Request) {
@@ -723,6 +868,14 @@ func render(w http.ResponseWriter, tmpl pageTemplate, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, tmpl.name, data); err != nil {
 		log.Printf("render: %v", err)
+	}
+}
+
+func renderNamed(w http.ResponseWriter, tmpl pageTemplate, name string, data any) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
+		log.Printf("render %s: %v", name, err)
 	}
 }
 

@@ -1,5 +1,5 @@
 {{template "page_start" .}}
-<main data-page="detail" data-latest-id="{{.State.LatestID}}" data-latest-revision="{{.State.LatestRevision}}" data-current-id="{{.Session.ID}}" data-public="{{.IsPublic}}" data-share-url="{{.ShareURL}}">
+<main data-page="detail" data-latest-id="{{.State.LatestID}}" data-latest-revision="{{.State.LatestRevision}}" data-current-id="{{.Session.ID}}" data-public="{{.IsPublic}}" data-share-url="{{.ShareURL}}" data-lazy-url="{{.LazyURL}}">
   {{if not .IsPublic}}
   <div id="new-capture-banner" class="banner" hidden>
     <span id="new-capture-text"></span>
@@ -24,45 +24,17 @@
       <p>{{.Session.ReceivedAt.Local.Format "2006-01-02 15:04:05"}} · {{if .Session.Login}}{{.Session.Login}}{{else}}-{{end}} · {{.Session.RemoteAddr}} · {{.Session.EntryCount}} entries</p>
     </div>
   </header>
-  {{range .Entries}}
-  <section class="entry">
-    <div class="summary">
-      <span class="method">{{.Method}}</span>
-      <span class="status status-{{.Status}}">{{.Status}} {{.StatusText}}</span>
-      <span class="time">{{.Time}}</span>
-    </div>
-    <h2>{{.URLPath}}</h2>
-    <p class="full-url">{{.URL}}</p>
-    <details>
-      <summary>Request</summary>
-      {{if .QueryString}}
-      <h3>Query</h3>
-      <dl>{{range .QueryString}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
-      {{end}}
-      <h3>Headers</h3>
-      <dl>{{range .RequestHeaders}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{else}}<dd>-</dd>{{end}}</dl>
-      {{if .RequestBody}}<h3>Body</h3><pre>{{.RequestBody}}</pre>{{end}}
-    </details>
-    <details>
-      <summary>Response</summary>
-      <h3>Headers</h3>
-      <dl>{{range .ResponseHeaders}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{else}}<dd>-</dd>{{end}}</dl>
-      {{if .HasResponseBody}}
-      <h3>Body</h3>
-      <div class="body-viewer" data-body-viewer>
-        <div class="body-tabs">
-          <button type="button" data-body-tab="raw" aria-pressed="{{.IsRawView}}">Raw</button>
-          <button type="button" data-body-tab="html" aria-pressed="{{.IsHTMLView}}">HTML</button>
-          {{if .HasResponseJSON}}<button type="button" data-body-tab="json" aria-pressed="{{.IsJSONView}}">JSON</button>{{end}}
-        </div>
-        <pre data-body-panel="raw"{{if not .IsRawView}} hidden{{end}}>{{.ResponseBody}}</pre>
-        <iframe data-body-panel="html" sandbox srcdoc="{{.ResponseBody}}"{{if not .IsHTMLView}} hidden{{end}}></iframe>
-        {{if .HasResponseJSON}}<pre data-body-panel="json"{{if not .IsJSONView}} hidden{{end}}>{{.ResponseBodyJSON}}</pre>{{end}}
-      </div>
-      {{end}}
-    </details>
-  </section>
-  {{end}}
+  <div
+    data-entry-list
+    data-lazy-url="{{.LazyURL}}"
+    data-total-entries="{{len .Session.HAR.Log.Entries}}"
+    aria-live="polite"
+  ></div>
+  <div class="entry-loader" data-entry-sentinel{{if eq (len .Session.HAR.Log.Entries) 0}} hidden{{end}}>
+    <span data-entry-loading hidden>Loading entries…</span>
+    <span data-entry-error role="alert" hidden></span>
+    <button type="button" data-load-more>Load more</button>
+  </div>
 </main>
 <script>
 (() => {
@@ -79,6 +51,15 @@
   let latestRevision = root?.dataset.latestRevision || "";
   const currentID = root?.dataset.currentId || "";
   const isPublic = root?.dataset.public === "true";
+  const entryList = document.querySelector("[data-entry-list]");
+  const entrySentinel = document.querySelector("[data-entry-sentinel]");
+  const entryLoading = entrySentinel?.querySelector("[data-entry-loading]");
+  const entryError = entrySentinel?.querySelector("[data-entry-error]");
+  const loadMoreButton = entrySentinel?.querySelector("[data-load-more]");
+  let nextOffset = 0;
+  let loadingEntries = false;
+  const totalEntries = Number(entryList?.dataset.totalEntries || 0);
+  const supportsInfiniteScroll = "IntersectionObserver" in window;
 
   function showShareLink(url, message) {
     if (!sharePanel || !shareInput) return;
@@ -87,21 +68,116 @@
     if (shareStatus) shareStatus.textContent = message || "";
   }
 
-  for (const viewer of document.querySelectorAll("[data-body-viewer]")) {
+  function activateBodyView(viewer, mode) {
     const buttons = [...viewer.querySelectorAll("[data-body-tab]")];
     const panels = [...viewer.querySelectorAll("[data-body-panel]")];
     for (const button of buttons) {
-      button.addEventListener("click", () => {
-        const mode = button.dataset.bodyTab;
-        for (const item of buttons) {
-          item.setAttribute("aria-pressed", String(item === button));
-        }
-        for (const panel of panels) {
-          panel.hidden = panel.dataset.bodyPanel !== mode;
-        }
+      button.setAttribute("aria-pressed", String(button.dataset.bodyTab === mode));
+    }
+    for (const panel of panels) {
+      panel.hidden = panel.dataset.bodyPanel !== mode;
+    }
+
+    if (mode !== "html") return;
+    const htmlPanel = viewer.querySelector('[data-body-panel="html"]');
+    if (!htmlPanel || htmlPanel.querySelector("iframe")) return;
+    const rawPanel = viewer.querySelector('[data-body-panel="raw"]');
+    const frame = document.createElement("iframe");
+    frame.setAttribute("sandbox", "");
+    frame.srcdoc = rawPanel?.textContent || "";
+    htmlPanel.append(frame);
+  }
+
+  function bindBodyViewer(viewer) {
+    for (const button of viewer.querySelectorAll("[data-body-tab]")) {
+      button.addEventListener("click", () => activateBodyView(viewer, button.dataset.bodyTab));
+    }
+    activateBodyView(viewer, viewer.dataset.defaultView || "raw");
+  }
+
+  async function loadEntryDetail(details) {
+    if (details.dataset.state === "loading" || details.dataset.state === "loaded") return;
+    if (!entryList) return;
+    const content = details.querySelector("[data-detail-content]");
+    if (!content) return;
+    const kind = details.dataset.detailKind;
+    const entry = details.dataset.entry;
+    details.dataset.state = "loading";
+    content.innerHTML = '<p class="detail-state">Loading…</p>';
+
+    try {
+      const params = new URLSearchParams({ view: kind, entry });
+      const response = await fetch(`${entryList.dataset.lazyUrl}?${params}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      content.innerHTML = await response.text();
+      details.dataset.state = "loaded";
+      for (const viewer of content.querySelectorAll("[data-body-viewer]")) {
+        bindBodyViewer(viewer);
+      }
+    } catch {
+      details.dataset.state = "failed";
+      content.replaceChildren();
+      const message = document.createElement("span");
+      message.className = "detail-error";
+      message.textContent = `Could not load ${kind}. `;
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "Retry";
+      retry.addEventListener("click", () => loadEntryDetail(details), { once: true });
+      content.append(message, retry);
+    }
+  }
+
+  function bindEntryDetails(container) {
+    for (const details of container.querySelectorAll("[data-entry-details]")) {
+      details.addEventListener("toggle", () => {
+        if (details.open) loadEntryDetail(details);
       });
     }
   }
+
+  async function loadNextBatch() {
+    if (!entryList || !entrySentinel || !entryLoading || !entryError || !loadMoreButton || loadingEntries || nextOffset >= totalEntries) return;
+    loadingEntries = true;
+    entryLoading.hidden = false;
+    entryError.hidden = true;
+    loadMoreButton.disabled = true;
+    loadMoreButton.textContent = "Load more";
+
+    try {
+      const params = new URLSearchParams({ view: "entries", offset: String(nextOffset) });
+      const response = await fetch(`${entryList.dataset.lazyUrl}?${params}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const fragment = document.createElement("template");
+      fragment.innerHTML = await response.text();
+      const appended = fragment.content.querySelectorAll(".entry").length;
+      if (appended === 0) throw new Error("empty entry batch");
+      bindEntryDetails(fragment.content);
+      entryList.append(fragment.content);
+      nextOffset += appended;
+      if (supportsInfiniteScroll) loadMoreButton.hidden = true;
+      if (nextOffset >= totalEntries) entrySentinel.hidden = true;
+    } catch {
+      entryError.textContent = "Could not load entries.";
+      entryError.hidden = false;
+      loadMoreButton.textContent = "Retry";
+      loadMoreButton.hidden = false;
+    } finally {
+      loadingEntries = false;
+      entryLoading.hidden = true;
+      loadMoreButton.disabled = false;
+    }
+  }
+
+  loadMoreButton?.addEventListener("click", loadNextBatch);
+  if (supportsInfiniteScroll && entrySentinel) {
+    if (loadMoreButton) loadMoreButton.hidden = true;
+    const observer = new IntersectionObserver((records) => {
+      if (records.some((record) => record.isIntersecting)) loadNextBatch();
+    }, { rootMargin: "800px 0px" });
+    observer.observe(entrySentinel);
+  }
+  loadNextBatch();
 
   generateShareButton?.addEventListener("click", async () => {
     const id = generateShareButton.dataset.sessionId || "";
@@ -170,3 +246,53 @@
 })();
 </script>
 {{template "page_end" .}}
+{{define "entry_batch"}}
+{{range .Entries}}
+<section class="entry" data-entry="{{.Entry}}">
+  <div class="summary">
+    <span class="entry-index">#{{.Index}}</span>
+    <span class="method">{{.Method}}</span>
+    <span class="status status-{{.Status}}">{{.Status}} {{.StatusText}}</span>
+    <span class="time">{{.Time}}</span>
+  </div>
+  <h2>{{.URLPath}}</h2>
+  <p class="full-url">{{.URL}}</p>
+  <details data-entry-details data-detail-kind="request" data-entry="{{.Entry}}">
+    <summary>Request</summary>
+    <div class="detail-content" data-detail-content></div>
+  </details>
+  <details data-entry-details data-detail-kind="response" data-entry="{{.Entry}}">
+    <summary>Response</summary>
+    <div class="detail-content" data-detail-content></div>
+  </details>
+</section>
+{{end}}
+{{end}}
+
+{{define "request_detail"}}
+{{if .QueryString}}
+<h3>Query</h3>
+<dl>{{range .QueryString}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
+{{end}}
+<h3>Headers</h3>
+<dl>{{range .RequestHeaders}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{else}}<dd>-</dd>{{end}}</dl>
+{{if .RequestBody}}<h3>Body</h3><pre>{{.RequestBody}}</pre>{{end}}
+{{end}}
+
+{{define "response_detail"}}
+<h3>Headers</h3>
+<dl>{{range .ResponseHeaders}}<dt>{{.Name}}</dt><dd>{{.Value}}</dd>{{else}}<dd>-</dd>{{end}}</dl>
+{{if .HasResponseBody}}
+<h3>Body</h3>
+<div class="body-viewer" data-body-viewer data-default-view="{{.ResponseView}}">
+  <div class="body-tabs">
+    <button type="button" data-body-tab="raw" aria-pressed="{{.IsRawView}}">Raw</button>
+    <button type="button" data-body-tab="html" aria-pressed="{{.IsHTMLView}}">HTML</button>
+    {{if .HasResponseJSON}}<button type="button" data-body-tab="json" aria-pressed="{{.IsJSONView}}">JSON</button>{{end}}
+  </div>
+  <pre data-body-panel="raw"{{if not .IsRawView}} hidden{{end}}>{{.ResponseBody}}</pre>
+  <div data-body-panel="html"{{if not .IsHTMLView}} hidden{{end}}></div>
+  {{if .HasResponseJSON}}<pre data-body-panel="json"{{if not .IsJSONView}} hidden{{end}}>{{.ResponseBodyJSON}}</pre>{{end}}
+</div>
+{{end}}
+{{end}}

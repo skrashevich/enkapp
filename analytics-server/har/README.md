@@ -31,3 +31,20 @@ If `VIEW_PASSWORD` is not set, viewer endpoints fail closed with HTTP 503.
 
 The service expects TLS to be terminated by the public reverse proxy for
 `https://enkapp-telemetry.exe.xyz/api/har`.
+
+## Large session viewer
+
+Session detail pages load entry summaries in batches of 50. Opening Request or
+Response loads that entry's details once. HTML response previews create their
+sandboxed iframe only when the HTML tab becomes active.
+
+The viewer uses HTML fragments from the same detail URL:
+
+- `?view=entries&offset=N` returns up to 50 entry summaries.
+- `?view=request&entry=N` returns one zero-based request detail.
+- `?view=response&entry=N` returns one zero-based response detail.
+
+Private fragment requests require the same Basic Auth as `/sessions/{id}`.
+Shared fragments are available only below the corresponding `/share/{token}`.
+These fragment queries are viewer internals; `?raw=1` remains the stable raw
+HAR download interface.
