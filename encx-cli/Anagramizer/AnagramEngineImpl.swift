@@ -96,7 +96,8 @@ public nonisolated final class AnagramEngineImpl: AnagramEngine, @unchecked Send
 
         // Промах: полный скан + сортировка (может бросить CancellationError / invalidQuery).
         let matches = try collectMatches(query)
-        let sorted = applySort(matches, sort: query.sort)
+        let filtered = excludeInputWord(matches, query: query)
+        let sorted = applySort(filtered, sort: query.sort)
 
         // Записываем в кэш только полностью завершённый (не отменённый) результат.
         try Self.checkCancellation()
@@ -106,6 +107,25 @@ public nonisolated final class AnagramEngineImpl: AnagramEngine, @unchecked Send
         cacheLock.unlock()
 
         return sorted
+    }
+
+    // MARK: - Исключение входного слова
+
+    /// Убирает из выдачи слово, совпадающее с введённым набором букв: пользователь
+    /// ищет другие слова, а не собственный ввод. Сравнение — по кодам с учётом
+    /// foldYo (в матчах коды словаря сырые, ё не свёрнута). Для .pattern letters
+    /// пуст — фильтр не срабатывает.
+    private nonisolated func excludeInputWord(_ matches: [[UInt8]], query: AnagramQuery) -> [[UInt8]] {
+        let input = AnagramCodec.encode(query.letters, foldYo: query.foldYo).codes
+        guard !input.isEmpty else { return matches }
+        let foldYo = query.foldYo
+        return matches.filter { codes in
+            guard codes.count == input.count else { return true }
+            for i in 0..<codes.count where AnagramCodec.fold(codes[i], foldYo: foldYo) != input[i] {
+                return true
+            }
+            return false
+        }
     }
 
     // MARK: - Кооперативная отмена (FIX 2)

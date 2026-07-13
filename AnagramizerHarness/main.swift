@@ -207,8 +207,10 @@ if usedRealDict, fm.fileExists(atPath: samplePath),
     var rtOk = 0
     var rtMiss = 0
     for w in sample.prefix(200) {
-        // Проверяем, что слово находится анаграммным поиском самого себя.
-        let q = AnagramQuery(mode: .anagram, letters: w, foldYo: false, sort: .alphabetical)
+        // Проверяем, что слово находится точным pattern-поиском самого себя.
+        // (Анаграммный поиск для round-trip не годится: входное слово
+        // исключается из выдачи по контракту.)
+        let q = AnagramQuery(mode: .pattern, pattern: w, foldYo: false, sort: .alphabetical)
         if let page = try? engine.search(q, limit: 1000, offset: 0),
            page.words.contains(w.lowercased()) {
             rtOk += 1
@@ -285,18 +287,19 @@ print("")
 
 print("== .anagram ==")
 do {
+    // Входное слово ('кот') исключается из выдачи по контракту.
     let q = AnagramQuery(mode: .anagram, letters: "кот", sort: .alphabetical)
     let page = try synth.search(q, limit: 100, offset: 0)
-    check(words(page) == ["кот", "кто", "ток"], "анаграммы {к,о,т} = кот/кто/ток (получено: \(page.words))")
-    check(page.totalCount == 3, "totalCount == 3")
-    // Порядок букв во вводе не важен.
+    check(words(page) == ["кто", "ток"], "анаграммы {к,о,т} = кто/ток, без входного 'кот' (получено: \(page.words))")
+    check(page.totalCount == 2, "totalCount == 2 (входное слово не в счёте)")
+    // Ввод 'тко' — не словарное слово: исключать нечего, находятся все три.
     let q2 = AnagramQuery(mode: .anagram, letters: "тко", sort: .alphabetical)
     let p2 = try synth.search(q2, limit: 100, offset: 0)
-    check(words(p2) == words(page), "порядок букв во вводе не влияет")
-    // Набор из 2 букв не даёт 3-буквенных.
+    check(words(p2) == ["кот", "кто", "ток"], "ввод 'тко' (не слово) даёт все анаграммы, включая 'кот'")
+    // Набор из 2 букв не даёт 3-буквенных; входное 'от' исключено.
     let q3 = AnagramQuery(mode: .anagram, letters: "от", sort: .alphabetical)
     let p3 = try synth.search(q3, limit: 100, offset: 0)
-    check(words(p3) == ["от", "то"], "анаграммы {о,т} = от/то")
+    check(words(p3) == ["то"], "анаграммы {о,т} = то (входное 'от' исключено)")
 }
 print("")
 
@@ -304,9 +307,10 @@ print("== .subword ==")
 do {
     let q = AnagramQuery(mode: .subword, letters: "кот", sort: .alphabetical)
     let page = try synth.search(q, limit: 100, offset: 0)
-    // Подслова из {к,о,т}: к, от, то, кот, кто, ток (и, возможно, «а»? — нет, «а» не из набора).
+    // Подслова из {к,о,т}: к, от, то, кто, ток; входное 'кот' исключено.
     check(words(page).isSuperset(of: ["от", "то", "к"]), "subword {к,о,т} включает от/то/к (получено: \(page.words))")
-    check(words(page).isSuperset(of: ["кот", "кто", "ток"]), "subword {к,о,т} включает полные анаграммы")
+    check(words(page).isSuperset(of: ["кто", "ток"]), "subword {к,о,т} включает полные анаграммы")
+    check(!page.words.contains("кот"), "subword {к,о,т} НЕ включает входное 'кот'")
     check(!page.words.contains("а"), "subword {к,о,т} НЕ включает 'а'")
     check(!page.words.contains("сон"), "subword {к,о,т} НЕ включает 'сон'")
     check(page.words.allSatisfy { $0.count <= 3 }, "subword: длины ≤ |набор|")
@@ -380,13 +384,17 @@ print("")
 
 print("== foldYo ==")
 do {
-    // Словарь содержит «полёт» (с ё, код 6). Ищем паттерн с 'е' и foldYo=true → должно найтись.
-    // Паттерн "пол_т": джокер на позиции ё; но проверим точнее — anagram с буквами.
-    // При foldYo=true 'полет' (через е) должно матчить хранимое 'полёт'.
+    // Словарь содержит «полёт» (с ё, код 6). При foldYo=true 'полет' (через е)
+    // фолдится в то же слово, что и хранимое 'полёт' → это входное слово,
+    // и по контракту оно исключается из выдачи.
     let q = AnagramQuery(mode: .anagram, letters: "полет", foldYo: true, sort: .alphabetical)
     let page = try synth.search(q, limit: 100, offset: 0)
-    // Слово декодируется как 'полёт' (в словаре хранится код 6), но multiset при foldYo совпадает.
-    check(!page.words.isEmpty, "foldYo=true: 'полет' находит хранимое 'полёт' (получено: \(page.words))")
+    check(page.words.isEmpty, "foldYo=true: 'полет' == хранимое 'полёт' → исключено как входное (получено: \(page.words))")
+
+    // Перемешанный ввод 'тполе' — не то же слово: 'полёт' находится (fold в скане работает).
+    let qMix = AnagramQuery(mode: .anagram, letters: "тполе", foldYo: true, sort: .alphabetical)
+    let pMix = try synth.search(qMix, limit: 100, offset: 0)
+    check(pMix.words.contains("полёт"), "foldYo=true: 'тполе' находит хранимое 'полёт' (получено: \(pMix.words))")
 
     // Без foldYo — не находит (е≠ё).
     let q2 = AnagramQuery(mode: .anagram, letters: "полет", foldYo: false, sort: .alphabetical)
@@ -462,7 +470,7 @@ do {
     // Смена запроса инвалидирует кэш, но результат остаётся корректным.
     let other = AnagramQuery(mode: .anagram, letters: "кот", sort: .alphabetical)
     let op = try synth.search(other, limit: 100, offset: 0)
-    check(words(op) == ["кот", "кто", "ток"], "после смены запроса кэш инвалидирован, результат верен")
+    check(words(op) == ["кто", "ток"], "после смены запроса кэш инвалидирован, результат верен")
     // Возврат к исходному запросу — снова консистентно.
     let again = try synth.search(base, limit: 1000, offset: 0)
     check(again.words == allWords, "возврат к прежнему запросу даёт тот же результат")

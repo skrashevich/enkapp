@@ -84,7 +84,7 @@ struct AnagramizerView: View {
     // Режим «По буквам»: набор букв + тумблер «использовать все буквы».
     private var lettersInput: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField("Буквы, напр. «автомобиль»", text: $model.letters)
+            TextField("Буквы, напр. «огнесручка»", text: $model.letters)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .foregroundStyle(GameTheme.text)
