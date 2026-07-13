@@ -272,18 +272,34 @@ nonisolated final class EncounterClient {
         #endif
     }
 
+    func exportHARSnapshot() throws -> (json: String, entryCount: Int) {
+        #if canImport(Encx)
+        let snapshot = try client.exportHARSnapshot()
+        return (json: snapshot.json, entryCount: Int(snapshot.entryCount))
+        #else
+        throw EncounterClientError.bindingsUnavailable
+        #endif
+    }
+
+    func clearHARFirst(_ count: Int) {
+        #if canImport(Encx)
+        client.clearHARFirst(Int64(count))
+        #endif
+    }
+
     func uploadHARSnapshot(login: String) async throws -> Int {
-        let entryCount = harEntryCount()
-        guard entryCount > 0 else { return 0 }
-        let json = try exportHAR()
+        // Снимок и очистка по количеству атомарны на стороне Go: записи,
+        // накопленные за время сетевой выгрузки, не стираются.
+        let snapshot = try exportHARSnapshot()
+        guard snapshot.entryCount > 0 else { return 0 }
         try await HARRemoteUploader.upload(
-            harJSON: json,
+            harJSON: snapshot.json,
             settings: settings,
             login: login,
-            entryCount: entryCount
+            entryCount: snapshot.entryCount
         )
-        clearHAR()
-        return entryCount
+        clearHARFirst(snapshot.entryCount)
+        return snapshot.entryCount
     }
 
     func domainGames() throws -> [DomainGame] {
@@ -676,6 +692,13 @@ nonisolated final class EncounterClient {
         return message.contains("session expired") || message.contains("html instead of json")
     }
 
+    /// The server responded, but the payload didn't match the expected schema
+    /// (e.g. tech.en.cx returns fractional AFC). Distinct from connectivity failures.
+    static func isMalformedResponseError(_ error: Error) -> Bool {
+        let message = (error as NSError).localizedDescription.lowercased()
+        return message.contains("cannot unmarshal")
+    }
+
     static func isServerUnreachableError(_ error: Error) -> Bool {
         if isTimeoutError(error) {
             return true
@@ -757,6 +780,9 @@ nonisolated final class EncounterClient {
         }
         if isSessionExpiredError(error) {
             return "Сессия истекла. Войдите снова в настройках."
+        }
+        if isMalformedResponseError(error) {
+            return "Сервер вернул данные в неожиданном формате. Проверьте, нет ли обновления приложения, и повторите позже."
         }
         if isServerUnreachableError(error) {
             return "Сервер недоступен. Повторите позже."

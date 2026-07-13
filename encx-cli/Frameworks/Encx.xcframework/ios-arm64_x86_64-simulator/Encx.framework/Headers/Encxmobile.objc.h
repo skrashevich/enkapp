@@ -12,6 +12,7 @@
 
 
 @class EncxmobileEncClient;
+@class EncxmobileHARSnapshot;
 
 /**
  * EncClient wraps encx.Client for use from iOS via gomobile.
@@ -31,6 +32,10 @@
  */
 - (void)clearHAR;
 /**
+ * ClearHARFirst removes the n oldest captured HAR entries.
+ */
+- (void)clearHARFirst:(int64_t)n;
+/**
  * Domain returns the configured Encounter domain.
  */
 - (NSString* _Nonnull)domain;
@@ -46,6 +51,12 @@
  * ExportHAR returns captured traffic as a HAR 1.2 JSON document.
  */
 - (NSString* _Nonnull)exportHAR:(NSError* _Nullable* _Nullable)error;
+/**
+ * ExportHARSnapshot atomically exports captured traffic together with its
+entry count; pass the count to ClearHARFirst after a successful upload so
+entries captured during the upload are preserved.
+ */
+- (EncxmobileHARSnapshot* _Nullable)exportHARSnapshot:(NSError* _Nullable* _Nullable)error;
 /**
  * GetDomainGames returns games parsed from the domain main page as JSON array.
  */
@@ -172,6 +183,19 @@ Zero or negative values disable pacing.
  * SetTeamSite updates the team website URL.
  */
 - (BOOL)setTeamSite:(int64_t)teamID site:(NSString* _Nullable)site error:(NSError* _Nullable* _Nullable)error;
+@end
+
+/**
+ * HARSnapshot pairs an exported HAR document with the number of entries it contains.
+ */
+@interface EncxmobileHARSnapshot : NSObject <goSeqRefInterface> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (nonnull instancetype)init;
+@property (nonatomic) NSString* _Nonnull json;
+@property (nonatomic) int64_t entryCount;
 @end
 
 /**
