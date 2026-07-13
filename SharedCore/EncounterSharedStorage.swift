@@ -53,6 +53,8 @@ enum EncounterSharedStorage {
     static func set(_ value: Any?, forKey key: String) {
         if storageDirectory != nil {
             setStoredObject(value, forKey: key)
+            // Иначе устаревшее значение из standard "воскреснет" через fallback-чтение.
+            UserDefaults.standard.removeObject(forKey: key)
         } else {
             UserDefaults.standard.set(value, forKey: key)
         }
@@ -61,9 +63,8 @@ enum EncounterSharedStorage {
     static func removeObject(forKey key: String) {
         if let url = fileURL(forKey: key) {
             try? FileManager.default.removeItem(at: url)
-        } else {
-            UserDefaults.standard.removeObject(forKey: key)
         }
+        UserDefaults.standard.removeObject(forKey: key)
     }
 
     static func migrateFromStandard(keys: [String]) {

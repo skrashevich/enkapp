@@ -111,24 +111,21 @@ final class CodeQueueStore {
         defer { isFlushing = false }
 
         var latestModel: GameModel?
-        var unsent: [CodeSubmission] = []
-        var stoppedEarly = false
+        var sentIDs = Set<UUID>()
 
-        for submission in pending {
-            if stoppedEarly {
-                unsent.append(submission)
-                continue
-            }
-
+        // pending может измениться (enqueue/clear) во время await, поэтому
+        // работаем со снимком, а в конце убираем только реально отправленное.
+        let snapshot = pending
+        for submission in snapshot {
             do {
                 latestModel = try await send(submission)
+                sentIDs.insert(submission.id)
             } catch {
-                unsent.append(submission)
-                stoppedEarly = true
+                break
             }
         }
 
-        pending = unsent
+        pending.removeAll { sentIDs.contains($0.id) }
         save()
         postQueueDidChange()
         return latestModel

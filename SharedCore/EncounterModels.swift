@@ -341,12 +341,36 @@ nonisolated struct GameModel: Decodable {
         if let value = try? container.decodeIfPresent(Double.self, forKey: key), value > 0 {
             return Date(timeIntervalSince1970: value)
         }
-        if let string = try? container.decodeIfPresent(String.self, forKey: key),
-           let value = TimeInterval(string.trimmingCharacters(in: .whitespacesAndNewlines)),
-           value > 0 {
-            return Date(timeIntervalSince1970: value)
+        if let string = try? container.decodeIfPresent(String.self, forKey: key) {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let value = TimeInterval(trimmed), value > 0 {
+                return Date(timeIntervalSince1970: value)
+            }
+            if let date = dotNetDate(from: trimmed) ?? isoDate(from: trimmed) {
+                return date
+            }
         }
         return nil
+    }
+
+    // .NET-формат "/Date(1449173700000+0300)/": миллисекунды эпохи,
+    // смещение не влияет на абсолютное значение.
+    private static func dotNetDate(from string: String) -> Date? {
+        guard string.hasPrefix("/Date("), string.hasSuffix(")/") else { return nil }
+        let inner = string.dropFirst("/Date(".count).dropLast(")/".count)
+        let milliseconds = inner.prefix { $0.isNumber }
+        guard let value = Double(milliseconds), value > 0 else { return nil }
+        return Date(timeIntervalSince1970: value / 1000)
+    }
+
+    private static func isoDate(from string: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: string) {
+            return date
+        }
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: string)
     }
 
     private static func decodeFinishPlace(from decoder: Decoder) -> Int? {

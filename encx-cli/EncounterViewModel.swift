@@ -2117,6 +2117,16 @@ final class EncounterViewModel {
         antiSpamVerificationURL = nil
     }
 
+    /// Пользователь прошёл проверку: снимаем бэкофф, не дожидаясь его истечения,
+    /// и сразу пробуем отправить накопленную очередь.
+    func completeAntiSpamVerification() {
+        dismissAntiSpamVerification()
+        antiSpamBackoffUntil = nil
+        if !queue.pending.isEmpty {
+            Task { _ = await flushQueueNow(silent: true) }
+        }
+    }
+
     var sessionCookiesData: Data? {
         loadSessionCookies()
     }

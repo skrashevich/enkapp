@@ -42,7 +42,7 @@ struct AntiSpamVerificationView: View {
     }
 
     private func finish() {
-        model.dismissAntiSpamVerification()
+        model.completeAntiSpamVerification()
         dismiss()
         Task {
             await model.refreshGames()
