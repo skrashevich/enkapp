@@ -296,7 +296,12 @@ func (s *server) handleHAR(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxHARBytes))
 	if err != nil {
-		http.Error(w, "HAR body is too large", http.StatusRequestEntityTooLarge)
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "HAR body is too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "failed to read HAR body", http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
@@ -502,24 +507,25 @@ func (s *server) handleShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.RLock()
+	s.mu.Lock()
 	sub := s.sessions[id]
-	s.mu.RUnlock()
 	if sub == nil {
+		s.mu.Unlock()
 		http.NotFound(w, r)
 		return
 	}
-
 	if sub.ShareToken == "" {
 		sub.ShareToken = newShareToken()
-		if err := s.save(sub); err != nil {
+		if err := writeSubmission(s.dataDir, sub); err != nil {
+			sub.ShareToken = ""
+			s.mu.Unlock()
 			log.Printf("save share token %s: %v", id, err)
 			http.Error(w, "failed to save share link", http.StatusInternalServerError)
 			return
 		}
 	}
-
 	path := "/share/" + sub.ShareToken
+	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(shareResponse{URL: absoluteURL(r, path)})
@@ -668,8 +674,14 @@ func (s *server) handleArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	type archiveItem struct {
+		id   string
+		name string
+		data []byte
+	}
+
 	s.mu.RLock()
-	subs := make([]*submission, 0, len(ids))
+	items := make([]archiveItem, 0, len(ids))
 	for _, id := range ids {
 		sub := s.sessions[id]
 		if sub == nil {
@@ -677,7 +689,16 @@ func (s *server) handleArchive(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "unknown session: "+id, http.StatusNotFound)
 			return
 		}
-		subs = append(subs, sub)
+		data := append([]byte(nil), sub.Raw...)
+		if len(data) == 0 {
+			fallback, err := json.MarshalIndent(sub.HAR, "", "  ")
+			if err != nil {
+				log.Printf("marshal HAR fallback %s: %v", sub.ID, err)
+				continue
+			}
+			data = fallback
+		}
+		items = append(items, archiveItem{id: sub.ID, name: archiveEntryName(sub), data: data})
 	}
 	s.mu.RUnlock()
 
@@ -693,25 +714,15 @@ func (s *server) handleArchive(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	usedNames := map[string]int{}
-	for _, sub := range subs {
-		data := sub.Raw
-		if len(data) == 0 {
-			fallback, err := json.MarshalIndent(sub.HAR, "", "  ")
-			if err != nil {
-				log.Printf("marshal HAR fallback %s: %v", sub.ID, err)
-				continue
-			}
-			data = fallback
-		}
-
-		entryName := uniqueArchiveName(archiveEntryName(sub), usedNames)
+	for _, item := range items {
+		entryName := uniqueArchiveName(item.name, usedNames)
 		fw, err := zw.Create(entryName)
 		if err != nil {
-			log.Printf("archive entry %s: %v", sub.ID, err)
+			log.Printf("archive entry %s: %v", item.id, err)
 			continue
 		}
-		if _, err := fw.Write(data); err != nil {
-			log.Printf("write archive entry %s: %v", sub.ID, err)
+		if _, err := fw.Write(item.data); err != nil {
+			log.Printf("write archive entry %s: %v", item.id, err)
 		}
 	}
 }
@@ -722,7 +733,9 @@ func (s *server) state() stateResponse {
 
 	var latest *submission
 	for _, sub := range s.sessions {
-		if latest == nil || sub.ID > latest.ID {
+		if latest == nil ||
+			sub.ReceivedAt.After(latest.ReceivedAt) ||
+			(sub.ReceivedAt.Equal(latest.ReceivedAt) && sub.ID > latest.ID) {
 			latest = sub
 		}
 	}
@@ -798,7 +811,7 @@ func (s *server) saveWithMerge(sub *submission, window time.Duration) (*submissi
 
 	if target := s.mergeTargetLocked(sub, window); target != nil {
 		target.ReceivedAt = sub.ReceivedAt
-		target.EntryCount += len(sub.HAR.Log.Entries)
+		target.EntryCount += sub.EntryCount
 		target.HAR.Log.Entries = append(target.HAR.Log.Entries, sub.HAR.Log.Entries...)
 		raw, err := json.Marshal(target.HAR)
 		if err != nil {

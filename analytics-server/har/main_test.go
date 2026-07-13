@@ -665,7 +665,7 @@ func TestHandlersConcurrentWithMerge(t *testing.T) {
 	shareToken := sub.ShareToken
 	const rounds = 150
 	start := make(chan struct{})
-	errCh := make(chan error, 4)
+	errCh := make(chan error, 6)
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -747,6 +747,40 @@ func TestHandlersConcurrentWithMerge(t *testing.T) {
 		}
 	}()
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < rounds; i++ {
+			form := url.Values{"id": {sub.ID}}
+			req := httptest.NewRequest(http.MethodPost, "/api/sessions/share", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			srv.handleShare(rec, req)
+			if rec.Code != http.StatusOK {
+				errCh <- fmt.Errorf("share status = %d, body %q", rec.Code, rec.Body.String())
+				return
+			}
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < rounds; i++ {
+			form := url.Values{"ids": {sub.ID}}
+			req := httptest.NewRequest(http.MethodPost, "/api/sessions/archive", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			srv.handleArchive(rec, req)
+			if rec.Code != http.StatusOK {
+				errCh <- fmt.Errorf("archive status = %d, body %q", rec.Code, rec.Body.String())
+				return
+			}
+		}
+	}()
+
 	close(start)
 	wg.Wait()
 	close(errCh)
@@ -754,6 +788,21 @@ func TestHandlersConcurrentWithMerge(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestStatePicksLatestByReceivedAt(t *testing.T) {
+	srv, sub := testServerWithSubmission(t)
+	stale := &submission{
+		ID:         "zzz-lexicographically-newest",
+		ReceivedAt: sub.ReceivedAt.Add(-time.Hour),
+		EntryCount: 1,
+	}
+	srv.sessions[stale.ID] = stale
+
+	state := srv.state()
+	if state.LatestID != sub.ID {
+		t.Fatalf("LatestID = %q, want %q (most recent ReceivedAt must win over larger ID)", state.LatestID, sub.ID)
 	}
 }
 
