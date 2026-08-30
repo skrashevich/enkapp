@@ -5,6 +5,9 @@ import UIKit
 struct CodesView: View {
     @Bindable var model: EncounterViewModel
     @State private var copiedActionID: Int?
+    @State private var codeLogShareURL: URL?
+    @State private var codeLogExportError: String?
+    @State private var showCodeLogShareSheet = false
 
     private var loggedActionsNewestFirst: [CodeAction] {
         model.codeLogActions.sorted {
@@ -32,6 +35,31 @@ struct CodesView: View {
         .background(GameTheme.background)
         .navigationTitle("Журнал кодов")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    exportCodeLog()
+                } label: {
+                    Label("Экспортировать", systemImage: "square.and.arrow.up")
+                }
+                .disabled(model.codeLogActions.isEmpty)
+            }
+        }
+        .sheet(isPresented: $showCodeLogShareSheet, onDismiss: {
+            if let codeLogShareURL {
+                try? FileManager.default.removeItem(at: codeLogShareURL)
+            }
+            codeLogShareURL = nil
+        }) {
+            if let codeLogShareURL {
+                ShareSheet(items: [codeLogShareURL])
+            }
+        }
+        .alert("Не удалось экспортировать журнал", isPresented: codeLogExportErrorPresented) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(codeLogExportError ?? "")
+        }
         .refreshable {
             await model.flushQueue()
             await model.refreshLevel()
@@ -216,6 +244,24 @@ struct CodesView: View {
             if copiedActionID == actionID {
                 copiedActionID = nil
             }
+        }
+    }
+
+    private var codeLogExportErrorPresented: Binding<Bool> {
+        Binding(
+            get: { codeLogExportError != nil },
+            set: { if !$0 { codeLogExportError = nil } }
+        )
+    }
+
+    private func exportCodeLog() {
+        codeLogExportError = nil
+        do {
+            let url = try model.exportCodeLogFileURL()
+            codeLogShareURL = url
+            showCodeLogShareSheet = true
+        } catch {
+            codeLogExportError = error.localizedDescription
         }
     }
 }

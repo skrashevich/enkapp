@@ -63,6 +63,20 @@ enum SessionRecoveryError: LocalizedError {
     }
 }
 
+enum CodeLogExportError: LocalizedError {
+    case emptyLog
+    case gameNotSelected
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyLog:
+            return "В журнале пока нет кодов для экспорта."
+        case .gameNotSelected:
+            return "Не удалось определить игру для экспорта журнала."
+        }
+    }
+}
+
 enum QueueConnectionStatus {
     case offline
     case serverUnreachable
@@ -816,6 +830,24 @@ final class EncounterViewModel {
 
         mergeCodeLogActions(model.level?.mixedActions ?? [], gameID: gameID)
         codeLogStatusMessage = codeLogActions.isEmpty ? "Пробитых кодов пока нет" : ""
+    }
+
+    func exportCodeLogFileURL() throws -> URL {
+        guard !codeLogActions.isEmpty else {
+            throw CodeLogExportError.emptyLog
+        }
+        guard let gameID = selectedGameID ?? currentModel.map({ Int64($0.gameID) }) else {
+            throw CodeLogExportError.gameNotSelected
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let timestamp = formatter.string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        let filename = "encounter-codes-game-\(gameID)-\(timestamp).csv"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        try CodeLogCSVFormatter.data(for: codeLogActions).write(to: url, options: .atomic)
+        return url
     }
 
     func refreshLevelSilently() async {
