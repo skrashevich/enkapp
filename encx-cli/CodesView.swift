@@ -9,26 +9,74 @@ struct CodesView: View {
     @State private var codeLogExportError: String?
     @State private var showCodeLogShareSheet = false
 
-    private var loggedActionsNewestFirst: [CodeAction] {
-        model.codeLogActions.sorted {
+    private var codeLogSnapshot: CodeLogSnapshot {
+        let actions = model.codeLogActions.sorted {
             if $0.levelNumber != $1.levelNumber {
                 return $0.levelNumber > $1.levelNumber
             }
             return $0.actionID > $1.actionID
         }
-    }
 
-    private var loggedActionGroups: [CodeActionLevelGroup] {
-        Dictionary(grouping: loggedActionsNewestFirst, by: \.levelNumber)
-            .map { CodeActionLevelGroup(levelNumber: $0.key, actions: $0.value) }
-            .sorted { $0.levelNumber > $1.levelNumber }
+        var groups: [CodeActionLevelGroup] = []
+        for action in actions {
+            if groups.last?.levelNumber == action.levelNumber {
+                groups[groups.count - 1].actions.append(action)
+            } else {
+                groups.append(CodeActionLevelGroup(levelNumber: action.levelNumber, actions: [action]))
+            }
+        }
+
+        return CodeLogSnapshot(actions: actions, groups: groups)
     }
 
     var body: some View {
+        let snapshot = codeLogSnapshot
+        let showsEmptyState = snapshot.actions.isEmpty
+            && !model.isCodeLogLoading
+            && model.codeLogStatusMessage.isEmpty
+        let hasLogContent = !model.codeLogStatusMessage.isEmpty
+            || showsEmptyState
+            || !snapshot.groups.isEmpty
+
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 pendingSection
-                logSection
+                    .padding(.bottom, 20)
+
+                logSectionHeader(actionCount: snapshot.actions.count)
+                    .padding(.bottom, hasLogContent ? 12 : 0)
+
+                if !model.codeLogStatusMessage.isEmpty {
+                    Text(model.codeLogStatusMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(GameTheme.muted)
+                        .padding(.bottom, snapshot.groups.isEmpty ? 0 : 12)
+                }
+
+                if showsEmptyState {
+                    Text("Пробитых кодов пока нет")
+                        .font(.subheadline)
+                        .foregroundStyle(GameTheme.muted)
+                } else {
+                    ForEach(snapshot.groups) { group in
+                        Text("Уровень \(group.levelNumber)")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(GameTheme.sectionHeader)
+                            .padding(.bottom, 8)
+
+                        ForEach(group.actions) { action in
+                            sentCodeRow(action)
+                                .padding(
+                                    .bottom,
+                                    logRowBottomPadding(
+                                        action: action,
+                                        in: group,
+                                        groups: snapshot.groups
+                                    )
+                                )
+                        }
+                    }
+                }
             }
             .padding()
         }
@@ -156,41 +204,24 @@ struct CodesView: View {
         }
     }
 
-    private var logSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                GameSectionHeader(title: "Пробитые коды (\(loggedActionsNewestFirst.count))")
-                Spacer()
-                if model.isCodeLogLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-            }
-
-            if !model.codeLogStatusMessage.isEmpty {
-                Text(model.codeLogStatusMessage)
-                    .font(.subheadline)
-                    .foregroundStyle(GameTheme.muted)
-            }
-
-            if loggedActionsNewestFirst.isEmpty && !model.isCodeLogLoading && model.codeLogStatusMessage.isEmpty {
-                Text("Пробитых кодов пока нет")
-                    .font(.subheadline)
-                    .foregroundStyle(GameTheme.muted)
-            } else {
-                ForEach(loggedActionGroups) { group in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Уровень \(group.levelNumber)")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(GameTheme.sectionHeader)
-
-                        ForEach(group.actions) { action in
-                            sentCodeRow(action)
-                        }
-                    }
-                }
+    private func logSectionHeader(actionCount: Int) -> some View {
+        HStack {
+            GameSectionHeader(title: "Пробитые коды (\(actionCount))")
+            Spacer()
+            if model.isCodeLogLoading {
+                ProgressView()
+                    .controlSize(.small)
             }
         }
+    }
+
+    private func logRowBottomPadding(
+        action: CodeAction,
+        in group: CodeActionLevelGroup,
+        groups: [CodeActionLevelGroup]
+    ) -> CGFloat {
+        guard action.id == group.actions.last?.id else { return 8 }
+        return group.id == groups.last?.id ? 0 : 12
     }
 
     private func sentCodeRow(_ action: CodeAction) -> some View {
@@ -268,7 +299,12 @@ struct CodesView: View {
 
 private struct CodeActionLevelGroup: Identifiable {
     let levelNumber: Int
-    let actions: [CodeAction]
+    var actions: [CodeAction]
 
     var id: Int { levelNumber }
+}
+
+private struct CodeLogSnapshot {
+    let actions: [CodeAction]
+    let groups: [CodeActionLevelGroup]
 }
