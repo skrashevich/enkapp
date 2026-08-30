@@ -828,6 +828,13 @@ private struct LevelPlayScrollBody: View {
             .filter { !$0.isAnswered }
             .sorted { $0.number < $1.number }
 
+        // `help` is the reward the engine reveals once a bonus is taken, so it only ever arrives on
+        // answered bonuses. Listing this section as unanswered-only therefore hid every reward the
+        // player had already earned.
+        let solvedRewards = level.bonuses
+            .filter { $0.isAnswered && !$0.help.isEmpty }
+            .sorted { $0.number < $1.number }
+
         return VStack(alignment: .leading, spacing: 10) {
             GameSectionHeader(
                 title: "На уровне \(level.bonuses.count) \(LevelPlayWordForms.bonus(level.bonuses.count)) (Выполненные — \(level.passedBonusesCount))"
@@ -845,6 +852,16 @@ private struct LevelPlayScrollBody: View {
                     if !bonus.help.isEmpty {
                         bonusContent(bonus.help)
                     }
+                }
+            }
+
+            ForEach(solvedRewards) { bonus in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Бонус \(bonus.number): \(bonus.name) ✓")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(GameTheme.accent)
+
+                    bonusContent(bonus.help)
                 }
             }
         }
