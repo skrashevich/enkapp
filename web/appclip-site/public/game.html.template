@@ -1,19 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>enkapp game link</title>
+  <title>Открыть игру в enkapp</title>
+  <meta name="description" content="Ссылка на игру Encounter для enkapp — нативного iOS-клиента.">
+  <meta name="theme-color" content="#090b0d">
+  <meta property="og:title" content="Открыть игру Encounter в enkapp">
+  <meta property="og:description" content="Откройте игру в нативном iOS-приложении enkapp.">
+  <meta property="og:image" content="https://enkapp.svk.app/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
   ${ENKAPP_SMART_APP_BANNER}
+  <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <main class="shell">
-    <h1>Open in enkapp</h1>
-    <p>This link is configured for the enkapp App Clip and the full iOS app.</p>
-    <div class="actions">
-      <a class="button" href="${ENKAPP_TESTFLIGHT_URL}">Install full app</a>
-      <a class="button secondary" href="/">Home</a>
+  <main class="game-fallback">
+    <img src="/assets/app-icon.webp" alt="Иконка enkapp" width="112" height="112">
+    <p class="eyebrow">Ссылка на игру Encounter</p>
+    <h1>Открой игру<br>в enkapp</h1>
+    <p>Если приложение уже установлено, вернись к ссылке и открой её ещё раз. Иначе установи полную версию через TestFlight.</p>
+    <div class="hero-actions">
+      <a class="button button-primary" href="${ENKAPP_TESTFLIGHT_URL}">Установить enkapp <span aria-hidden="true">↗</span></a>
+      <a class="button button-secondary" href="/">Подробнее о приложении</a>
     </div>
   </main>
 </body>
