@@ -139,6 +139,7 @@ final class EncounterViewModel {
     private var reloginTask: Task<Void, Error>?
     private var lastGamePollDate: Date?
     private var codeLogLoadedGameID: Int64?
+    private var codeLogLoadedDomain: String?
     private var finalStandingLoadedGameID: Int64?
     private var finalStandingTask: Task<Void, Never>?
     private let gamePollInterval: TimeInterval = 20
@@ -361,6 +362,9 @@ final class EncounterViewModel {
         applyDefaultDomainIfNeeded(hadSavedSettings: hadSavedSettings)
         rememberDomain(settings.domain)
         selectedGameID = EncounterSessionStore.loadSelectedGameID()
+        if let selectedGameID {
+            loadCodeLogCache(for: selectedGameID)
+        }
         queue.onBackOnline = { [weak self] in
             Task { @MainActor in
                 await self?.flushQueueNow(silent: true)
@@ -390,6 +394,9 @@ final class EncounterViewModel {
         }
         selectedGameID = gameID
         EncounterSessionStore.saveSelectedGameID(gameID)
+        if let gameID {
+            loadCodeLogCache(for: gameID)
+        }
         scheduleHintUnlockRefresh(for: currentModel)
     }
 
@@ -536,6 +543,7 @@ final class EncounterViewModel {
             rememberDomain(normalized)
             persistAuthorizationSettings()
             self.client = nil
+            reloadCodeLogCacheForSelectedGame()
         }
     }
 
@@ -548,6 +556,7 @@ final class EncounterViewModel {
         rememberDomain(normalized)
         persistAuthorizationSettings()
         client = nil
+        reloadCodeLogCacheForSelectedGame()
         await refreshGames()
     }
 
@@ -1679,10 +1688,9 @@ final class EncounterViewModel {
     }
 
     private func mergeCodeLogActions(_ actions: [CodeAction], gameID: Int64) {
-        if codeLogLoadedGameID != gameID {
-            codeLogActions = []
-            codeLogLoadedGameID = gameID
-            codeLogStatusMessage = ""
+        let domain = normalizedCodeLogDomain
+        if codeLogLoadedGameID != gameID || codeLogLoadedDomain != domain {
+            loadCodeLogCache(for: gameID)
         }
         guard !actions.isEmpty else { return }
 
@@ -1696,6 +1704,27 @@ final class EncounterViewModel {
             }
             return $0.actionID > $1.actionID
         }
+        CodeActionLogStore.save(codeLogActions, domain: domain, gameID: gameID)
+    }
+
+    private var normalizedCodeLogDomain: String {
+        settings.domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func loadCodeLogCache(for gameID: Int64) {
+        let domain = normalizedCodeLogDomain
+        codeLogActions = CodeActionLogStore.load(domain: domain, gameID: gameID)
+        codeLogLoadedGameID = gameID
+        codeLogLoadedDomain = domain
+        codeLogStatusMessage = ""
+    }
+
+    private func reloadCodeLogCacheForSelectedGame() {
+        if let selectedGameID {
+            loadCodeLogCache(for: selectedGameID)
+        } else {
+            resetCodeLog()
+        }
     }
 
     private func resetCodeLog() {
@@ -1703,6 +1732,7 @@ final class EncounterViewModel {
         isCodeLogLoading = false
         codeLogStatusMessage = ""
         codeLogLoadedGameID = nil
+        codeLogLoadedDomain = nil
     }
 
     private func liveActivityContentState() -> QueueActivityAttributes.ContentState? {

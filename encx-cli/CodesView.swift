@@ -15,6 +15,12 @@ struct CodesView: View {
         }
     }
 
+    private var loggedActionGroups: [CodeActionLevelGroup] {
+        Dictionary(grouping: loggedActionsNewestFirst, by: \.levelNumber)
+            .map { CodeActionLevelGroup(levelNumber: $0.key, actions: $0.value) }
+            .sorted { $0.levelNumber > $1.levelNumber }
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
@@ -144,8 +150,16 @@ struct CodesView: View {
                     .font(.subheadline)
                     .foregroundStyle(GameTheme.muted)
             } else {
-                ForEach(loggedActionsNewestFirst) { action in
-                    sentCodeRow(action)
+                ForEach(loggedActionGroups) { group in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Уровень \(group.levelNumber)")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(GameTheme.sectionHeader)
+
+                        ForEach(group.actions) { action in
+                            sentCodeRow(action)
+                        }
+                    }
                 }
             }
         }
@@ -164,7 +178,7 @@ struct CodesView: View {
                     Text(action.answer)
                         .font(.body.monospaced())
                         .foregroundStyle(action.isCorrect ? GameTheme.accent : GameTheme.text)
-                    Text("Ур. \(action.levelNumber) · \(action.login), \(action.locDateTime)")
+                    Text("\(action.login), \(action.locDateTime)")
                         .font(.caption)
                         .foregroundStyle(GameTheme.muted)
                 }
@@ -204,4 +218,11 @@ struct CodesView: View {
             }
         }
     }
+}
+
+private struct CodeActionLevelGroup: Identifiable {
+    let levelNumber: Int
+    let actions: [CodeAction]
+
+    var id: Int { levelNumber }
 }

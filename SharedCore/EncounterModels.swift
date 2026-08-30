@@ -697,7 +697,7 @@ nonisolated struct Help: Decodable, Identifiable, Hashable {
     }
 }
 
-nonisolated struct CodeAction: Decodable, Identifiable, Hashable {
+nonisolated struct CodeAction: Codable, Identifiable, Hashable {
     let actionID: Int
     let levelNumber: Int
     let kind: Int
