@@ -165,10 +165,19 @@ final class AppClipViewModel {
         }
 
         await runBusy(silent ? "" : "Отправка очереди...", showBusy: !silent) {
-            currentModel = try await queue.flush { submission in
+            let outcome = await queue.flush { submission in
                 try await self.withSessionRecovery { try await $0.sendCode(submission) }
-            } ?? currentModel
+            }
+            currentModel = outcome.latestModel ?? currentModel
             try saveCookies(from: try ensureClient())
+
+            if let error = outcome.failure, let failed = outcome.failedSubmission {
+                guard EncounterClient.isUndecodableResponseError(error) else { throw error }
+                // Already accepted by the engine — retrying would submit the same answer again.
+                queue.discard(failed.id)
+                statusMessage = "Код «\(failed.code)» отправлен, но ответ сервера не распознан."
+                return
+            }
             statusMessage = queue.pending.isEmpty
                 ? "Очередь отправлена"
                 : "В очереди осталось: \(queue.pending.count)"

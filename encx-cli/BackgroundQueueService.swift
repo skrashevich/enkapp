@@ -7,6 +7,8 @@ final class BackgroundQueueService {
     static let taskIdentifier = "com.svk-team.encx-cli.queue-flush"
 
     var flushHandler: (() async -> Bool)?
+    /// Supplies the delay before the next retry, so BGProcessingTask runs share the app's backoff.
+    var nextIntervalHandler: (() -> TimeInterval)?
     private var aggressiveFlushTask: Task<Void, Never>?
 
     private init() {}
@@ -32,8 +34,10 @@ final class BackgroundQueueService {
     }
 
     /// Retries until the queue is empty or iOS background time runs out.
+    /// `nextInterval` is consulted after every pass so the loop honours the caller's escalating
+    /// retry backoff — a fixed interval kept re-POSTing a stuck code until anti-spam fired.
     func runAggressiveFlushLoop(
-        interval: TimeInterval = 0.35,
+        nextInterval: @escaping () -> TimeInterval,
         operation: @escaping () async -> Bool
     ) {
         guard aggressiveFlushTask == nil else { return }
@@ -55,7 +59,7 @@ final class BackgroundQueueService {
             while !Task.isCancelled {
                 let done = await operation()
                 if done { break }
-                try? await Task.sleep(for: .seconds(interval))
+                try? await Task.sleep(for: .seconds(nextInterval()))
             }
         }
     }
@@ -64,7 +68,10 @@ final class BackgroundQueueService {
         scheduleProcessing()
 
         let work = Task { @MainActor in
-            await self.runAggressiveFlushLoopInternal(maxSeconds: 25) {
+            await self.runAggressiveFlushLoopInternal(
+                maxSeconds: 25,
+                nextInterval: self.nextIntervalHandler ?? { 0.35 }
+            ) {
                 await self.flushHandler?() ?? true
             }
         }
@@ -79,13 +86,13 @@ final class BackgroundQueueService {
 
     private func runAggressiveFlushLoopInternal(
         maxSeconds: TimeInterval,
-        interval: TimeInterval = 0.35,
+        nextInterval: () -> TimeInterval,
         operation: () async -> Bool
     ) async {
         let deadline = Date().addingTimeInterval(maxSeconds)
         while Date() < deadline {
             if await operation() { return }
-            try? await Task.sleep(for: .seconds(interval))
+            try? await Task.sleep(for: .seconds(nextInterval()))
         }
     }
 

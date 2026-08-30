@@ -96,6 +96,13 @@ final class CodeQueueStore {
         postQueueDidChange()
     }
 
+    /// Drops a single submission that must not be retried, e.g. one the engine already accepted.
+    func discard(_ id: UUID) {
+        pending.removeAll { $0.id == id }
+        save()
+        postQueueDidChange()
+    }
+
     func reloadFromDisk() {
         load()
     }
@@ -104,13 +111,21 @@ final class CodeQueueStore {
         NotificationCenter.default.post(name: .encxQueueDidChange, object: nil)
     }
 
-    func flush(send: (CodeSubmission) async throws -> GameModel) async throws -> GameModel? {
-        guard isOnline, !pending.isEmpty, !isFlushing else { return nil }
+    /// Result of one flush pass. The failure is reported back so the caller can decide whether the
+    /// submission is worth retrying — swallowing it made every failure look like a dead engine.
+    struct FlushOutcome {
+        var latestModel: GameModel?
+        var failedSubmission: CodeSubmission?
+        var failure: Error?
+    }
+
+    func flush(send: (CodeSubmission) async throws -> GameModel) async -> FlushOutcome {
+        guard isOnline, !pending.isEmpty, !isFlushing else { return FlushOutcome() }
 
         isFlushing = true
         defer { isFlushing = false }
 
-        var latestModel: GameModel?
+        var outcome = FlushOutcome()
         var sentIDs = Set<UUID>()
 
         // pending может измениться (enqueue/clear) во время await, поэтому
@@ -118,9 +133,11 @@ final class CodeQueueStore {
         let snapshot = pending
         for submission in snapshot {
             do {
-                latestModel = try await send(submission)
+                outcome.latestModel = try await send(submission)
                 sentIDs.insert(submission.id)
             } catch {
+                outcome.failedSubmission = submission
+                outcome.failure = error
                 break
             }
         }
@@ -128,7 +145,7 @@ final class CodeQueueStore {
         pending.removeAll { sentIDs.contains($0.id) }
         save()
         postQueueDidChange()
-        return latestModel
+        return outcome
     }
 
     private func load() {

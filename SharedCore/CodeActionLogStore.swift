@@ -24,13 +24,16 @@ enum CodeActionLogStore {
     private static func sortedAndDeduplicated(_ actions: [CodeAction]) -> [CodeAction] {
         var actionsByID: [Int: CodeAction] = [:]
         for action in actions {
-            actionsByID[action.actionID] = action
+            actionsByID[action.id] = action
         }
         return actionsByID.values.sorted {
             if $0.levelNumber != $1.levelNumber {
                 return $0.levelNumber > $1.levelNumber
             }
-            return $0.actionID > $1.actionID
+            if $0.actionID != $1.actionID { return $0.actionID > $1.actionID }
+            // Every synthetic action has actionID 0; tie-break on id so the order is stable
+            // across launches (Dictionary.values order and sorted() are both unstable).
+            return $0.id > $1.id
         }
     }
 }

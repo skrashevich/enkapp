@@ -139,11 +139,20 @@ final class EncounterShortcutService {
             return "Очередь пуста"
         }
 
-        let updated = try await queue.flush { submission in
+        let outcome = await queue.flush { submission in
             try await withSessionRecovery { try await $0.sendCode(submission) }
         }
         try saveCookies(from: try ensureClient())
-        if let updated {
+
+        // Check the failure BEFORE reporting success: a partial flush can carry both, and
+        // reporting only the success would swallow a genuine error.
+        if let error = outcome.failure, let failed = outcome.failedSubmission {
+            guard EncounterClient.isUndecodableResponseError(error) else { throw error }
+            // Already accepted by the engine — retrying would submit the same answer again.
+            queue.discard(failed.id)
+            return "Код «\(failed.code)» отправлен, но ответ сервера не распознан. Осталось: \(queue.pending.count)"
+        }
+        if let updated = outcome.latestModel {
             return Self.resultMessage(from: updated)
         }
         return "Отправлено из очереди. Осталось: \(queue.pending.count)"

@@ -142,6 +142,16 @@ struct SettingsView: View {
                     systemImage: "doc.text.magnifyingglass",
                     tint: .orange
                 )
+                // Only appears when the engine sent something we could not decode, so a lossy
+                // decode leaves a visible trace instead of quietly hiding data.
+                if model.decodeDropCount > 0 {
+                    DashboardMetric(
+                        title: "Пропущено",
+                        value: "\(model.decodeDropCount)",
+                        systemImage: "exclamationmark.triangle",
+                        tint: .red
+                    )
+                }
             }
         }
         .sectionPanel()

@@ -136,6 +136,9 @@ final class EncounterViewModel {
     var serverRoundTripMs: Int?
     /// Number of captured HAR entries (updated from settings/debug actions).
     var harEntryCount = 0
+    /// Array entries the engine sent in an undecodable shape this session. Non-zero means a level
+    /// was rendered with something missing — surfaced in Settings so a lossy decode is never silent.
+    private(set) var decodeDropCount = 0
     var harUploadStatusMessage = ""
 
     let queue = CodeQueueStore.shared
@@ -447,6 +450,9 @@ final class EncounterViewModel {
     }
 
     func configureBackgroundDelivery() {
+        BackgroundQueueService.shared.nextIntervalHandler = { [weak self] in
+            self?.queueProcessorDelay() ?? 6.0
+        }
         BackgroundQueueService.shared.flushHandler = { [weak self] in
             guard let self else { return true }
             let queueIsEmpty = await self.flushQueueNow(silent: true)
@@ -465,7 +471,9 @@ final class EncounterViewModel {
     func handleAppBackground() {
         BackgroundQueueService.shared.scheduleProcessing()
         if !queue.pending.isEmpty {
-            BackgroundQueueService.shared.runAggressiveFlushLoop { [weak self] in
+            BackgroundQueueService.shared.runAggressiveFlushLoop(
+                nextInterval: { [weak self] in self?.queueProcessorDelay() ?? 6.0 }
+            ) { [weak self] in
                 guard let self else { return true }
                 let queueIsEmpty = await self.flushQueueNow(silent: true)
                 if queueIsEmpty {
@@ -904,12 +912,9 @@ final class EncounterViewModel {
             }
             return
         }
-        if !engineReachable, currentModel != nil {
-            if showUI {
-                statusMessage = cachedLevelStatusMessage(reason: .serverUnreachable)
-            }
-            return
-        }
+        // Only background refreshes stand down on an unreachable engine. An explicit refresh must
+        // always retry: otherwise `engineReachable == false` latches until the app is restarted.
+        if !showUI, !engineReachable, currentModel != nil { return }
         if !showUI, isBusy { return }
         // Background refreshes must respect the anti-spam backoff; only an explicit user refresh may retry.
         if !showUI, isAntiSpamBackoffActive { return }
@@ -1026,6 +1031,17 @@ final class EncounterViewModel {
             if let gameID = selectedGameID {
                 await processGameEvents(for: gameID)
             }
+            await syncLiveActivity()
+        } catch where EncounterClient.isUndecodableResponseError(error) {
+            // The engine accepted the answer but sent back something we cannot parse. Queueing it
+            // would re-POST the same answer on every retry until Encounter's anti-spam wall fires.
+            // `lastCodeResult` would otherwise keep the previous code's verdict and show a stale
+            // toast for a code the engine actually accepted.
+            lastCodeResult = nil
+            await refreshLevel(showUI: false)
+            // After the refresh: a successful one clears statusMessage.
+            statusMessage = "Код отправлен, но ответ сервера не распознан. Проверьте журнал."
+            updateScreenWakeLock()
             await syncLiveActivity()
         } catch {
             markEngineUnreachable()
@@ -1297,35 +1313,21 @@ final class EncounterViewModel {
         let pendingBefore = queue.pending.count
         var shouldSyncLiveActivity = false
 
-        do {
-            // When codes are queued, send them immediately. A pre-flush ping only
-            // blocked real code attempts after the first timeout (e.g. mock PZDC network drop).
-            if !engineReachable, queue.pending.isEmpty, let probeGameID = selectedGameID {
-                let started = DispatchTime.now()
-                setCurrentModel(try await withSessionRecovery { try await $0.pingGame(gameID: probeGameID) })
-                recordServerRoundTrip(since: started)
-                try saveCookies(from: try ensureClient())
-                markEngineReachable()
-                await refreshAfterTransientLevelEventIfNeeded(gameID: probeGameID)
-                if let gameID = selectedGameID {
-                    await processGameEvents(for: gameID)
-                }
-            }
+        let outcome = await queue.flush(send: { submission in
+            let started = DispatchTime.now()
+            let updated = try await self.withSessionRecovery { try await $0.sendCode(submission) }
+            self.recordServerRoundTrip(since: started)
+            return updated
+        })
 
-            if let model = try await queue.flush(send: { submission in
-                let started = DispatchTime.now()
-                let updated = try await self.withSessionRecovery { try await $0.sendCode(submission) }
-                self.recordServerRoundTrip(since: started)
-                return updated
-            }) {
+        do {
+            if let model = outcome.latestModel {
                 setCurrentModel(model)
                 try saveCookies(from: try ensureClient())
                 markEngineReachable()
                 resetQueueRetryBackoff()
                 if let gameID = selectedGameID {
                     await refreshAfterTransientLevelEventIfNeeded(gameID: gameID)
-                }
-                if let gameID = selectedGameID {
                     await processGameEvents(for: gameID)
                 }
                 let message = queue.pending.isEmpty
@@ -1336,12 +1338,34 @@ final class EncounterViewModel {
                 }
                 lastCodeResult = feedback(from: model)
                 shouldSyncLiveActivity = true
-            } else if !queue.pending.isEmpty {
-                markEngineUnreachable()
-                recordQueueRetryFailure()
-                if !silent {
-                    statusMessage = "Движок недоступен, очередь сохранена"
-                    shouldSyncLiveActivity = true
+            }
+
+            if let error = outcome.failure, let failed = outcome.failedSubmission {
+                shouldSyncLiveActivity = true
+                if EncounterClient.isUndecodableResponseError(error) {
+                    // The POST reached the engine and the answer was recorded; only the reply was
+                    // unreadable. Keeping it queued re-POSTs the same answer until anti-spam fires.
+                    queue.discard(failed.id)
+                    // The engine did answer, so it is not the connection that is broken.
+                    markEngineReachable()
+                    resetQueueRetryBackoff()
+                    // Set the notice AFTER the refresh: a successful refreshLevel clears
+                    // statusMessage, which would erase the only trace of the discard.
+                    await refreshLevel(showUI: false)
+                    // The discard is reported even on a silent flush: a code left the queue
+                    // without a confirmed result, which the player must be able to notice.
+                    statusMessage = "Код «\(failed.code)» отправлен, но ответ сервера не распознан. Проверьте журнал."
+                    lastCodeResult = nil
+                } else {
+                    markEngineUnreachable()
+                    recordQueueRetryFailure()
+                    if EncounterClient.isAntiSpamError(error) {
+                        antiSpamVerificationURL = EncounterClient.antiSpamURL(from: error, settings: settings)
+                            ?? EncounterClient.defaultAntiSpamURL(settings: settings)
+                        showAntiSpamVerification = true
+                    } else if !silent {
+                        statusMessage = "Движок недоступен, очередь сохранена"
+                    }
                 }
             }
         } catch {
@@ -1349,11 +1373,6 @@ final class EncounterViewModel {
             recordQueueRetryFailure()
             if !silent {
                 presentError(error)
-                shouldSyncLiveActivity = true
-            } else if EncounterClient.isAntiSpamError(error) {
-                antiSpamVerificationURL = EncounterClient.antiSpamURL(from: error, settings: settings)
-                    ?? EncounterClient.defaultAntiSpamURL(settings: settings)
-                showAntiSpamVerification = true
                 shouldSyncLiveActivity = true
             }
         }
@@ -1474,6 +1493,7 @@ final class EncounterViewModel {
         let previousModel = currentModel
         let wasPlayable = currentModel?.isPlayable ?? true
         currentModel = model
+        decodeDropCount += model.droppedElementCount
         updateNewHintPopup(previousModel: previousModel, currentModel: model)
         updateTeammateCodePopup(previousModel: previousModel, currentModel: model)
         mergeCodeLogActions(model.level?.mixedActions ?? [], gameID: selectedGameID)
@@ -1679,10 +1699,10 @@ final class EncounterViewModel {
             return
         }
 
-        let previousActionIDs = Set(previousLevel.mixedActions.map(\.actionID))
+        let previousActionIDs = Set(previousLevel.mixedActions.map(\.id))
         let currentLogin = currentModel.login.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let newActions = currentLevel.mixedActions
-            .filter { !previousActionIDs.contains($0.actionID) }
+            .filter { !previousActionIDs.contains($0.id) }
             .filter { action in
                 let actionLogin = action.login.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 return actionLogin.isEmpty || actionLogin != currentLogin
@@ -1726,15 +1746,23 @@ final class EncounterViewModel {
         }
         guard !actions.isEmpty else { return }
 
-        var actionsByID = Dictionary(uniqueKeysWithValues: codeLogActions.map { ($0.actionID, $0) })
+        // Keyed by `id`, not `actionID`: the engine reuses `ActionId: 0` for every synthetic
+        // level-up action, which both collapsed them in the log and trapped `uniqueKeysWithValues`.
+        var actionsByID: [Int: CodeAction] = [:]
+        for action in codeLogActions {
+            actionsByID[action.id] = action
+        }
         for action in actions {
-            actionsByID[action.actionID] = action
+            actionsByID[action.id] = action
         }
         codeLogActions = actionsByID.values.sorted {
             if $0.levelNumber != $1.levelNumber {
                 return $0.levelNumber > $1.levelNumber
             }
-            return $0.actionID > $1.actionID
+            if $0.actionID != $1.actionID { return $0.actionID > $1.actionID }
+            // Every synthetic action has actionID 0; tie-break on id so the order is stable
+            // across launches (Dictionary.values order and sorted() are both unstable).
+            return $0.id > $1.id
         }
         CodeActionLogStore.save(codeLogActions, domain: domain, gameID: gameID)
     }

@@ -14,7 +14,10 @@ struct CodesView: View {
             if $0.levelNumber != $1.levelNumber {
                 return $0.levelNumber > $1.levelNumber
             }
-            return $0.actionID > $1.actionID
+            if $0.actionID != $1.actionID { return $0.actionID > $1.actionID }
+            // Every synthetic action has actionID 0; tie-break on id so the order is stable
+            // across launches (Dictionary.values order and sorted() are both unstable).
+            return $0.id > $1.id
         }
 
         var groups: [CodeActionLevelGroup] = []
@@ -237,7 +240,7 @@ struct CodesView: View {
                     Text(action.answer)
                         .font(.body.monospaced())
                         .foregroundStyle(action.isCorrect ? GameTheme.accent : GameTheme.text)
-                    Text("\(action.login), \(action.locDateTime)")
+                    Text(action.locDateTime.isEmpty ? action.login : "\(action.login), \(action.locDateTime)")
                         .font(.caption)
                         .foregroundStyle(GameTheme.muted)
                 }

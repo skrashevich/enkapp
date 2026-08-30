@@ -699,6 +699,28 @@ nonisolated final class EncounterClient {
         return message.contains("cannot unmarshal")
     }
 
+    /// The engine answered but the payload could not be turned into a `GameModel`, *and* the
+    /// request demonstrably reached it. A submitted answer in that state was already recorded, so
+    /// resending it duplicates the answer instead of fixing anything — that is what tripped the
+    /// Encounter anti-spam wall.
+    ///
+    /// Deliberately conservative: anything that might not have reached the engine (a proxy error
+    /// page, a timeout, a dropped connection) must return false, because discarding a code that
+    /// never arrived silently destroys a player's answer.
+    static func isUndecodableResponseError(_ error: Error) -> Bool {
+        // Swift-side failure: the Go layer had already parsed the engine's reply into a GameModel
+        // and re-encoded it, so the request unambiguously reached the engine.
+        if error is DecodingError { return true }
+
+        #if canImport(Encx)
+        // Go-side failure: only counts when the HTTP status was 2xx. The status is carried on the
+        // error by encx.UndecodableResponseError; string matching cannot tell these apart.
+        return EncxmobileIsUndecodableAcceptedError(error as NSError)
+        #else
+        return false
+        #endif
+    }
+
     static func isServerUnreachableError(_ error: Error) -> Bool {
         if isTimeoutError(error) {
             return true

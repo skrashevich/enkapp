@@ -291,7 +291,9 @@ struct LevelPlayView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled else { return }
-                await model.refreshLevel()
+                // Silent: this is an unattended poll, so it must respect the unreachable-engine
+                // and anti-spam guards. An explicit refresh bypasses both by design.
+                await model.refreshLevelSilently()
                 guard model.currentModel?.isGameFinished == true else { return }
             }
         }

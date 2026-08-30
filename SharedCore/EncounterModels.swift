@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import UIKit
 
 nonisolated enum GameEvent {
@@ -266,6 +267,8 @@ nonisolated struct GameModel: Decodable {
     let levels: [LevelSummary]
     let level: Level?
     let engineAction: EngineAction?
+    /// Total array entries dropped while decoding this payload, including the level's own.
+    let droppedElementCount: Int
 
     var isPlayable: Bool { event == GameEvent.normal }
     var isGameFinished: Bool { event == GameEvent.gameFinished }
@@ -329,9 +332,11 @@ nonisolated struct GameModel: Decodable {
         login = try container.decodeIfPresent(String.self, forKey: .login) ?? ""
         teamName = try container.decodeIfPresent(String.self, forKey: .teamName) ?? ""
         finishPlace = Self.decodeFinishPlace(from: decoder)
-        levels = try container.decodeIfPresent([LevelSummary].self, forKey: .levels) ?? []
+        let tally = DecodeDropTally()
+        levels = container.decodeLossyArray(LevelSummary.self, forKey: .levels, context: "Levels", tally: tally)
         level = try container.decodeIfPresent(Level.self, forKey: .level)
-        engineAction = try container.decodeIfPresent(EngineAction.self, forKey: .engineAction)
+        engineAction = try? container.decodeIfPresent(EngineAction.self, forKey: .engineAction)
+        droppedElementCount = tally.count + (level?.droppedElementCount ?? 0)
     }
 
     private static func decodeUnixDate(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Date? {
@@ -452,6 +457,9 @@ nonisolated struct Level: Decodable {
     let bonuses: [Bonus]
     let penaltyHelps: [Help]
     let mixedActions: [CodeAction]
+    /// How many array entries the engine sent in a shape we could not decode. Non-zero means the
+    /// level is displayed with something missing; surfaced in Settings so it is never silent.
+    let droppedElementCount: Int
 
     enum CodingKeys: String, CodingKey {
         case levelID = "LevelId"
@@ -494,14 +502,19 @@ nonisolated struct Level: Decodable {
         passedSectorsCount = try container.decodeIfPresent(Int.self, forKey: .passedSectorsCount) ?? 0
         passedBonusesCount = try container.decodeIfPresent(Int.self, forKey: .passedBonusesCount) ?? 0
         sectorsLeftToClose = try container.decodeIfPresent(Int.self, forKey: .sectorsLeftToClose) ?? 0
-        tasks = try container.decodeIfPresent([LevelTask].self, forKey: .tasks) ?? []
-        task = try container.decodeIfPresent(LevelTask.self, forKey: .task)
-        messages = try container.decodeIfPresent([AdminMessage].self, forKey: .messages) ?? []
-        sectors = try container.decodeIfPresent([Sector].self, forKey: .sectors) ?? []
-        helps = try container.decodeIfPresent([Help].self, forKey: .helps) ?? []
-        bonuses = try container.decodeIfPresent([Bonus].self, forKey: .bonuses) ?? []
-        penaltyHelps = try container.decodeIfPresent([Help].self, forKey: .penaltyHelps) ?? []
-        mixedActions = try container.decodeIfPresent([CodeAction].self, forKey: .mixedActions) ?? []
+        // Element-wise so one malformed entry cannot take down the whole level payload.
+        // The scalar counts above (required/passed/left-to-close) come from their own fields, so
+        // they stay accurate even if a sector or bonus row has to be skipped.
+        let tally = DecodeDropTally()
+        tasks = container.decodeLossyArray(LevelTask.self, forKey: .tasks, context: "Tasks", tally: tally)
+        task = try? container.decodeIfPresent(LevelTask.self, forKey: .task)
+        messages = container.decodeLossyArray(AdminMessage.self, forKey: .messages, context: "Messages", tally: tally)
+        sectors = container.decodeLossyArray(Sector.self, forKey: .sectors, context: "Sectors", tally: tally)
+        helps = container.decodeLossyArray(Help.self, forKey: .helps, context: "Helps", tally: tally)
+        bonuses = container.decodeLossyArray(Bonus.self, forKey: .bonuses, context: "Bonuses", tally: tally)
+        penaltyHelps = container.decodeLossyArray(Help.self, forKey: .penaltyHelps, context: "PenaltyHelps", tally: tally)
+        mixedActions = container.decodeLossyArray(CodeAction.self, forKey: .mixedActions, context: "MixedActions", tally: tally)
+        droppedElementCount = tally.count
     }
 
     /// Seconds until the nearest hint that is still locked (`RemainSeconds` > 0, no text yet).
@@ -511,6 +524,63 @@ nonisolated struct Level: Decodable {
             .map(\.remainSeconds)
             .min() ?? 0
     }
+}
+
+/// Counts elements dropped while decoding one payload, so a lossy decode is never silent.
+nonisolated final class DecodeDropTally {
+    private(set) var count = 0
+
+    func record(_ error: Error, context: String) {
+        count += 1
+        Self.logger.error("dropped \(context, privacy: .public) element: \(String(describing: error), privacy: .public)")
+    }
+
+    private static let logger = Logger(subsystem: "com.svk-team.encx-cli", category: "decode")
+}
+
+extension KeyedDecodingContainer {
+    /// Decodes an array element by element, skipping entries the engine sends in an unexpected
+    /// shape instead of failing the whole payload.
+    ///
+    /// A strict array decode is what turned a single `LocDateTime: null` into a total outage: the
+    /// GameModel failed to decode, `sendCode` threw on an HTTP 200 the engine had already accepted,
+    /// and the app re-POSTed the answer until Encounter's anti-spam wall fired. Losing one log row
+    /// is strictly better than losing the whole game state.
+    ///
+    /// Drops are tallied rather than swallowed — see `DecodeDropTally`.
+    nonisolated func decodeLossyArray<T: Decodable>(
+        _ type: T.Type,
+        forKey key: Key,
+        context: String,
+        tally: DecodeDropTally
+    ) -> [T] {
+        guard contains(key), var unkeyed = try? nestedUnkeyedContainer(forKey: key) else { return [] }
+
+        var result: [T] = []
+        result.reserveCapacity(unkeyed.count ?? 0)
+
+        while !unkeyed.isAtEnd {
+            let indexBeforeDecode = unkeyed.currentIndex
+            do {
+                result.append(try unkeyed.decode(T.self))
+            } catch {
+                tally.record(error, context: context)
+                // A failed decode does not necessarily consume the element. Step over it
+                // explicitly, and bail out if even that fails, so the loop cannot spin forever.
+                if unkeyed.currentIndex == indexBeforeDecode,
+                   (try? unkeyed.decode(SkippedElement.self)) == nil {
+                    break
+                }
+            }
+        }
+        return result
+    }
+
+}
+
+/// Accepts any JSON value; used only to advance past an element that failed to decode.
+private nonisolated struct SkippedElement: Decodable {
+    init(from decoder: Decoder) throws {}
 }
 
 nonisolated struct LevelTask: Decodable, Hashable {
@@ -704,9 +774,28 @@ nonisolated struct CodeAction: Codable, Identifiable, Hashable {
     let login: String
     let answer: String
     let isCorrect: Bool
+    /// Time string rendered by the engine. It is null on the synthetic action the engine injects
+    /// for the previous level right after a level-up, so it falls back to `EnterDateTime`.
     let locDateTime: String
 
-    var id: Int { actionID }
+    /// The engine stamps every synthetic level-up action with `ActionId: 0`, so a game yields
+    /// several actions sharing that id. Deriving a stable content id keeps them from overwriting
+    /// each other in the persisted code log; real engine ids are always positive.
+    var id: Int {
+        guard actionID == 0 else { return actionID }
+        let key = "\(levelNumber)|\(kind)|\(isCorrect)|\(login)|\(answer)"
+        return -Int(Self.stableHash(key) & 0x7FFF_FFFF) - 1
+    }
+
+    /// FNV-1a: `Hasher` is seeded per process, which would break persistence across launches.
+    private static func stableHash(_ value: String) -> UInt64 {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 0x0000_0100_0000_01b3
+        }
+        return hash
+    }
 
     enum CodingKeys: String, CodingKey {
         case actionID = "ActionId"
@@ -716,6 +805,62 @@ nonisolated struct CodeAction: Codable, Identifiable, Hashable {
         case answer = "Answer"
         case isCorrect = "IsCorrect"
         case locDateTime = "LocDateTime"
+        case enterDateTime = "EnterDateTime"
+    }
+
+    private enum EnterDateTimeKeys: String, CodingKey {
+        case timestamp = "Timestamp"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        actionID = try container.decode(Int.self, forKey: .actionID)
+        levelNumber = try container.decode(Int.self, forKey: .levelNumber)
+        kind = try container.decode(Int.self, forKey: .kind)
+        login = try container.decode(String.self, forKey: .login)
+        answer = try container.decode(String.self, forKey: .answer)
+        isCorrect = try container.decode(Bool.self, forKey: .isCorrect)
+
+        if let rendered = try container.decodeIfPresent(String.self, forKey: .locDateTime) {
+            locDateTime = rendered
+        } else {
+            locDateTime = Self.timeText(fromEnterDateTimeIn: container)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(actionID, forKey: .actionID)
+        try container.encode(levelNumber, forKey: .levelNumber)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(login, forKey: .login)
+        try container.encode(answer, forKey: .answer)
+        try container.encode(isCorrect, forKey: .isCorrect)
+        try container.encode(locDateTime, forKey: .locDateTime)
+    }
+
+    /// Matches the engine's `dd.MM HH:mm:ss` shape. Note it renders in the *device* timezone, while
+    /// the engine renders in the game's — so on a foreign-timezone device this row can read offset
+    /// from its neighbours. Accepted: the game timezone is not present in the payload.
+    private static let fallbackFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "dd.MM HH:mm:ss"
+        return formatter
+    }()
+
+    private static func timeText(
+        fromEnterDateTimeIn container: KeyedDecodingContainer<CodingKeys>
+    ) -> String {
+        guard let enterContainer = try? container.nestedContainer(
+            keyedBy: EnterDateTimeKeys.self,
+            forKey: .enterDateTime
+        ),
+              let timestamp = try? enterContainer.decodeIfPresent(Double.self, forKey: .timestamp)
+        else {
+            return ""
+        }
+        return fallbackFormatter.string(from: Date(timeIntervalSince1970: timestamp))
     }
 }
 

@@ -214,6 +214,16 @@ FOUNDATION_EXPORT NSString* _Nonnull EncxmobileEventText(int64_t code);
 FOUNDATION_EXPORT BOOL EncxmobileIsAntiSpamError(NSError* _Nullable err);
 
 /**
+ * IsUndecodableAcceptedError reports whether err is an unreadable reply from a 2xx response, i.e.
+the request reached the engine and only the reply could not be parsed.
+
+A submitted answer in that state was already recorded, so resending it would duplicate it.
+Returns false for non-2xx bodies, where a proxy may have answered instead and the request may
+never have arrived — those must stay retryable.
+ */
+FOUNDATION_EXPORT BOOL EncxmobileIsUndecodableAcceptedError(NSError* _Nullable err);
+
+/**
  * LoginErrorText returns a human-readable login error description.
  */
 FOUNDATION_EXPORT NSString* _Nonnull EncxmobileLoginErrorText(int64_t code);
