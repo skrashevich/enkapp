@@ -570,16 +570,24 @@ final class EncounterViewModel {
     }
 
     func selectDomain(_ domain: String) async {
+        guard applyDomainSelection(domain) else { return }
+        await refreshGames()
+    }
+
+    /// Switches the active domain without touching the network, so onboarding can change
+    /// hosts without a games refresh (and its error alerts) firing mid-flow.
+    @discardableResult
+    func applyDomainSelection(_ domain: String) -> Bool {
         let normalized = domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalized.isEmpty else { return }
-        guard normalized != settings.domain else { return }
+        guard !normalized.isEmpty else { return false }
+        guard normalized != settings.domain else { return false }
 
         settings.domain = normalized
         rememberDomain(normalized)
         persistAuthorizationSettings()
         client = nil
         reloadCodeLogCacheForSelectedGame()
-        await refreshGames()
+        return true
     }
 
     func rememberDomain(_ domain: String) {

@@ -1,6 +1,5 @@
 import Foundation
 import OSLog
-import UIKit
 
 nonisolated enum GameEvent {
     static let normal = 0
@@ -334,7 +333,18 @@ nonisolated struct GameModel: Decodable {
         finishPlace = Self.decodeFinishPlace(from: decoder)
         let tally = DecodeDropTally()
         levels = container.decodeLossyArray(LevelSummary.self, forKey: .levels, context: "Levels", tally: tally)
-        level = try container.decodeIfPresent(Level.self, forKey: .level)
+        let decodedLevel = try container.decodeIfPresent(Level.self, forKey: .level)
+        if var decodedLevel {
+            var levelNumbersByID: [Int: Int] = [:]
+            for summary in levels {
+                levelNumbersByID[summary.levelID] = summary.levelNumber
+            }
+            levelNumbersByID[decodedLevel.levelID] = decodedLevel.number
+            decodedLevel.resolveActionLevelNumbers(using: levelNumbersByID)
+            level = decodedLevel
+        } else {
+            level = nil
+        }
         engineAction = try? container.decodeIfPresent(EngineAction.self, forKey: .engineAction)
         droppedElementCount = tally.count + (level?.droppedElementCount ?? 0)
     }
@@ -456,7 +466,7 @@ nonisolated struct Level: Decodable {
     let helps: [Help]
     let bonuses: [Bonus]
     let penaltyHelps: [Help]
-    let mixedActions: [CodeAction]
+    private(set) var mixedActions: [CodeAction]
     /// How many array entries the engine sent in a shape we could not decode. Non-zero means the
     /// level is displayed with something missing; surfaced in Settings so it is never silent.
     let droppedElementCount: Int
@@ -515,6 +525,12 @@ nonisolated struct Level: Decodable {
         penaltyHelps = container.decodeLossyArray(Help.self, forKey: .penaltyHelps, context: "PenaltyHelps", tally: tally)
         mixedActions = container.decodeLossyArray(CodeAction.self, forKey: .mixedActions, context: "MixedActions", tally: tally)
         droppedElementCount = tally.count
+    }
+
+    /// Encounter uses `LevelNumber: 0` for bonus actions. `LevelId` still points at the real
+    /// level, so resolve that wire-format sentinel before the action reaches the persistent log.
+    mutating func resolveActionLevelNumbers(using levelNumbersByID: [Int: Int]) {
+        mixedActions = mixedActions.map { $0.resolvingLevelNumber(using: levelNumbersByID) }
     }
 
     /// Seconds until the nearest hint that is still locked (`RemainSeconds` > 0, no text yet).
@@ -769,6 +785,7 @@ nonisolated struct Help: Decodable, Identifiable, Hashable {
 
 nonisolated struct CodeAction: Codable, Identifiable, Hashable {
     let actionID: Int
+    let levelID: Int?
     let levelNumber: Int
     let kind: Int
     let login: String
@@ -799,6 +816,7 @@ nonisolated struct CodeAction: Codable, Identifiable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case actionID = "ActionId"
+        case levelID = "LevelId"
         case levelNumber = "LevelNumber"
         case kind = "Kind"
         case login = "Login"
@@ -815,6 +833,7 @@ nonisolated struct CodeAction: Codable, Identifiable, Hashable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         actionID = try container.decode(Int.self, forKey: .actionID)
+        levelID = try container.decodeIfPresent(Int.self, forKey: .levelID)
         levelNumber = try container.decode(Int.self, forKey: .levelNumber)
         kind = try container.decode(Int.self, forKey: .kind)
         login = try container.decode(String.self, forKey: .login)
@@ -831,12 +850,53 @@ nonisolated struct CodeAction: Codable, Identifiable, Hashable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(actionID, forKey: .actionID)
+        try container.encodeIfPresent(levelID, forKey: .levelID)
         try container.encode(levelNumber, forKey: .levelNumber)
         try container.encode(kind, forKey: .kind)
         try container.encode(login, forKey: .login)
         try container.encode(answer, forKey: .answer)
         try container.encode(isCorrect, forKey: .isCorrect)
         try container.encode(locDateTime, forKey: .locDateTime)
+    }
+
+    fileprivate func resolvingLevelNumber(using levelNumbersByID: [Int: Int]) -> CodeAction {
+        guard levelNumber == 0,
+              let levelID,
+              let resolvedLevelNumber = levelNumbersByID[levelID],
+              resolvedLevelNumber > 0 else {
+            return self
+        }
+
+        return CodeAction(
+            actionID: actionID,
+            levelID: levelID,
+            levelNumber: resolvedLevelNumber,
+            kind: kind,
+            login: login,
+            answer: answer,
+            isCorrect: isCorrect,
+            locDateTime: locDateTime
+        )
+    }
+
+    private init(
+        actionID: Int,
+        levelID: Int?,
+        levelNumber: Int,
+        kind: Int,
+        login: String,
+        answer: String,
+        isCorrect: Bool,
+        locDateTime: String
+    ) {
+        self.actionID = actionID
+        self.levelID = levelID
+        self.levelNumber = levelNumber
+        self.kind = kind
+        self.login = login
+        self.answer = answer
+        self.isCorrect = isCorrect
+        self.locDateTime = locDateTime
     }
 
     /// Matches the engine's `dd.MM HH:mm:ss` shape. Note it renders in the *device* timezone, while

@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var liveActivityPushStatus: PermissionCheckStatus = .pending
     @State private var showHARShareSheet = false
     @State private var showDomainChooser = false
+    @State private var showOnboarding = false
     @State private var harShareURL: URL?
     @State private var harExportError: String?
     @Environment(\.scenePhase) private var scenePhase
@@ -30,6 +31,7 @@ struct SettingsView: View {
             LazyVStack(alignment: .leading, spacing: 16) {
                 settingsHeader
                 accountSection
+                setupSection
                 connectionSection
                 notificationsSection
                 liveActivitySection
@@ -60,6 +62,11 @@ struct SettingsView: View {
             DomainChooserView(model: model, isPresented: $showDomainChooser)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(isPresented: $showOnboarding) {
+            OnboardingView(model: model) {
+                showOnboarding = false
+            }
         }
         .task {
             if model.settings.liveActivityEnabled {
@@ -209,6 +216,29 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(GameTheme.muted)
             }
+        }
+        .sectionPanel()
+    }
+
+    private var setupSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle("Первоначальная настройка")
+            Button {
+                showOnboarding = true
+            } label: {
+                DashboardSettingsRow(
+                    title: "Пройти настройку заново",
+                    subtitle: "Домен, вход в аккаунт и разрешения на оповещения шаг за шагом.",
+                    systemImage: "sparkles",
+                    tint: GameTheme.sectionHeader
+                ) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GameTheme.muted)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isBusy)
         }
         .sectionPanel()
     }
