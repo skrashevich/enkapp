@@ -540,6 +540,13 @@ nonisolated struct Level: Decodable {
             .map(\.remainSeconds)
             .min() ?? 0
     }
+
+    /// Mirrors encx.Level.CanSubmitLevelAnswer(). Bonus answers are deliberately not covered by
+    /// this rule: Encounter's answer-block window applies only to LevelAction.Answer.
+    func canSubmitLevelAnswer() -> Bool {
+        guard !isPassed, !dismissed else { return false }
+        return !hasAnswerBlockRule || blockDuration <= 0
+    }
 }
 
 /// Counts elements dropped while decoding one payload, so a lossy decode is never silent.
@@ -941,6 +948,52 @@ nonisolated struct ActionResult: Decodable {
     enum CodingKeys: String, CodingKey {
         case answer = "Answer"
         case isCorrectAnswer = "IsCorrectAnswer"
+    }
+}
+
+nonisolated enum CodeAnswerVerdict: Equatable {
+    case correct
+    case incorrect
+    /// The engine echoed the answer but did not judge it, for example while an answer-block
+    /// window was active. This must not be presented as an incorrect answer.
+    case unchecked
+}
+
+nonisolated struct SubmittedAnswerFeedback: Equatable {
+    let answer: String
+    let verdict: CodeAnswerVerdict
+
+    var message: String {
+        switch verdict {
+        case .correct:
+            return "Код принят: \(answer)"
+        case .incorrect:
+            return "Код не подошёл: \(answer)"
+        case .unchecked:
+            return "Код не проверялся: \(answer)"
+        }
+    }
+}
+
+extension ActionResult {
+    var submittedAnswerFeedback: SubmittedAnswerFeedback? {
+        guard let answer else { return nil }
+        let verdict: CodeAnswerVerdict
+        switch isCorrectAnswer {
+        case true:
+            verdict = .correct
+        case false:
+            verdict = .incorrect
+        case nil:
+            verdict = .unchecked
+        }
+        return SubmittedAnswerFeedback(answer: answer, verdict: verdict)
+    }
+}
+
+extension EngineAction {
+    var submittedAnswerFeedback: SubmittedAnswerFeedback? {
+        levelAction?.submittedAnswerFeedback ?? bonusAction?.submittedAnswerFeedback
     }
 }
 

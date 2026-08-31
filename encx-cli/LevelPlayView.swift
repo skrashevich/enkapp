@@ -324,10 +324,14 @@ struct LevelPlayView: View {
                 previousText: previousCodeDraft,
                 canSubmitLevel: canSubmitCode(level: level, kind: .level),
                 canSubmitBonus: canSubmitCode(level: level, kind: .bonus),
+                levelBlockDuration: level.canSubmitLevelAnswer() ? 0 : level.blockDuration,
                 isFocused: $codeFieldFocused,
                 onRepeatPrevious: repeatPreviousCodeDraft,
                 onSubmitLevel: { submitCodeDraft(kind: .level) },
-                onSubmitBonus: { submitCodeDraft(kind: .bonus) }
+                onSubmitBonus: { submitCodeDraft(kind: .bonus) },
+                onLevelBlockExpired: {
+                    Task { await model.refreshLevelSilently() }
+                }
             )
         }
         .overlay(alignment: .bottom) {
@@ -368,13 +372,24 @@ struct LevelPlayView: View {
     private func codeResultToastView(_ result: CodeResultFeedback) -> some View {
         Text(result.message)
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(result.isCorrect ? GameTheme.accent : .orange)
+            .foregroundStyle(codeResultColor(for: result.verdict))
             .multilineTextAlignment(.center)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
             .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 10))
             .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+    }
+
+    private func codeResultColor(for verdict: CodeAnswerVerdict) -> Color {
+        switch verdict {
+        case .correct:
+            return GameTheme.accent
+        case .incorrect:
+            return .orange
+        case .unchecked:
+            return GameTheme.sectionHeader
+        }
     }
 
     private func teammateCodePopupView(_ popup: TeammateCodePopup) -> some View {
@@ -429,6 +444,20 @@ struct LevelPlayView: View {
     private func submitCodeDraft(kind: CodeSubmissionKind) {
         let trimmed = codeDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        if let level = model.currentModel?.level {
+            let canSubmit: Bool
+            switch kind {
+            case .level:
+                canSubmit = model.canSubmitLevelCode(on: level)
+            case .bonus:
+                canSubmit = model.canSubmitBonusCode(on: level)
+            }
+            guard canSubmit else {
+                // Let the model publish the precise reason, but keep the unsent draft intact.
+                model.submitCode(trimmed, kind: kind)
+                return
+            }
+        }
         previousCodeDraft = trimmed
         codeDraft = ""
         model.submitCode(trimmed, kind: kind)
@@ -680,63 +709,97 @@ private struct LevelCodeInputBar: View {
     var previousText: String
     var canSubmitLevel: Bool
     var canSubmitBonus: Bool
+    var levelBlockDuration: Int
     var isFocused: FocusState<Bool>.Binding
     var onRepeatPrevious: () -> Void
     var onSubmitLevel: () -> Void
     var onSubmitBonus: () -> Void
+    var onLevelBlockExpired: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            TextField("Введите ответ или код и нажмите Enter", text: $text)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.send)
-                .focused(isFocused)
-                .onSubmit(onSubmitLevel)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(GameTheme.border, lineWidth: 1)
-                }
-                .foregroundStyle(GameTheme.text)
-
-            if !previousText.isEmpty {
-                Button(action: onRepeatPrevious) {
-                    Image(systemName: "arrow.uturn.backward")
-                        .frame(width: 40, height: 40)
-                        .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
-                        .foregroundStyle(GameTheme.text)
-                }
-                .accessibilityLabel("Повторить предыдущий код")
-                .accessibilityHint("Вернуть предыдущий код в поле ввода для правки")
+        VStack(spacing: 6) {
+            if levelBlockDuration > 0 {
+                LevelAnswerBlockCountdown(
+                    remainSeconds: levelBlockDuration,
+                    onExpire: onLevelBlockExpired
+                )
             }
 
-            if canSubmitBonus {
-                Button(action: onSubmitBonus) {
-                    Text("Бонус")
-                        .font(.caption.weight(.semibold))
-                        .frame(height: 40)
-                        .padding(.horizontal, 10)
-                        .background(GameTheme.bonusTitle, in: RoundedRectangle(cornerRadius: 8))
+            HStack(spacing: 10) {
+                TextField("Введите ответ или код и нажмите Enter", text: $text)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.send)
+                    .focused(isFocused)
+                    .onSubmit(onSubmitLevel)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(GameTheme.border, lineWidth: 1)
+                    }
+                    .foregroundStyle(GameTheme.text)
+
+                if !previousText.isEmpty {
+                    Button(action: onRepeatPrevious) {
+                        Image(systemName: "arrow.uturn.backward")
+                            .frame(width: 40, height: 40)
+                            .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
+                            .foregroundStyle(GameTheme.text)
+                    }
+                    .accessibilityLabel("Повторить предыдущий код")
+                    .accessibilityHint("Вернуть предыдущий код в поле ввода для правки")
+                }
+
+                if canSubmitBonus {
+                    Button(action: onSubmitBonus) {
+                        Text("Бонус")
+                            .font(.caption.weight(.semibold))
+                            .frame(height: 40)
+                            .padding(.horizontal, 10)
+                            .background(GameTheme.bonusTitle, in: RoundedRectangle(cornerRadius: 8))
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityHint("Отправить как ответ на бонусное задание")
+                }
+
+                Button(action: onSubmitLevel) {
+                    Image(systemName: "paperplane.fill")
+                        .frame(width: 40, height: 40)
+                        .background(canSubmitLevel ? GameTheme.accent : GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
                         .foregroundStyle(.white)
                 }
-                .accessibilityHint("Отправить как ответ на бонусное задание")
+                .disabled(!canSubmitLevel)
+                .accessibilityHint("Отправить как ответ на уровень")
             }
-
-            Button(action: onSubmitLevel) {
-                Image(systemName: "paperplane.fill")
-                    .frame(width: 40, height: 40)
-                    .background(canSubmitLevel ? GameTheme.accent : GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
-                    .foregroundStyle(.white)
-            }
-            .disabled(!canSubmitLevel)
-            .accessibilityHint("Отправить как ответ на уровень")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(GameTheme.background)
+    }
+}
+
+private struct LevelAnswerBlockCountdown: View {
+    let remainSeconds: Int
+    let onExpire: () -> Void
+    @State private var syncedAt = Date()
+
+    var body: some View {
+        TickingCountdownText(
+            countdown: SyncedSecondsCountdown(remainSeconds: remainSeconds, syncedAt: syncedAt),
+            label: { "Ответы на уровень через \($0) сек. · бонусы доступны" }
+        )
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(GameTheme.sectionHeader)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { syncedAt = Date() }
+        .onChange(of: remainSeconds) { _, _ in syncedAt = Date() }
+        .task(id: remainSeconds) {
+            try? await Task.sleep(for: .seconds(Double(remainSeconds) + 1))
+            guard !Task.isCancelled else { return }
+            onExpire()
+        }
     }
 }
 

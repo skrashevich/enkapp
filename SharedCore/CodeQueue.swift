@@ -7,6 +7,20 @@ enum CodeSubmissionKind: String, Codable, Hashable {
     case bonus
 }
 
+enum CodeSubmissionDeferredError: LocalizedError {
+    case levelAnswerBlocked(seconds: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .levelAnswerBlocked(let seconds):
+            if seconds > 0 {
+                return "Ответы на уровень заблокированы ещё на \(seconds) сек."
+            }
+            return "Ответ на уровень сейчас нельзя отправить."
+        }
+    }
+}
+
 struct CodeSubmission: Codable, Identifiable, Hashable {
     let id: UUID
     let gameID: Int64

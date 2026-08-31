@@ -50,7 +50,8 @@ final class AppClipViewModel {
     }
 
     var canSubmitCode: Bool {
-        currentModel?.isPlayable == true && currentModel?.level != nil
+        guard currentModel?.isPlayable == true, let level = currentModel?.level else { return false }
+        return level.canSubmitLevelAnswer()
     }
 
     var needsLogin: Bool {
@@ -165,13 +166,27 @@ final class AppClipViewModel {
         }
 
         await runBusy(silent ? "" : "Отправка очереди...", showBusy: !silent) {
+            var latestQueueModel = currentModel
             let outcome = await queue.flush { submission in
-                try await self.withSessionRecovery { try await $0.sendCode(submission) }
+                if submission.kind == .level,
+                   submission.gameID == Int64(latestQueueModel?.gameID ?? 0),
+                   submission.levelID == Int64(latestQueueModel?.level?.levelID ?? 0),
+                   let level = latestQueueModel?.level,
+                   !level.canSubmitLevelAnswer() {
+                    throw CodeSubmissionDeferredError.levelAnswerBlocked(seconds: level.blockDuration)
+                }
+                let updated = try await self.withSessionRecovery { try await $0.sendCode(submission) }
+                latestQueueModel = updated
+                return updated
             }
             currentModel = outcome.latestModel ?? currentModel
             try saveCookies(from: try ensureClient())
 
             if let error = outcome.failure, let failed = outcome.failedSubmission {
+                if let deferred = error as? CodeSubmissionDeferredError {
+                    statusMessage = "\(deferred.localizedDescription) Код «\(failed.code)» сохранён в очереди."
+                    return
+                }
                 guard EncounterClient.isUndecodableResponseError(error) else { throw error }
                 // Already accepted by the engine — retrying would submit the same answer again.
                 queue.discard(failed.id)
@@ -286,26 +301,19 @@ final class AppClipViewModel {
     }
 
     private static func levelSubmissionBlockMessage(for level: Level) -> String? {
-        if level.isPassed {
+        if !level.canSubmitLevelAnswer(), level.isPassed {
             return "Уровень уже пройден — ответы больше не отправляются."
         }
-        if level.dismissed {
+        if !level.canSubmitLevelAnswer(), level.dismissed {
             return "Уровень снят — дождитесь следующего уровня."
         }
-        if level.hasAnswerBlockRule, level.blockDuration > 0 {
+        if !level.canSubmitLevelAnswer(), level.blockDuration > 0 {
             return "Ответы на уровень заблокированы ещё на \(level.blockDuration) сек."
         }
         return nil
     }
 
     static func resultMessage(from model: GameModel?) -> String {
-        guard let engineAction = model?.engineAction else { return "Код отправлен" }
-        let result = [engineAction.levelAction, engineAction.bonusAction]
-            .compactMap { $0 }
-            .first { $0.answer != nil && $0.isCorrectAnswer != nil }
-        guard let result, let answer = result.answer, let isCorrect = result.isCorrectAnswer else {
-            return "Код отправлен"
-        }
-        return isCorrect ? "Код принят: \(answer)" : "Код не подошёл: \(answer)"
+        model?.engineAction?.submittedAnswerFeedback?.message ?? "Код отправлен"
     }
 }

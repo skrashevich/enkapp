@@ -220,6 +220,12 @@ struct AppClipRootView: View {
                 .foregroundStyle(GameTheme.sectionHeader)
             }
 
+            if !level.canSubmitLevelAnswer(), level.blockDuration > 0 {
+                AppClipAnswerBlockCountdown(remainSeconds: level.blockDuration) {
+                    Task { await model.loadGame() }
+                }
+            }
+
             if !level.helps.isEmpty {
                 ForEach(level.helps.prefix(2)) { help in
                     if let text = help.unlockedText {
@@ -313,8 +319,35 @@ struct AppClipRootView: View {
     private func submitDraft() {
         let value = codeDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
+        guard model.canSubmitCode else {
+            // Preserve the draft and let the view model surface the current block reason.
+            Task { await model.submitCode(value) }
+            return
+        }
         previousCodeDraft = value
         codeDraft = ""
         Task { await model.submitCode(value) }
+    }
+}
+
+private struct AppClipAnswerBlockCountdown: View {
+    let remainSeconds: Int
+    let onExpire: () -> Void
+    @State private var syncedAt = Date()
+
+    var body: some View {
+        TickingCountdownText(
+            countdown: SyncedSecondsCountdown(remainSeconds: remainSeconds, syncedAt: syncedAt),
+            label: { "Ответы можно отправить через \($0) сек." }
+        )
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(GameTheme.sectionHeader)
+        .onAppear { syncedAt = Date() }
+        .onChange(of: remainSeconds) { _, _ in syncedAt = Date() }
+        .task(id: remainSeconds) {
+            try? await Task.sleep(for: .seconds(Double(remainSeconds) + 1))
+            guard !Task.isCancelled else { return }
+            onExpire()
+        }
     }
 }

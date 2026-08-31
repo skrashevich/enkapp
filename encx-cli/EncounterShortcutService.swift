@@ -139,14 +139,27 @@ final class EncounterShortcutService {
             return "Очередь пуста"
         }
 
+        var latestQueueModel = try await loadPlayableGameModel()
         let outcome = await queue.flush { submission in
-            try await withSessionRecovery { try await $0.sendCode(submission) }
+            if submission.kind == .level,
+               submission.gameID == Int64(latestQueueModel.gameID),
+               submission.levelID == Int64(latestQueueModel.level?.levelID ?? 0),
+               let level = latestQueueModel.level,
+               !level.canSubmitLevelAnswer() {
+                throw CodeSubmissionDeferredError.levelAnswerBlocked(seconds: level.blockDuration)
+            }
+            let updated = try await withSessionRecovery { try await $0.sendCode(submission) }
+            latestQueueModel = updated
+            return updated
         }
         try saveCookies(from: try ensureClient())
 
         // Check the failure BEFORE reporting success: a partial flush can carry both, and
         // reporting only the success would swallow a genuine error.
         if let error = outcome.failure, let failed = outcome.failedSubmission {
+            if let deferred = error as? CodeSubmissionDeferredError {
+                return "\(deferred.localizedDescription) Код «\(failed.code)» сохранён в очереди."
+            }
             guard EncounterClient.isUndecodableResponseError(error) else { throw error }
             // Already accepted by the engine — retrying would submit the same answer again.
             queue.discard(failed.id)
@@ -347,13 +360,13 @@ final class EncounterShortcutService {
     }
 
     private static func levelSubmissionBlockMessage(for level: Level) -> String? {
-        if level.isPassed {
+        if !level.canSubmitLevelAnswer(), level.isPassed {
             return "Уровень уже пройден — ответы больше не отправляются."
         }
-        if level.dismissed {
+        if !level.canSubmitLevelAnswer(), level.dismissed {
             return "Уровень снят — дождитесь следующего уровня."
         }
-        if level.hasAnswerBlockRule, level.blockDuration > 0 {
+        if !level.canSubmitLevelAnswer(), level.blockDuration > 0 {
             return "Ответы на уровень заблокированы ещё на \(level.blockDuration) сек."
         }
         return nil
@@ -419,13 +432,6 @@ final class EncounterShortcutService {
     }
 
     static func resultMessage(from model: GameModel?) -> String {
-        guard let engineAction = model?.engineAction else { return "Код отправлен" }
-        let result = [engineAction.levelAction, engineAction.bonusAction]
-            .compactMap { $0 }
-            .first { $0.answer != nil && $0.isCorrectAnswer != nil }
-        guard let result, let answer = result.answer, let isCorrect = result.isCorrectAnswer else {
-            return "Код отправлен"
-        }
-        return isCorrect ? "Код принят: \(answer)" : "Код не подошёл: \(answer)"
+        model?.engineAction?.submittedAnswerFeedback?.message ?? "Код отправлен"
     }
 }

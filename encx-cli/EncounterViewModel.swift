@@ -23,7 +23,7 @@ enum AppRoute: Hashable {
 
 struct CodeResultFeedback: Equatable {
     let message: String
-    let isCorrect: Bool
+    let verdict: CodeAnswerVerdict
     let id: UUID
 }
 
@@ -123,6 +123,9 @@ final class EncounterViewModel {
     var currentModel: GameModel?
     /// Countdown until game start derived from the latest game model.
     var gameStartCountdown: SyncedSecondsCountdown?
+    /// Local anchor for Encounter's remaining answer-block window. Queue retries use it too, so a
+    /// batch of offline codes cannot submit its second answer into the block opened by the first.
+    private var levelAnswerBlockCountdown: SyncedSecondsCountdown?
     var selectedScreen: AppScreen = .games
     var navigationPath: [AppRoute] = []
     var isBusy = false
@@ -1114,13 +1117,13 @@ final class EncounterViewModel {
     }
 
     private func levelSubmissionBlockMessage(for level: Level) -> String? {
-        if level.isPassed {
+        if !level.canSubmitLevelAnswer(), level.isPassed {
             return "Уровень уже пройден — ответы больше не отправляются."
         }
-        if level.dismissed {
+        if !level.canSubmitLevelAnswer(), level.dismissed {
             return "Уровень снят — дождитесь следующего уровня."
         }
-        if level.hasAnswerBlockRule, level.blockDuration > 0 {
+        if !level.canSubmitLevelAnswer(), level.blockDuration > 0 {
             return "Ответы на уровень заблокированы ещё на \(level.blockDuration) сек. Бонусные ответы можно отправить отдельно."
         }
         return nil
@@ -1294,6 +1297,18 @@ final class EncounterViewModel {
 
     private func queueProcessorDelay() -> TimeInterval {
         guard !queue.pending.isEmpty else { return 6.0 }
+        if let submission = queue.pending.first,
+           submission.kind == .level,
+           submission.gameID == Int64(currentModel?.gameID ?? 0),
+           submission.levelID == Int64(currentModel?.level?.levelID ?? 0),
+           let level = currentModel?.level,
+           !level.canSubmitLevelAnswer() {
+            let remaining = levelAnswerBlockCountdown?.remainingSeconds() ?? level.blockDuration
+            if remaining > 0 {
+                return TimeInterval(remaining) + 1
+            }
+            return level.blockDuration > 0 ? 0.4 : 6.0
+        }
         return engineReachable ? 0.4 : queueRetryBackoffSeconds
     }
 
@@ -1390,14 +1405,24 @@ final class EncounterViewModel {
         }
         guard !isAntiSpamBackoffActive else { return false }
         guard !queue.isFlushing else { return queue.pending.isEmpty }
+        if await shouldDeferFirstQueuedLevelAnswer(silent: silent) { return false }
 
         let pendingBefore = queue.pending.count
         var shouldSyncLiveActivity = false
+        var latestQueueModel = currentModel
 
         let outcome = await queue.flush(send: { submission in
+            if submission.kind == .level,
+               submission.gameID == Int64(latestQueueModel?.gameID ?? 0),
+               submission.levelID == Int64(latestQueueModel?.level?.levelID ?? 0),
+               let level = latestQueueModel?.level,
+               !level.canSubmitLevelAnswer() {
+                throw CodeSubmissionDeferredError.levelAnswerBlocked(seconds: level.blockDuration)
+            }
             let started = DispatchTime.now()
             let updated = try await self.withSessionRecovery { try await $0.sendCode(submission) }
             self.recordServerRoundTrip(since: started)
+            latestQueueModel = updated
             return updated
         })
 
@@ -1423,7 +1448,11 @@ final class EncounterViewModel {
 
             if let error = outcome.failure, let failed = outcome.failedSubmission {
                 shouldSyncLiveActivity = true
-                if EncounterClient.isUndecodableResponseError(error) {
+                if let deferred = error as? CodeSubmissionDeferredError {
+                    markEngineReachable()
+                    resetQueueRetryBackoff()
+                    statusMessage = "\(deferred.localizedDescription) Код «\(failed.code)» сохранён в очереди."
+                } else if EncounterClient.isUndecodableResponseError(error) {
                     // The POST reached the engine and the answer was recorded; only the reply was
                     // unreadable. Keeping it queued re-POSTs the same answer until anti-spam fires.
                     queue.discard(failed.id)
@@ -1462,6 +1491,38 @@ final class EncounterViewModel {
             await syncLiveActivity()
         }
         return queue.pending.isEmpty
+    }
+
+    /// Refresh once when the locally-counted block expires, then leave the queued code untouched
+    /// until the fresh level says LevelAction.Answer is allowed again.
+    private func shouldDeferFirstQueuedLevelAnswer(silent: Bool) async -> Bool {
+        guard let submission = queue.pending.first,
+              submission.kind == .level,
+              submission.gameID == Int64(currentModel?.gameID ?? 0),
+              submission.levelID == Int64(currentModel?.level?.levelID ?? 0),
+              let level = currentModel?.level,
+              !level.canSubmitLevelAnswer() else {
+            return false
+        }
+
+        if levelAnswerBlockCountdown?.remainingSeconds() == 0, level.blockDuration > 0 {
+            await refreshLevel(showUI: false)
+            guard submission.gameID == Int64(currentModel?.gameID ?? 0),
+                  submission.levelID == Int64(currentModel?.level?.levelID ?? 0),
+                  let refreshedLevel = currentModel?.level,
+                  !refreshedLevel.canSubmitLevelAnswer() else {
+                return false
+            }
+            if !silent, let message = levelSubmissionBlockMessage(for: refreshedLevel) {
+                statusMessage = "\(message) Код сохранён в очереди."
+            }
+            return true
+        }
+
+        if !silent, let message = levelSubmissionBlockMessage(for: level) {
+            statusMessage = "\(message) Код сохранён в очереди."
+        }
+        return true
     }
 
     func applyLiveActivitySetting() async {
@@ -1574,6 +1635,16 @@ final class EncounterViewModel {
         let previousModel = currentModel
         let wasPlayable = currentModel?.isPlayable ?? true
         currentModel = model
+        if let level = model.level,
+           !level.canSubmitLevelAnswer(),
+           level.blockDuration > 0 {
+            levelAnswerBlockCountdown = SyncedSecondsCountdown(
+                remainSeconds: level.blockDuration,
+                syncedAt: Date()
+            )
+        } else {
+            levelAnswerBlockCountdown = nil
+        }
         decodeDropCount += model.droppedElementCount
         updateNewHintPopup(previousModel: previousModel, currentModel: model)
         updateTeammateCodePopup(previousModel: previousModel, currentModel: model)
@@ -2497,15 +2568,8 @@ final class EncounterViewModel {
     }
 
     private func feedback(from model: GameModel?) -> CodeResultFeedback? {
-        guard let engineAction = model?.engineAction else { return nil }
-        let result = [engineAction.levelAction, engineAction.bonusAction]
-            .compactMap { $0 }
-            .first { $0.answer != nil && $0.isCorrectAnswer != nil }
-        guard let result, let answer = result.answer, let isCorrect = result.isCorrectAnswer else {
-            return nil
-        }
-        let message = isCorrect ? "Код принят: \(answer)" : "Код не подошёл: \(answer)"
-        return CodeResultFeedback(message: message, isCorrect: isCorrect, id: UUID())
+        guard let feedback = model?.engineAction?.submittedAnswerFeedback else { return nil }
+        return CodeResultFeedback(message: feedback.message, verdict: feedback.verdict, id: UUID())
     }
 
     private func resultMessage(from model: GameModel?) -> String {
