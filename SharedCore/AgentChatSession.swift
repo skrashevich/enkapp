@@ -69,6 +69,7 @@ nonisolated struct AgentConfirmation: Identifiable, Equatable {
 final class AgentChatSession {
     private(set) var messages: [AgentMessage] = []
     private(set) var activity: [AgentToolActivity] = []
+    private(set) var localModelActivity: LocalAgentActivity?
     private(set) var isRunning = false
     private(set) var toolCount = 0
 
@@ -151,6 +152,7 @@ final class AgentChatSession {
         isRunning = true
         defer {
             isRunning = false
+            localModelActivity = nil
             lastFinishedTurn = currentTurn
             pendingConfirmations.removeAll()
             // A token refreshed mid-turn must be stored even when the turn failed:
@@ -248,6 +250,9 @@ final class AgentChatSession {
                 to: text,
                 instructions: instructions,
                 catalogJSON: catalogJSON,
+                reportActivity: { [weak self] activity in
+                    self?.localModelActivity = activity
+                },
                 invoke: { name, argsJSON in
                     // The Go call blocks while a tool talks to the engine, and can
                     // block much longer while the player answers a confirmation.

@@ -1,5 +1,7 @@
 import Foundation
 import HuggingFace
+import MLX
+import OSLog
 import MLXHuggingFace
 import MLXLLM
 import MLXLMCommon
@@ -58,11 +60,32 @@ enum DownloadableModel: String, CaseIterable, Identifiable, Codable {
 /// model's chat template and returns whatever the model emits. So this drives
 /// the loop itself — generate, look for a tool call, run it through Go, feed the
 /// result back — until the model answers in plain text.
+///
+/// The loop rests on Qwen3's reasoning mode. The model decides to call a tool
+/// while it reasons, so the reasoning pass is not overhead to be trimmed: with
+/// it suppressed, or with the token budget cut short before it finishes, the
+/// model answers from memory and the toolset goes untouched. That costs seconds
+/// per step on a phone, which is the price of tool use on a local model.
 @MainActor
 final class DownloadedModelBackend: LocalAgentModel {
     /// Bounds the loop. A small model can loop on a tool it keeps misusing, and
     /// every step costs seconds of on-device generation.
     private static let maxSteps = 12
+
+    /// Token budget for one generation step.
+    ///
+    /// Qwen3 reasons before it acts, and it only emits tool calls from inside
+    /// that reasoning pass — with thinking suppressed it answers from memory and
+    /// never touches the toolset. Measured against this prompt, the model spends
+    /// 80–600 tokens thinking before the call, so a budget below roughly a
+    /// thousand truncates the step before the call is ever written.
+    private static let maxTokensPerStep = 2048
+
+    /// Diagnostics for the local loop. The prompt is built by a chat template
+    /// inside MLX, so when the model ignores the toolset the only way to tell a
+    /// template problem from a model problem is to look at what it was actually
+    /// fed.
+    nonisolated static let logger = Logger(subsystem: "com.svk-team.encx-cli", category: "local-model")
 
     private let model: DownloadableModel
     private var container: ModelContainer?
@@ -80,22 +103,30 @@ final class DownloadedModelBackend: LocalAgentModel {
         to text: String,
         instructions: String,
         catalogJSON: String,
+        reportActivity: @escaping @MainActor @Sendable (LocalAgentActivity?) -> Void,
         invoke: @escaping @Sendable (String, String) async throws -> String
     ) async throws -> String {
-        let container = try await loadedContainer()
+        let container = try await loadedContainer(reportActivity: reportActivity)
         let tools = try DownloadedModelBackend.toolSpecs(catalogJSON: catalogJSON)
 
         if transcript.isEmpty {
+            Self.logger.debug("instructions from engine: \(instructions, privacy: .public)")
             transcript.append(.system(instructions + "\n" + Self.toolProtocolInstructions))
         }
         transcript.append(.user(text))
 
         for _ in 0 ..< Self.maxSteps {
             let output = try await generate(container: container, tools: tools)
+            Self.logger.debug("model output: \(output, privacy: .public)")
             transcript.append(.assistant(output))
 
             guard let call = ToolCallParser.firstCall(in: output) else {
-                return ToolCallParser.stripThinking(output)
+                let answer = ToolCallParser.stripThinking(output)
+                // Stripping leaves nothing when the step produced only reasoning
+                // and ran out of tokens. Reporting that is honest; an empty
+                // bubble reads as a finished answer.
+                guard !answer.isEmpty else { throw DownloadedModelError.emptyAnswer }
+                return answer
             }
 
             let observation: String
@@ -114,27 +145,68 @@ final class DownloadedModelBackend: LocalAgentModel {
 
     private func generate(container: ModelContainer, tools: [ToolSpec]) async throws -> String {
         let input = UserInput(chat: transcript, tools: tools)
+        // Qwen3's own recommendation for its reasoning mode. The reply loop
+        // depends on that mode, so the sampling has to match it: the earlier
+        // 0.3 with no top-p made the model likelier to restate the question
+        // instead of committing to a call.
+        let parameters = GenerateParameters(
+            maxTokens: Self.maxTokensPerStep,
+            temperature: 0.6,
+            topP: 0.95
+        )
+        let logger = Self.logger
         return try await container.perform { context in
             let lmInput = try await context.processor.prepare(input: input)
+
+            // Decoding the prompt back is the only way to see whether the chat
+            // template ran: when it is missing MLX silently falls back to joining
+            // message contents, which drops the toolset entirely.
+            let renderedPrompt = context.tokenizer.decode(
+                tokenIds: lmInput.text.tokens.asArray(Int.self),
+                skipSpecialTokens: false
+            )
+            logger.debug("""
+                prompt: tools=\(tools.count, privacy: .public) \
+                chars=\(renderedPrompt.count, privacy: .public) \
+                templated=\(renderedPrompt.contains("<|im_start|>"), privacy: .public) \
+                toolsRendered=\(renderedPrompt.contains("<tools>"), privacy: .public)
+                """)
+
             var text = ""
             _ = try MLXLMCommon.generate(
                 input: lmInput,
-                parameters: GenerateParameters(maxTokens: 512, temperature: 0.3),
+                parameters: parameters,
                 context: context
             ) { tokens in
-                text = context.tokenizer.decode(tokenIds: tokens)
+                // Special tokens are skipped so `<|im_end|>` never reaches the
+                // player; `<tool_call>` is a plain added token, so it survives.
+                text = context.tokenizer.decode(tokenIds: tokens, skipSpecialTokens: true)
                 return .more
             }
             return text
         }
     }
 
-    private func loadedContainer() async throws -> ModelContainer {
+    private func loadedContainer(
+        reportActivity: @escaping @MainActor @Sendable (LocalAgentActivity?) -> Void
+    ) async throws -> ModelContainer {
         if let container {
             return container
         }
-        let loaded = try await #huggingFaceLoadModelContainer(configuration: model.configuration)
+        let loaded = try await #huggingFaceLoadModelContainer(
+            configuration: model.configuration,
+            progressHandler: { progress in
+                let fraction = min(max(progress.fractionCompleted, 0), 1)
+                // A cached snapshot reports a single completed unit. Ignore it
+                // so subsequent launches do not flash a fake download status.
+                guard fraction < 1 else { return }
+                Task { @MainActor in
+                    reportActivity(.downloadingModel(fractionCompleted: fraction))
+                }
+            }
+        )
         container = loaded
+        reportActivity(nil)
         return loaded
     }
 
@@ -198,6 +270,11 @@ enum ToolCallParser {
         while let range = rangeOfBlock(text, open: "<think>", close: "</think>") {
             text.removeSubrange(range)
         }
+        // A step that runs out of tokens mid-thought leaves an unclosed block.
+        // Without this the player is shown the raw reasoning instead of an answer.
+        if let start = text.range(of: "<think>") {
+            text.removeSubrange(start.lowerBound ..< text.endIndex)
+        }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -219,6 +296,7 @@ enum ToolCallParser {
 nonisolated enum DownloadedModelError: LocalizedError {
     case badCatalog
     case stepsExhausted
+    case emptyAnswer
 
     var errorDescription: String? {
         switch self {
@@ -226,6 +304,8 @@ nonisolated enum DownloadedModelError: LocalizedError {
             return "Не удалось прочитать список инструментов движка."
         case .stepsExhausted:
             return "Локальная модель не смогла закончить ответ за отведённое число шагов."
+        case .emptyAnswer:
+            return "Локальная модель не выдала ответ — попробуйте переформулировать вопрос короче."
         }
     }
 }

@@ -62,6 +62,7 @@ final class OnDeviceAgentBackend: LocalAgentModel {
         to text: String,
         instructions: String,
         catalogJSON: String,
+        reportActivity _: @escaping @MainActor @Sendable (LocalAgentActivity?) -> Void,
         invoke: @escaping @Sendable (String, String) async throws -> String
     ) async throws -> String {
         #if canImport(FoundationModels)

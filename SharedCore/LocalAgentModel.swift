@@ -1,5 +1,10 @@
 import Foundation
 
+/// Work performed by a local model before it can start answering.
+nonisolated enum LocalAgentActivity: Equatable {
+    case downloadingModel(fractionCompleted: Double)
+}
+
 /// A language model that answers inside the app instead of behind a provider.
 ///
 /// The engine toolset stays in Go, so an implementation only decides which tool
@@ -12,11 +17,13 @@ protocol LocalAgentModel: AnyObject {
     ///   - text: the player's message.
     ///   - instructions: system prompt describing the engine and the policy.
     ///   - catalogJSON: the tool list published by the Go session.
+    ///   - reportActivity: publishes model preparation such as a first-run download.
     ///   - invoke: runs one tool by name; it enforces the policy gate.
     func reply(
         to text: String,
         instructions: String,
         catalogJSON: String,
+        reportActivity: @escaping @MainActor @Sendable (LocalAgentActivity?) -> Void,
         invoke: @escaping @Sendable (String, String) async throws -> String
     ) async throws -> String
 
