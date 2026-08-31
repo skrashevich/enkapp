@@ -807,7 +807,7 @@ private struct LevelPlayScrollBody: View {
         if html.contains("<") {
             EncounterHTMLView(html: html)
         } else {
-            Text(task.displayText)
+            CoordinateText(text: task.displayText)
                 .font(.body)
                 .foregroundStyle(GameTheme.text)
                 .textSelection(.enabled)
@@ -823,7 +823,7 @@ private struct LevelPlayScrollBody: View {
                     Text(message.ownerLogin)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(GameTheme.bonusTitle)
-                    Text(message.displayText)
+                    CoordinateText(text: message.displayText)
                         .font(.body)
                         .foregroundStyle(GameTheme.text)
                 }
@@ -880,7 +880,7 @@ private struct LevelPlayScrollBody: View {
         if text.contains("<") {
             EncounterHTMLView(html: text)
         } else {
-            Text(text.strippingHTML())
+            CoordinateText(text: text.strippingHTML())
                 .font(.body)
                 .foregroundStyle(GameTheme.text)
         }

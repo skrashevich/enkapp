@@ -453,7 +453,7 @@ struct DetailBlock: View {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text(text.isEmpty ? "Нет данных" : text)
+            CoordinateText(text: text.isEmpty ? "Нет данных" : text)
                 .font(.body)
                 .textSelection(.enabled)
         }

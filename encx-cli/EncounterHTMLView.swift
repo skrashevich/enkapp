@@ -81,6 +81,13 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
                 forMainFrameOnly: true
             )
         )
+        controller.addUserScript(
+            WKUserScript(
+                source: Self.coordinateLinkJS,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            )
+        )
         configuration.userContentController = controller
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -131,6 +138,71 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
                 }
             }
         }).observe(document.body, { childList: true, subtree: true });
+    })()
+    """
+
+    private static let coordinateLinkJS = """
+    (() => {
+        const patterns = [
+            {
+                regex: /(^|[^\\d.,])([+-]?\\d{1,2}\\.\\d+)\\s*(?:[,;]|\\s+)\\s*([+-]?\\d{1,3}\\.\\d+)(?![\\d.,])/g,
+                parse: value => Number(value)
+            },
+            {
+                regex: /(^|[^\\d.,])([+-]?\\d{1,2},\\d+)\\s*(?:;|\\s+)\\s*([+-]?\\d{1,3},\\d+)(?![\\d.,])/g,
+                parse: value => Number(value.replace(',', '.'))
+            }
+        ];
+
+        function eligibleTextNodes() {
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            const nodes = [];
+            let node;
+            while ((node = walker.nextNode())) {
+                const parent = node.parentElement;
+                if (!parent || parent.closest('a, script, style, textarea, code')) { continue; }
+                nodes.push(node);
+            }
+            return nodes;
+        }
+
+        function linkify(pattern) {
+            for (const node of eligibleTextNodes()) {
+                const text = node.nodeValue || '';
+                pattern.regex.lastIndex = 0;
+                let match;
+                let cursor = 0;
+                let changed = false;
+                const fragment = document.createDocumentFragment();
+
+                while ((match = pattern.regex.exec(text)) !== null) {
+                    const prefix = match[1] || '';
+                    const latitude = pattern.parse(match[2]);
+                    const longitude = pattern.parse(match[3]);
+                    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) { continue; }
+
+                    const coordinateStart = match.index + prefix.length;
+                    const coordinateEnd = match.index + match[0].length;
+                    fragment.append(document.createTextNode(text.slice(cursor, coordinateStart)));
+
+                    const link = document.createElement('a');
+                    link.href = `yandexmaps://maps.yandex.ru/?ll=${longitude},${latitude}&z=16`;
+                    link.textContent = text.slice(coordinateStart, coordinateEnd);
+                    link.title = 'Открыть координаты в Яндекс Картах';
+                    fragment.append(link);
+
+                    cursor = coordinateEnd;
+                    changed = true;
+                }
+
+                if (changed) {
+                    fragment.append(document.createTextNode(text.slice(cursor)));
+                    node.replaceWith(fragment);
+                }
+            }
+        }
+
+        patterns.forEach(linkify);
     })()
     """
 
@@ -210,6 +282,21 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
             default:
                 break
             }
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            guard let url = navigationAction.request.url,
+                  CoordinateLinkifier.isYandexMapsURL(url) else {
+                decisionHandler(.allow)
+                return
+            }
+
+            CoordinateLinkifier.openYandexMaps(url)
+            decisionHandler(.cancel)
         }
 
         func webView(

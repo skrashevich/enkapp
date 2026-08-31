@@ -207,7 +207,7 @@ private struct HelpRow: View {
         if text.contains("<") {
             EncounterHTMLView(html: text)
         } else {
-            Text(text.strippingHTML())
+            CoordinateText(text: text.strippingHTML())
                 .font(.body)
                 .foregroundStyle(GameTheme.text)
                 .textSelection(.enabled)
