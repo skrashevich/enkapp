@@ -461,6 +461,15 @@ struct LevelPlayView: View {
             Spacer()
 
             HStack(spacing: 18) {
+                if model.agentSettings.enabled {
+                    Button {
+                        model.showAgentSheet = true
+                    } label: {
+                        headerAction("Ассистент", systemImage: "sparkles")
+                    }
+                    .disabled(model.isBusy)
+                }
+
                 Button {
                     model.showToolsSheet = true
                 } label: {

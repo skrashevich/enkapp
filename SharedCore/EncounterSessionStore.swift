@@ -5,12 +5,14 @@ enum EncounterSessionStore {
     static let loginKey = "encx.login"
     static let sessionCookiesKey = "encx.session.cookies"
     static let selectedGameIDKey = "encx.selectedGameID"
+    static let agentSettingsKey = "encx.agentSettings"
 
     private static let migrationKeys = [
         settingsKey,
         loginKey,
         sessionCookiesKey,
         selectedGameIDKey,
+        agentSettingsKey,
     ]
 
     private static let didMigrateLegacyStorage: Void = {
@@ -33,6 +35,20 @@ enum EncounterSessionStore {
     static func saveSettings(_ settings: DomainSettings) {
         guard let data = try? JSONEncoder().encode(settings) else { return }
         EncounterSharedStorage.set(data, forKey: settingsKey)
+    }
+
+    static func loadAgentSettings() -> AgentSettings {
+        migrateLegacyStorageIfNeeded()
+        guard let data = EncounterSharedStorage.data(forKey: agentSettingsKey),
+              let decoded = try? JSONDecoder().decode(AgentSettings.self, from: data) else {
+            return AgentSettings()
+        }
+        return decoded
+    }
+
+    static func saveAgentSettings(_ settings: AgentSettings) {
+        guard let data = try? JSONEncoder().encode(settings) else { return }
+        EncounterSharedStorage.set(data, forKey: agentSettingsKey)
     }
 
     static func loadLogin() -> String {

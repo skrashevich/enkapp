@@ -11,8 +11,189 @@
 #include "Universe.objc.h"
 
 
+@class EncxmobileAgentSession;
+@class EncxmobileCodexDeviceLogin;
 @class EncxmobileEncClient;
 @class EncxmobileHARSnapshot;
+@protocol EncxmobileAgentDelegate;
+@class EncxmobileAgentDelegate;
+
+@protocol EncxmobileAgentDelegate <NSObject>
+/**
+ * OnConfirmationRequest asks the host to authorize a mutating engine call.
+The host must answer exactly once by calling ResolveConfirmation with the
+same callID; until then the agent turn is blocked.
+
+turn identifies the agent turn that raised the call. A host that keeps a
+queue should drop requests from a turn that has already ended: the
+notification is delivered asynchronously and can outlive its turn.
+ */
+- (void)onConfirmationRequest:(NSString* _Nullable)callID turn:(int64_t)turn toolName:(NSString* _Nullable)toolName argsJSON:(NSString* _Nullable)argsJSON;
+/**
+ * OnEvent delivers a JSON-encoded progress event. See AgentSession for the
+event shapes.
+ */
+- (void)onEvent:(NSString* _Nullable)eventJSON;
+@end
+
+/**
+ * AgentSession is a PicoClaw agent wired to one Encounter client.
+
+Progress reaches the host as JSON events through AgentDelegate.OnEvent. Every
+event has a "type" and a "turn" field:
+
+	{"type":"turn_started","turn":1}
+	{"type":"tool_started","turn":1,"tool":"enc_game_state","args":{"game_id":42}}
+	{"type":"tool_finished","turn":1,"tool":"enc_game_state","is_error":false,"result":"…"}
+	{"type":"turn_finished","turn":1,"content":"…"}
+	{"type":"turn_failed","turn":1,"error":"…"}
+
+Mutating tools do not emit an event; they call OnConfirmationRequest and wait.
+ */
+@interface EncxmobileAgentSession : NSObject <goSeqRefInterface> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (nonnull instancetype)init;
+/**
+ * BeginHostTurn opens a host-driven turn and returns its number.
+
+It mirrors what SendMessage does for the built-in loop: it claims the session,
+bumps the turn counter so confirmations can be matched, and drops cached reads
+so a new question sees fresh state.
+ */
+- (BOOL)beginHostTurn:(int64_t* _Nullable)ret0_ error:(NSError* _Nullable* _Nullable)error;
+/**
+ * Cancel aborts the running turn. SendMessage then returns the cancellation
+error and any pending confirmation is released as declined.
+ */
+- (void)cancel;
+/**
+ * CodexCredentialJSON returns the current ChatGPT credential so the host can
+persist a token that was refreshed during the session. It returns an empty
+string for sessions that authenticate with an API key.
+ */
+- (NSString* _Nonnull)codexCredentialJSON:(NSError* _Nullable* _Nullable)error;
+/**
+ * EndHostTurn closes a host-driven turn. content is the reply the host produced;
+an empty string reports the turn as failed with reason.
+ */
+- (void)endHostTurn:(NSString* _Nullable)content reason:(NSString* _Nullable)reason;
+/**
+ * HistoryJSON returns the remembered transcript as a JSON array of
+{"role","content"} objects.
+ */
+- (NSString* _Nonnull)historyJSON:(NSError* _Nullable* _Nullable)error;
+/**
+ * InvokeTool runs one engine tool by name and returns its JSON result.
+
+This is the same path the built-in loop takes: the policy gate runs first, so
+a mutating call still needs the player's confirmation, and pacing and caching
+still apply.
+ */
+- (NSString* _Nonnull)invokeTool:(NSString* _Nullable)name argsJSON:(NSString* _Nullable)argsJSON error:(NSError* _Nullable* _Nullable)error;
+/**
+ * Policy reports the engine access policy the session was built with.
+ */
+- (NSString* _Nonnull)policy;
+/**
+ * RecordHostExchange appends a completed host-driven exchange to the transcript
+the session remembers.
+ */
+- (void)recordHostExchange:(NSString* _Nullable)userMessage assistantMessage:(NSString* _Nullable)assistantMessage;
+/**
+ * ResetHistory forgets the transcript without rebuilding the session.
+ */
+- (void)resetHistory;
+/**
+ * ResolveConfirmation delivers the host's decision for a mutating call.
+ */
+- (BOOL)resolveConfirmation:(NSString* _Nullable)callID approved:(BOOL)approved error:(NSError* _Nullable* _Nullable)error;
+/**
+ * SendMessage runs one agent turn and returns the assistant's reply.
+
+Only the visible transcript is remembered between turns. Tool output is
+deliberately not replayed: game state changes while the player reads, so a
+cached level or code log would be worse than a fresh read.
+ */
+- (NSString* _Nonnull)sendMessage:(NSString* _Nullable)text error:(NSError* _Nullable* _Nullable)error;
+/**
+ * SetDelegate attaches (or, with nil, detaches) the host callbacks.
+ */
+- (void)setDelegate:(id<EncxmobileAgentDelegate> _Nullable)delegate;
+/**
+ * SystemPrompt is the instruction text describing the engine and the active
+access policy. A host-driven loop has to supply it itself.
+ */
+- (NSString* _Nonnull)systemPrompt;
+/**
+ * ToolCatalogJSON lists the engine tools for a host-driven loop.
+
+Apple's on-device model runs inside the app and cannot be reached through a
+provider, so the host owns the conversation and asks for the toolset instead.
+ */
+- (NSString* _Nonnull)toolCatalogJSON:(NSError* _Nullable* _Nullable)error;
+/**
+ * ToolCount reports how many engine tools the model can see.
+ */
+- (int64_t)toolCount;
+@end
+
+/**
+ * CodexDeviceLogin drives the ChatGPT device-authorization flow.
+
+The device flow suits a phone: there is no redirect URI to catch and no local
+callback listener to run. The app shows UserCode, sends the player to
+VerifyURL in a browser, and polls until they approve.
+
+Usage from Swift:
+
+	login, err := StartCodexDeviceLogin()
+	// show login.UserCode(), open login.VerifyURL()
+	credentialJSON, err := login.Wait(300)   // blocking; call off the main thread
+	// store credentialJSON in the Keychain, pass it back in the agent config
+ */
+@interface EncxmobileCodexDeviceLogin : NSObject <goSeqRefInterface> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (nonnull instancetype)init;
+/**
+ * Cancel stops a running Wait.
+ */
+- (void)cancel;
+/**
+ * IntervalSeconds is the polling interval OpenAI asked for.
+ */
+- (int64_t)intervalSeconds;
+/**
+ * Poll checks once whether the player has approved. It returns the credential
+JSON on success and an empty string while the approval is still pending.
+
+The upstream endpoint reports "not approved yet" as an HTTP error, which
+PicoClaw surfaces as a bare "pending" error, so that one is translated back
+into the pending state instead of being shown to the player as a failure.
+ */
+- (NSString* _Nonnull)poll:(NSError* _Nullable* _Nullable)error;
+/**
+ * UserCode is the code the player types on the verification page.
+ */
+- (NSString* _Nonnull)userCode;
+/**
+ * VerifyURL is the page where the player approves the login.
+ */
+- (NSString* _Nonnull)verifyURL;
+/**
+ * Wait polls until the player approves, the timeout expires, or Cancel is
+called. It blocks, so callers must keep it off the UI thread.
+
+Transient poll failures do not abort the login: the player is in another app
+and cannot react to them. The last one is reported only if the wait runs out.
+ */
+- (NSString* _Nonnull)wait:(int64_t)timeoutSeconds error:(NSError* _Nullable* _Nullable)error;
+@end
 
 /**
  * EncClient wraps encx.Client for use from iOS via gomobile.
@@ -133,6 +314,7 @@ entries captured during the upload are preserved.
  * LoginWithCaptcha authenticates with CAPTCHA digits when Login returns Error==1.
  */
 - (NSString* _Nonnull)loginWithCaptcha:(NSString* _Nullable)login password:(NSString* _Nullable)password magicNumbers:(NSString* _Nullable)magicNumbers error:(NSError* _Nullable* _Nullable)error;
+- (EncxmobileAgentSession* _Nullable)newAgentSession:(NSString* _Nullable)configJSON error:(NSError* _Nullable* _Nullable)error;
 /**
  * PingGame checks engine reachability with the code-send timeout.
  */
@@ -199,6 +381,17 @@ Zero or negative values disable pacing.
 @end
 
 /**
+ * AuthMethodCodex selects a ChatGPT subscription instead of an API key.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull const EncxmobileAuthMethodCodex;
+/**
+ * AuthMethodOnDevice runs the model in the host process instead of calling a
+provider. The host drives the conversation and calls InvokeTool; the engine
+toolset, its policy gate, confirmations, pacing and caching are unchanged.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull const EncxmobileAuthMethodOnDevice;
+
+/**
  * AntiSpamURLFromError returns the verification page URL when err is anti-spam.
  */
 FOUNDATION_EXPORT NSString* _Nonnull EncxmobileAntiSpamURLFromError(NSError* _Nullable err);
@@ -254,5 +447,38 @@ FOUNDATION_EXPORT NSString* _Nonnull EncxmobileParseTeamLinks(NSString* _Nullabl
  * ParseTeamManagementInfo extracts team management info from HTML. Returns JSON.
  */
 FOUNDATION_EXPORT NSString* _Nonnull EncxmobileParseTeamManagementInfo(NSString* _Nullable html, int64_t teamID, NSError* _Nullable* _Nullable error);
+
+/**
+ * StartCodexDeviceLogin asks OpenAI for a device code.
+ */
+FOUNDATION_EXPORT EncxmobileCodexDeviceLogin* _Nullable EncxmobileStartCodexDeviceLogin(NSError* _Nullable* _Nullable error);
+
+@class EncxmobileAgentDelegate;
+
+/**
+ * AgentDelegate is the host-side callback surface of an AgentSession. It is a
+Go interface so Swift can implement it directly through the gomobile binding.
+ */
+@interface EncxmobileAgentDelegate : NSObject <goSeqRefInterface, EncxmobileAgentDelegate> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+/**
+ * OnConfirmationRequest asks the host to authorize a mutating engine call.
+The host must answer exactly once by calling ResolveConfirmation with the
+same callID; until then the agent turn is blocked.
+
+turn identifies the agent turn that raised the call. A host that keeps a
+queue should drop requests from a turn that has already ended: the
+notification is delivered asynchronously and can outlive its turn.
+ */
+- (void)onConfirmationRequest:(NSString* _Nullable)callID turn:(int64_t)turn toolName:(NSString* _Nullable)toolName argsJSON:(NSString* _Nullable)argsJSON;
+/**
+ * OnEvent delivers a JSON-encoded progress event. See AgentSession for the
+event shapes.
+ */
+- (void)onEvent:(NSString* _Nullable)eventJSON;
+@end
 
 #endif

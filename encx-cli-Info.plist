@@ -17,6 +17,10 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Микрофон нужен, чтобы диктовать сообщения ассистенту. Запись обрабатывается только на устройстве и никуда не отправляется.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Распознавание речи нужно, чтобы надиктовывать сообщения ассистенту. Оно выполняется только на устройстве, без отправки звука на серверы Apple.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

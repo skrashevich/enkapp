@@ -107,6 +107,9 @@ enum QueueConnectionStatus {
 @MainActor
 final class EncounterViewModel {
     var settings = DomainSettings()
+    /// Provider, model and engine access policy of the in-app assistant.
+    var agentSettings = AgentSettings()
+    var showAgentSheet = false
     var login = ""
     var password = ""
     var games: [GameInfo] = []
@@ -149,6 +152,8 @@ final class EncounterViewModel {
     private let liveActivity = QueueLiveActivityManager()
 
     private var client: EncounterClient?
+    /// Assistant session, kept alive across chat dismissals. See agentChatSession().
+    private var cachedAgentSession: AgentChatSession?
     private let settingsKey = "encx.domainSettings"
     private let loginKey = "encx.login"
     private let knownDomainsKey = "encx.knownDomains"
@@ -369,6 +374,7 @@ final class EncounterViewModel {
         EncounterSessionStore.migrateLegacyStorageIfNeeded()
         let hadSavedSettings = EncounterSharedStorage.data(forKey: settingsKey) != nil
         settings = EncounterSessionStore.loadSettings()
+        agentSettings = EncounterSessionStore.loadAgentSettings()
         login = EncounterSessionStore.loadLogin()
         if let saved = UserDefaults.standard.stringArray(forKey: knownDomainsKey), !saved.isEmpty {
             knownDomains = saved
@@ -1194,6 +1200,35 @@ final class EncounterViewModel {
     func persistAuthorizationSettings() {
         saveSettings()
         EncounterSessionStore.saveLogin(login)
+    }
+
+    func persistAgentSettings() {
+        EncounterSessionStore.saveAgentSettings(agentSettings)
+        // Provider, model and policy are baked into the Go session at creation.
+        invalidateAgentSession()
+    }
+
+    /// Returns the assistant session, building it over the authenticated client
+    /// on first use so the agent plays as the signed-in player.
+    ///
+    /// The session is owned here rather than by the chat view: a turn keeps
+    /// running on Go's goroutines after the sheet closes, and a view-owned
+    /// session would be deallocated mid-turn, orphaning any confirmation it was
+    /// waiting on. Keeping it here also preserves the transcript across
+    /// dismissals.
+    func agentChatSession() throws -> AgentChatSession {
+        if let cachedAgentSession {
+            return cachedAgentSession
+        }
+        let session = try AgentChatSession(client: try ensureClient(), settings: agentSettings)
+        cachedAgentSession = session
+        return session
+    }
+
+    /// Drops the assistant session. The next open builds a fresh one.
+    func invalidateAgentSession() {
+        cachedAgentSession?.cancel()
+        cachedAgentSession = nil
     }
 
     func applyHARRecordingSetting() {
@@ -2211,6 +2246,8 @@ final class EncounterViewModel {
 
     private func rebuildClient(importStoredCookies: Bool = true) throws -> EncounterClient {
         saveSettings()
+        // The assistant holds the old client inside its Go session.
+        invalidateAgentSession()
         let newClient = try EncounterClient(settings: settings)
         if importStoredCookies, let cookies = loadSessionCookies() {
             try? newClient.importCookies(cookies)

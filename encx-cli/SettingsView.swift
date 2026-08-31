@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private enum PermissionCheckStatus: Equatable {
     case pending
@@ -18,6 +19,11 @@ struct SettingsView: View {
     @State private var showOnboarding = false
     @State private var harShareURL: URL?
     @State private var harExportError: String?
+    @State private var agentAPIKeyDraft = ""
+    @State private var agentKeyStored = false
+    @State private var agentKeyStatus: String?
+    @State private var codexSignIn = CodexSignInModel()
+    @State private var downloadedModel = DownloadedModelPreference.selected
     @Environment(\.scenePhase) private var scenePhase
 
     private var appVersion: String {
@@ -33,6 +39,7 @@ struct SettingsView: View {
                 accountSection
                 setupSection
                 connectionSection
+                agentSection
                 notificationsSection
                 liveActivitySection
                 debugSection
@@ -77,6 +84,12 @@ struct SettingsView: View {
             await refreshNotificationStatus()
             await refreshLiveActivityPermissions()
             model.refreshHAREntryCount()
+        }
+        .onDisappear {
+            // Without this the login keeps polling OpenAI for a quarter of an hour
+            // after the screen is gone, and an approval granted in that window is
+            // discarded instead of stored.
+            codexSignIn.cancel()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
@@ -261,6 +274,324 @@ struct SettingsView: View {
             )
         }
         .sectionPanel()
+    }
+
+    private var agentSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle("Ассистент")
+            settingToggleRow(
+                title: "Ассистент в игре",
+                subtitle: "Чат с ИИ, который видит движок и умеет им пользоваться.",
+                systemImage: "sparkles",
+                tint: GameTheme.bonusTitle,
+                isOn: $model.agentSettings.enabled
+            )
+
+            if model.agentSettings.enabled {
+                agentProviderRows
+                if model.agentSettings.provider.needsModelDownload {
+                    agentDownloadedModelRows
+                } else if model.agentSettings.provider.runsOnDevice {
+                    agentOnDeviceRows
+                } else if model.agentSettings.provider.usesSubscriptionLogin {
+                    agentChatGPTRows
+                } else {
+                    agentKeyRows
+                }
+                agentPolicyRows
+            }
+        }
+        .sectionPanel()
+        .onChange(of: model.agentSettings) { _, _ in
+            model.persistAgentSettings()
+        }
+        .onAppear { refreshAgentCredentialState() }
+        .onChange(of: codexSignIn.phase) { _, phase in
+            // A completed sign-in writes a new credential, so the cached session
+            // built on the old one has to go.
+            if case .signedIn = phase {
+                agentCredentialsChanged()
+            } else {
+                refreshAgentCredentialState()
+            }
+            // The code is useless without the page that accepts it, so open it as
+            // soon as OpenAI hands the code out, and put it on the clipboard so
+            // the player does not have to retype it from memory.
+            if case .awaitingApproval(let userCode, let verifyURL) = phase {
+                UIPasteboard.general.string = userCode
+                if let verifyURL {
+                    openURL(verifyURL)
+                }
+            }
+        }
+        .onChange(of: model.agentSettings.provider) { _, _ in
+            refreshAgentCredentialState()
+            agentKeyStatus = nil
+        }
+        .onChange(of: downloadedModel) { _, newValue in
+            DownloadedModelPreference.selected = newValue
+            // The chosen model is captured when the session is built.
+            model.invalidateAgentSession()
+        }
+    }
+
+    @ViewBuilder
+    private var agentProviderRows: some View {
+        Picker("Провайдер", selection: providerBinding) {
+            ForEach(AgentProvider.allCases) { provider in
+                Text(provider.title).tag(provider)
+            }
+        }
+        .pickerStyle(.segmented)
+
+        if !model.agentSettings.provider.runsOnDevice {
+            TextField("Модель", text: $model.agentSettings.model)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .foregroundStyle(GameTheme.text)
+                .padding(12)
+                .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+        }
+
+        if model.agentSettings.provider.acceptsCustomEndpoint {
+            TextField("Endpoint API (необязательно)", text: $model.agentSettings.apiBase)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+                .foregroundStyle(GameTheme.text)
+                .padding(12)
+                .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+
+            Text("Endpoint должен обслуживать /chat/completions. Шлюзы только с Responses API (например api.openmodel.ai) отвечают 404.")
+                .font(.caption)
+                .foregroundStyle(GameTheme.muted)
+        }
+    }
+
+    @ViewBuilder
+    private var agentDownloadedModelRows: some View {
+        Picker("Модель", selection: $downloadedModel) {
+            ForEach(DownloadableModel.allCases) { candidate in
+                Text(candidate.title).tag(candidate)
+            }
+        }
+        .pickerStyle(.segmented)
+
+        Text("\(downloadedModel.approximateSize) · \(downloadedModel.note)")
+            .font(.caption)
+            .foregroundStyle(GameTheme.muted)
+
+        Text("Веса скачиваются с Hugging Face при первом вопросе и остаются на устройстве. "
+            + "Дальше всё работает без сети и без ключей. Такая модель заметно слабее облачной: "
+            + "она хуже держит длинные рассуждения и не умеет смотреть картинки заданий. "
+            + "Поиск в интернете в этом режиме выключен.")
+            .font(.caption)
+            .foregroundStyle(GameTheme.muted)
+    }
+
+    @ViewBuilder
+    private var agentOnDeviceRows: some View {
+        switch OnDeviceAgentBackend.availability {
+        case .available:
+            Text("Модель Apple работает прямо на устройстве: ключ не нужен, запросы никуда не уходят. "
+                + "Она заметно меньше облачных, поэтому хуже справляется с длинными рассуждениями "
+                + "и не умеет смотреть картинки заданий. Поиск в интернете в этом режиме выключен.")
+                .font(.caption)
+                .foregroundStyle(GameTheme.muted)
+        case .unsupported(let reason):
+            Label(reason, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.orange)
+        }
+    }
+
+    @ViewBuilder
+    private var agentChatGPTRows: some View {
+        switch codexSignIn.phase {
+        case .awaitingApproval(let userCode, let verifyURL):
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Код подтверждения")
+                    .font(.caption)
+                    .foregroundStyle(GameTheme.muted)
+                Text(userCode)
+                    .font(.title2.weight(.bold).monospaced())
+                    .foregroundStyle(GameTheme.text)
+                    .textSelection(.enabled)
+                Text("Страница входа уже открыта, код скопирован в буфер обмена. Введите его и подтвердите доступ — приложение ждёт до 15 минут.")
+                    .font(.caption)
+                    .foregroundStyle(GameTheme.muted)
+                HStack(spacing: 10) {
+                    if let verifyURL {
+                        Button("Открыть страницу снова") { openURL(verifyURL) }
+                            .buttonStyle(.borderedProminent)
+                            .tint(GameTheme.accent)
+                    }
+                    Button("Отмена", role: .cancel) { codexSignIn.cancel() }
+                        .buttonStyle(.bordered)
+                }
+                ProgressView()
+                    .controlSize(.small)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+        default:
+            HStack(spacing: 10) {
+                Button(agentKeyStored ? "Войти заново" : "Войти через ChatGPT") {
+                    codexSignIn.start()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(GameTheme.accent)
+                .disabled(codexSignIn.isBusy)
+
+                if agentKeyStored {
+                    Button("Выйти", role: .destructive) {
+                        codexSignIn.signOut()
+                        agentCredentialsChanged()
+                        agentKeyStatus = "Вход в ChatGPT отменён."
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+
+            Text(codexStatusText)
+                .font(.caption)
+                .foregroundStyle(codexStatusIsError ? .red : GameTheme.muted)
+        }
+    }
+
+    private var codexStatusText: String {
+        switch codexSignIn.phase {
+        case .failed(let message): return message
+        case .signedIn: return "Вход выполнен, подписка ChatGPT подключена."
+        default:
+            return agentKeyStored
+                ? "Подписка ChatGPT подключена."
+                : "Используется подписка ChatGPT вместо ключа API. Ключ не нужен."
+        }
+    }
+
+    private var codexStatusIsError: Bool {
+        if case .failed = codexSignIn.phase { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private var agentKeyRows: some View {
+        SecureField(agentKeyPlaceholder, text: $agentAPIKeyDraft)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .foregroundStyle(GameTheme.text)
+            .padding(12)
+            .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+
+        HStack(spacing: 10) {
+            Button("Сохранить ключ") { saveAgentKey() }
+                .buttonStyle(.borderedProminent)
+                .tint(GameTheme.accent)
+                .disabled(agentAPIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            if agentKeyStored {
+                Button("Удалить ключ", role: .destructive) { deleteAgentKey() }
+                    .buttonStyle(.bordered)
+            }
+        }
+
+        if let agentKeyStatus {
+            Text(agentKeyStatus)
+                .font(.caption)
+                .foregroundStyle(GameTheme.muted)
+        }
+    }
+
+    @ViewBuilder
+    private var agentPolicyRows: some View {
+        Picker("Доступ к движку", selection: $model.agentSettings.policy) {
+            ForEach(AgentAccessPolicy.allCases) { policy in
+                Text(policy.title).tag(policy)
+            }
+        }
+        .pickerStyle(.segmented)
+
+        Text(model.agentSettings.policy.explanation)
+            .font(.caption)
+            .foregroundStyle(model.agentSettings.policy.actsWithoutAsking ? .orange : GameTheme.muted)
+
+        settingToggleRow(
+            title: "Поиск в интернете",
+            subtitle: "DuckDuckGo и чтение страниц. Запросы уходят в поисковик.",
+            systemImage: "globe",
+            tint: GameTheme.bonusTitle,
+            isOn: $model.agentSettings.webToolsEnabled
+        )
+
+        HStack {
+            Text("Шагов на ответ")
+                .font(.subheadline)
+                .foregroundStyle(GameTheme.text)
+            Spacer()
+            TextField("100", value: $model.agentSettings.maxSteps, format: .number)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 80)
+                .foregroundStyle(GameTheme.text)
+                .padding(10)
+                .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+        }
+
+        Text("Сколько обращений к движку ассистент может сделать, отвечая на один вопрос. "
+            + "0 — без ограничения; длинные задачи вроде перебора кодов требуют много шагов. "
+            + "Остановить можно кнопкой в чате.")
+            .font(.caption)
+            .foregroundStyle(GameTheme.muted)
+
+        Text("Ключ или токен ChatGPT хранится в Keychain устройства. Запросы уходят напрямую выбранному провайдеру — данные игры покидают устройство вместе с ними.")
+            .font(.caption)
+            .foregroundStyle(.orange)
+    }
+
+    private var providerBinding: Binding<AgentProvider> {
+        Binding(
+            get: { model.agentSettings.provider },
+            set: { model.agentSettings.applyProvider($0) }
+        )
+    }
+
+    private var agentKeyPlaceholder: String {
+        agentKeyStored ? "Ключ API сохранён — введите новый, чтобы заменить" : "Ключ API"
+    }
+
+    private func saveAgentKey() {
+        do {
+            try AgentCredentialsStore.save(apiKey: agentAPIKeyDraft)
+            agentAPIKeyDraft = ""
+            agentCredentialsChanged()
+            agentKeyStatus = agentKeyStored ? "Ключ сохранён в Keychain." : "Ключ не сохранён."
+        } catch {
+            agentKeyStatus = "Не удалось сохранить ключ: \(error.localizedDescription)"
+        }
+    }
+
+    private func deleteAgentKey() {
+        AgentCredentialsStore.delete()
+        agentCredentialsChanged()
+        agentKeyStatus = "Ключ удалён."
+    }
+
+    /// `agentKeyStored` tracks whichever credential the selected provider needs.
+    private func refreshAgentCredentialState() {
+        agentKeyStored = model.agentSettings.hasCredentials
+    }
+
+    /// Call after writing or clearing a credential.
+    ///
+    /// The credential is read from the Keychain when the agent session is built,
+    /// so replacing it has to drop the cached session — otherwise a fresh key
+    /// keeps failing against the revoked one, with no way out but restarting the
+    /// app. Merely opening this screen must not do that: it would kill a turn
+    /// that is still running.
+    private func agentCredentialsChanged() {
+        refreshAgentCredentialState()
+        model.invalidateAgentSession()
     }
 
     private var notificationsSection: some View {

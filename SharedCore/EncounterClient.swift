@@ -249,6 +249,16 @@ nonisolated final class EncounterClient {
         #endif
     }
 
+    #if canImport(Encx)
+    /// Builds a PicoClaw agent bound to this authenticated client, so the assistant
+    /// plays the game as the signed-in player.
+    func makeAgentSession(configJSON: String) throws -> EncxmobileAgentSession {
+        // gomobile returns a nullable object plus NSError**, which Swift imports
+        // as a throwing call.
+        try client.newAgentSession(configJSON)
+    }
+    #endif
+
     func setHARRecordingEnabled(_ enabled: Bool) {
         #if canImport(Encx)
         client.setHARRecordingEnabled(enabled)

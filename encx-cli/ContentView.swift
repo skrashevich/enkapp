@@ -36,6 +36,9 @@ struct ContentView: View {
             .sheet(isPresented: $model.showToolsSheet) {
                 ToolsHubView()
             }
+            .sheet(isPresented: $model.showAgentSheet) {
+                AgentChatView(model: model)
+            }
     }
 
     private var screenContent: some View {
@@ -77,6 +80,17 @@ struct ContentView: View {
                         .tint(model.selectedScreen == .team ? GameTheme.accent : GameTheme.text)
                         .disabled(model.isBusy)
                         .accessibilityLabel("Управление командой")
+
+                        if model.agentSettings.enabled {
+                            Button {
+                                model.showAgentSheet = true
+                            } label: {
+                                Image(systemName: "sparkles")
+                            }
+                            .tint(GameTheme.bonusTitle)
+                            .disabled(model.isBusy)
+                            .accessibilityLabel("Ассистент")
+                        }
 
                         Button {
                             model.showToolsSheet = true

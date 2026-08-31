@@ -13,6 +13,9 @@ struct encx_cliApp: App {
 
     init() {
         BackgroundQueueService.shared.register()
+        // SharedCore also builds into the widget and the App Clip, so the
+        // inference runtime is injected here rather than referenced there.
+        DownloadedModelInstaller.install()
     }
 
     var body: some Scene {
