@@ -28,10 +28,14 @@ struct CodeResultFeedback: Equatable {
 }
 
 struct TeammateCodePopup: Equatable {
+    let entries: [TeammateCodePopupEntry]
+    let id: UUID
+}
+
+struct TeammateCodePopupEntry: Equatable {
     let title: String
     let message: String
     let isCorrect: Bool
-    let id: UUID
 }
 
 struct NewHintPopup: Identifiable, Equatable {
@@ -1717,20 +1721,24 @@ final class EncounterViewModel {
             }
             .sorted { $0.actionID > $1.actionID }
 
-        guard let latest = newActions.first else { return }
+        let entries = Self.groupedTeammateCodeActions(newActions).map { group in
+            let latest = group.action
+            let answer = latest.answer.trimmingCharacters(in: .whitespacesAndNewlines)
+            let login = latest.login.trimmingCharacters(in: .whitespacesAndNewlines)
+            let codeText = answer.isEmpty ? "код" : answer
+            let author = login.isEmpty ? "Игрок команды" : login
+            let levelPrefix = latest.levelNumber > 0 ? "Ур. \(latest.levelNumber) · " : ""
+            let suffix = group.count > 1 ? "  +\(group.count - 1)" : ""
+            return TeammateCodePopupEntry(
+                title: latest.isCorrect ? "Код принят" : "Код не подошёл",
+                message: "\(levelPrefix)\(author): \(codeText)\(suffix)",
+                isCorrect: latest.isCorrect
+            )
+        }
+        guard !entries.isEmpty else { return }
 
-        let answer = latest.answer.trimmingCharacters(in: .whitespacesAndNewlines)
-        let login = latest.login.trimmingCharacters(in: .whitespacesAndNewlines)
-        let codeText = answer.isEmpty ? "код" : answer
-        let author = login.isEmpty ? "Игрок команды" : login
-        let levelPrefix = latest.levelNumber > 0 ? "Ур. \(latest.levelNumber) · " : ""
-        let title = latest.isCorrect ? "Код принят" : "Код не подошёл"
-        let suffix = newActions.count > 1 ? "  +\(newActions.count - 1)" : ""
-        let message = "\(levelPrefix)\(author): \(codeText)\(suffix)"
         let popup = TeammateCodePopup(
-            title: title,
-            message: message,
-            isCorrect: latest.isCorrect,
+            entries: entries,
             id: UUID()
         )
 
@@ -1745,6 +1753,29 @@ final class EncounterViewModel {
                 self?.teammateCodePopupDismissTask = nil
             }
         }
+    }
+
+    /// Keeps every distinct code submitted between snapshots, collapsing only repeat submissions.
+    /// Case and all whitespace are ignored when deciding whether two answers are the same code.
+    private static func groupedTeammateCodeActions(
+        _ actions: [CodeAction]
+    ) -> [(action: CodeAction, count: Int)] {
+        var groups: [(action: CodeAction, count: Int)] = []
+        var groupIndexByCode: [String: Int] = [:]
+
+        for action in actions {
+            let normalizedCode = action.answer
+                .filter { !$0.isWhitespace }
+                .lowercased()
+            if let index = groupIndexByCode[normalizedCode] {
+                groups[index].count += 1
+            } else {
+                groupIndexByCode[normalizedCode] = groups.count
+                groups.append((action: action, count: 1))
+            }
+        }
+
+        return groups
     }
 
     private func mergeCodeLogActions(_ actions: [CodeAction], gameID: Int64) {

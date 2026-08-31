@@ -378,31 +378,39 @@ struct LevelPlayView: View {
     }
 
     private func teammateCodePopupView(_ popup: TeammateCodePopup) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: popup.isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(popup.isCorrect ? GameTheme.accent : .orange)
-                .font(.title3)
+        VStack(spacing: 0) {
+            ForEach(Array(popup.entries.enumerated()), id: \.offset) { index, entry in
+                if index > 0 {
+                    Divider()
+                        .overlay(GameTheme.muted.opacity(0.25))
+                }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(popup.title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(popup.isCorrect ? GameTheme.accent : .orange)
-                Text(popup.message)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(GameTheme.text)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Image(systemName: entry.isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(entry.isCorrect ? GameTheme.accent : .orange)
+                        .font(.title3)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(entry.isCorrect ? GameTheme.accent : .orange)
+                        Text(entry.message)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(GameTheme.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 10))
         .overlay {
             RoundedRectangle(cornerRadius: 10)
-                .stroke(popup.isCorrect ? GameTheme.accent.opacity(0.35) : Color.orange.opacity(0.35), lineWidth: 1)
+                .stroke(GameTheme.muted.opacity(0.35), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.16), radius: 6, y: 3)
     }
