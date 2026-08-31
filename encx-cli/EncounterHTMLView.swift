@@ -186,7 +186,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
                     fragment.append(document.createTextNode(text.slice(cursor, coordinateStart)));
 
                     const link = document.createElement('a');
-                    link.href = `yandexmaps://maps.yandex.ru/?ll=${longitude},${latitude}&z=16`;
+                    link.href = `yandexmaps://maps.yandex.ru/?ll=${longitude},${latitude}&pt=${longitude},${latitude}&z=16`;
                     link.textContent = text.slice(coordinateStart, coordinateEnd);
                     link.title = 'Открыть координаты в Яндекс Картах';
                     fragment.append(link);

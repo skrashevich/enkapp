@@ -106,6 +106,7 @@ enum CoordinateLinkifier {
         components.path = "/"
         components.queryItems = [
             URLQueryItem(name: "ll", value: "\(longitude),\(latitude)"),
+            URLQueryItem(name: "pt", value: "\(longitude),\(latitude)"),
             URLQueryItem(name: "z", value: "16")
         ]
         return components.url
@@ -120,6 +121,7 @@ enum CoordinateLinkifier {
         var components = URLComponents(string: "https://yandex.ru/maps/")
         components?.queryItems = [
             URLQueryItem(name: "ll", value: coordinates),
+            URLQueryItem(name: "pt", value: coordinates),
             URLQueryItem(name: "z", value: "16")
         ]
         return components?.url
