@@ -39,13 +39,20 @@
 ## Требования
 
 - macOS с Xcode 16+
-- Для пересборки `Encx.xcframework`: Go 1.26+, checkout [encx-cli](https://github.com/skrashevich/encx-cli) и `ENCX_CLI_ROOT` (по умолчанию `../encx-cli`, если клон лежит рядом под другим именем — укажите путь явно)
+- Для пересборки `Encx.xcframework`: Go 1.26+ и доступ в сеть — исходники [encx-cli](https://github.com/skrashevich/encx-cli) подтягиваются автоматически
 
 ## Сборка
 
 ```sh
-# Пересобрать Encx.xcframework из encx-cli (опционально, если менялся API)
+# Пересобрать Encx.xcframework (опционально, если менялся API).
+# Без переменных берёт последний коммит upstream в build/encx-cli-upstream/
 make framework
+
+# Собрать из локального чекаута encx-cli вместо upstream
+make framework ENCX_CLI_ROOT=/path/to/encx-cli
+
+# Зафиксировать версию upstream
+make framework ENCX_CLI_REF=v0.11.1
 
 # Unsigned / signed IPA (см. make help)
 make unsigned-ipa
@@ -68,6 +75,7 @@ make screenshots
   <img src="https://skrashevich.github.io/enkapp/screenshots/iphone/04-team.png" alt="Управление командой" width="260">
   <img src="https://skrashevich.github.io/enkapp/screenshots/iphone/05-tools.png" alt="Инструменты" width="260">
   <img src="https://skrashevich.github.io/enkapp/screenshots/iphone/06-anagramizer.png" alt="Анаграмайзер" width="260">
+  <img src="https://skrashevich.github.io/enkapp/screenshots/iphone/07-onboarding.png" alt="Первоначальная настройка" width="260">
 </p>
 
 `make screenshots` собирает Debug-приложение для iOS Simulator, запускает его с `--screenshots` и сохраняет PNG в `build/screenshots/`.
