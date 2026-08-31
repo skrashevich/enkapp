@@ -143,9 +143,15 @@ final class AgentChatSession {
     }
 
     /// Sends a message and waits for the assistant's reply.
-    func send(_ text: String) async {
+    func send(_ text: String, gameID: Int64?, levelID: Int?) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isRunning else { return }
+
+        let modelInput = Self.messageWithGameContext(
+            trimmed,
+            gameID: gameID,
+            levelID: levelID
+        )
 
         messages.append(AgentMessage(role: .user, text: trimmed))
         activity.removeAll()
@@ -166,12 +172,12 @@ final class AgentChatSession {
         do {
             let reply: String
             if let onDevice {
-                reply = try await replyOnDevice(trimmed, backend: onDevice)
+                reply = try await replyOnDevice(modelInput, backend: onDevice)
             } else {
                 // The gomobile call blocks for the whole turn; keep it off the main actor.
                 reply = try await Task.detached(priority: .userInitiated) {
                     var error: NSError?
-                    let reply = session.sendMessage(trimmed, error: &error)
+                    let reply = session.sendMessage(modelInput, error: &error)
                     if let error { throw error }
                     return reply
                 }.value
@@ -183,6 +189,30 @@ final class AgentChatSession {
         #else
         messages.append(AgentMessage(role: .failure, text: AgentSessionError.bindingsUnavailable.localizedDescription))
         #endif
+    }
+
+    /// Adds identifiers already known by the app before the model decides which
+    /// tools to call. Keeping this separate from the visible transcript avoids
+    /// making the player repeat IDs and lets the model address the current game
+    /// or level directly instead of discovering them through list/state calls.
+    static func messageWithGameContext(_ text: String, gameID: Int64?, levelID: Int?) -> String {
+        var identifiers: [String] = []
+        if let gameID {
+            identifiers.append("game_id: \(gameID)")
+        }
+        if let levelID {
+            identifiers.append("level_id: \(levelID)")
+        }
+        guard !identifiers.isEmpty else { return text }
+
+        return """
+        Current Encounter context supplied by the app:
+        \(identifiers.joined(separator: "\n"))
+        Use these IDs directly. Do not call tools only to discover the current game_id or level_id.
+
+        Player message:
+        \(text)
+        """
     }
 
     /// Aborts the running turn.

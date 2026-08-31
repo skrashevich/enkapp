@@ -118,7 +118,12 @@ struct AgentChatView: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !session.isRunning else { return }
         draft = ""
-        Task { await session.send(text) }
+        let currentModel = model.currentModel
+        let gameID = model.selectedGameID ?? currentModel.map { Int64($0.gameID) }
+        let levelID = currentModel?.gameID == gameID.map(Int.init)
+            ? currentModel?.level?.levelID
+            : nil
+        Task { await session.send(text, gameID: gameID, levelID: levelID) }
     }
 
     private func scrollToBottom(_ session: AgentChatSession, proxy: ScrollViewProxy) {
