@@ -5,6 +5,7 @@ import UIKit
 /// Presented when the player taps an image inside a task/hint/bonus WebView.
 struct ZoomableImageViewer: View {
     let url: URL
+    let fileName: String
     var onClose: () -> Void
 
     @State private var phase: LoadPhase = .loading
@@ -47,19 +48,30 @@ struct ZoomableImageViewer: View {
             }
 
             VStack {
-                HStack {
-                    Spacer()
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(12)
-                            .background(.black.opacity(0.45), in: Circle())
+                ZStack {
+                    Text(fileName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.horizontal, 52)
+
+                    HStack {
+                        Spacer()
+                        Button(action: onClose) {
+                            Image(systemName: "xmark")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(12)
+                                .background(.black.opacity(0.45), in: Circle())
+                        }
+                        .accessibilityLabel("Закрыть")
+                        .padding(.trailing, 16)
                     }
-                    .accessibilityLabel("Закрыть")
-                    .padding(.trailing, 16)
-                    .padding(.top, 8)
                 }
+                .padding(.top, 8)
+                .background(.black.opacity(0.35))
+
                 Spacer()
             }
         }

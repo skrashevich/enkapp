@@ -12,7 +12,7 @@ struct EncounterHTMLView: View {
         }
         .frame(height: max(height, 44))
         .fullScreenCover(item: $zoomImage) { target in
-            ZoomableImageViewer(url: target.url) {
+            ZoomableImageViewer(url: target.url, fileName: target.fileName) {
                 zoomImage = nil
             }
         }
@@ -22,6 +22,12 @@ struct EncounterHTMLView: View {
 struct ZoomImageTarget: Identifiable {
     let url: URL
     var id: String { url.absoluteString }
+
+    var fileName: String {
+        let encodedName = url.lastPathComponent
+        guard !encodedName.isEmpty else { return "Изображение" }
+        return encodedName.removingPercentEncoding ?? encodedName
+    }
 }
 
 private struct EncounterHTMLWebView: UIViewRepresentable {
@@ -67,6 +73,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
         let configuration = WKWebViewConfiguration()
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: "imageTapped")
+        controller.add(context.coordinator, name: "imageContextRequested")
         controller.addUserScript(
             WKUserScript(
                 source: Self.imageTapJS,
@@ -84,6 +91,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
         webView.scrollView.alwaysBounceHorizontal = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
         return webView
     }
 
@@ -100,6 +108,20 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
                 }
             });
         }
+
+        function reportContextTarget(target) {
+            const img = target && target.closest ? target.closest('img') : null;
+            const src = img ? (img.currentSrc || img.src || '') : '';
+            window.webkit.messageHandlers.imageContextRequested.postMessage(src);
+        }
+
+        document.addEventListener('touchstart', event => {
+            reportContextTarget(event.target);
+        }, { capture: true, passive: true });
+        document.addEventListener('contextmenu', event => {
+            reportContextTarget(event.target);
+        }, { capture: true });
+
         document.querySelectorAll('img').forEach(bind);
         new MutationObserver(mutations => {
             for (const m of mutations) {
@@ -121,6 +143,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "imageTapped")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "imageContextRequested")
     }
 
     private func wrappedHTML(_ body: String) -> String {
@@ -161,10 +184,11 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
         """
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         @Binding var contentHeight: CGFloat
         let onImageTap: (URL) -> Void
         var lastHTML = ""
+        private var contextImageURL: URL?
 
         init(contentHeight: Binding<CGFloat>, onImageTap: @escaping (URL) -> Void) {
             _contentHeight = contentHeight
@@ -175,10 +199,66 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
-            guard message.name == "imageTapped",
-                  let src = message.body as? String,
-                  let url = URL(string: src) else { return }
-            onImageTap(url)
+            guard let src = message.body as? String else { return }
+
+            switch message.name {
+            case "imageTapped":
+                guard let url = URL(string: src) else { return }
+                onImageTap(url)
+            case "imageContextRequested":
+                contextImageURL = URL(string: src)
+            default:
+                break
+            }
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo,
+            completionHandler: @escaping (UIContextMenuConfiguration?) -> Void
+        ) {
+            let imageURL = contextImageURL
+            guard imageURL != nil || elementInfo.linkURL != nil else {
+                completionHandler(nil)
+                return
+            }
+
+            let configuration = UIContextMenuConfiguration(
+                identifier: (imageURL ?? elementInfo.linkURL).map { $0.absoluteString as NSString },
+                previewProvider: nil
+            ) { suggestedActions in
+                guard let imageURL,
+                      let searchURL = Self.yandexImageSearchURL(for: imageURL) else {
+                    return UIMenu(children: suggestedActions)
+                }
+
+                let searchAction = UIAction(
+                    title: "Найти это изображение в Яндексе",
+                    image: UIImage(systemName: "magnifyingglass")
+                ) { _ in
+                    UIApplication.shared.open(searchURL)
+                }
+                return UIMenu(children: [searchAction] + suggestedActions)
+            }
+            completionHandler(configuration)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            contextMenuDidEndForElement elementInfo: WKContextMenuElementInfo
+        ) {
+            contextImageURL = nil
+        }
+
+        private static func yandexImageSearchURL(for imageURL: URL) -> URL? {
+            guard imageURL.scheme == "http" || imageURL.scheme == "https" else { return nil }
+
+            var components = URLComponents(string: "https://yandex.ru/images/search")
+            components?.queryItems = [
+                URLQueryItem(name: "rpt", value: "imageview"),
+                URLQueryItem(name: "url", value: imageURL.absoluteString)
+            ]
+            return components?.url
         }
 
         func resetHeight() {
