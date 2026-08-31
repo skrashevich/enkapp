@@ -91,7 +91,7 @@ final class AppClipViewModel {
         await runBusy("Вход...") {
             persistSessionHints()
             let client = try rebuildClient()
-            _ = try client.login(user: login, password: password)
+            _ = try await client.login(user: login, password: password)
             try saveCookies(from: client)
             try KeychainCredentialsStore.save(
                 password: password,
@@ -223,12 +223,12 @@ final class AppClipViewModel {
             return try await operation(try ensureClient())
         } catch {
             guard EncounterClient.isSessionExpiredError(error) else { throw error }
-            try performRelogin()
+            try await performRelogin()
             return try await operation(try ensureClient())
         }
     }
 
-    private func performRelogin() throws {
+    private func performRelogin() async throws {
         let trimmedLogin = login.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedLogin.isEmpty else { throw AppClipError.notLoggedIn }
         guard let password = KeychainCredentialsStore.loadPassword(domain: settings.domain, login: trimmedLogin) else {
@@ -236,7 +236,7 @@ final class AppClipViewModel {
         }
 
         client = try EncounterClient(settings: settings)
-        _ = try client!.login(user: trimmedLogin, password: password)
+        _ = try await client!.login(user: trimmedLogin, password: password)
         try saveCookies(from: client!)
     }
 

@@ -9,6 +9,9 @@ struct ContentView: View {
             mainContent
                 .navigationDestination(for: AppRoute.self, destination: destination)
         }
+        // Present model errors from the navigation container so they are visible on the
+        // currently displayed destination (not only after returning to the root screen).
+        .modifier(ErrorAlertPresenter(model: model))
         .preferredColorScheme(.dark)
     }
 
@@ -26,7 +29,6 @@ struct ContentView: View {
         screenContent
             .modifier(SettingsChangeObserver(model: model))
             .modifier(LifecycleObserver(model: model, scenePhase: scenePhase))
-            .modifier(ErrorAlertPresenter(model: model))
             .modifier(NewHintPopupPresenter(model: model))
             .sheet(isPresented: $model.showAntiSpamVerification) {
                 AntiSpamVerificationView(model: model)

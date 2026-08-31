@@ -157,6 +157,7 @@ final class EncounterViewModel {
     private var queueProcessorTask: Task<Void, Never>?
     private var engineReachable = true
     private var keepScreenAwake = false
+    private var loginTask: Task<Bool, Never>?
     private var reloginTask: Task<Void, Error>?
     private var lastGamePollDate: Date?
     private var codeLogLoadedGameID: Int64?
@@ -508,7 +509,7 @@ final class EncounterViewModel {
             if let cookies = loadSessionCookies() {
                 let client = try ensureClient()
                 try client.importCookies(cookies)
-                updateHomeDomainIfPossible(using: client)
+                await updateHomeDomainIfPossible(using: client)
             }
             try await refreshGamesNow()
             statusMessage = ""
@@ -519,7 +520,7 @@ final class EncounterViewModel {
             }
             do {
                 try await reloginSilently()
-                updateHomeDomainIfPossible(using: try ensureClient())
+                await updateHomeDomainIfPossible(using: try ensureClient())
                 try await refreshGamesNow()
                 statusMessage = ""
             } catch {
@@ -531,17 +532,50 @@ final class EncounterViewModel {
 
     @discardableResult
     func loginAction() async -> Bool {
+        // A second tap (or another view observing the same model) joins the active attempt.
+        // This also prevents concurrent calls into the stateful gomobile client.
+        if let loginTask {
+            return await loginTask.value
+        }
+
+        let task = Task<Bool, Never> { @MainActor [weak self] in
+            guard let self else { return false }
+            return await self.performLoginAction()
+        }
+        loginTask = task
+        let succeeded = await task.value
+        loginTask = nil
+        return succeeded
+    }
+
+    private func performLoginAction() async -> Bool {
         let succeeded = await runBusy("Авторизация...") {
             persistAuthorizationSettings()
-            let client = try rebuildClient()
-            _ = try client.login(user: login, password: password)
+            let submittedLogin = login.trimmingCharacters(in: .whitespacesAndNewlines)
+            let submittedPassword = password
+            let client = try rebuildClient(importStoredCookies: false)
+            do {
+                _ = try await client.login(user: submittedLogin, password: submittedPassword)
+            } catch {
+                // Never reuse a client whose request was interrupted halfway through.
+                self.client = nil
+                throw error
+            }
             try saveCookies(from: client)
-            try saveCredentials(password: password)
-            updateHomeDomainIfPossible(using: client)
+            try saveCredentials(password: submittedPassword)
+            await updateHomeDomainIfPossible(using: client)
             rememberDomain(settings.domain)
             statusMessage = "Вход выполнен"
             password = ""
-            try await refreshGamesNow()
+
+            // Authentication has already succeeded at this point. A connection loss while
+            // refreshing the catalogue must not turn it into a failed login or ask for the
+            // password again; the normal refresh action can retry later.
+            do {
+                try await refreshGamesNow()
+            } catch {
+                statusMessage = "Вход выполнен. Не удалось обновить список игр."
+            }
         }
         if succeeded {
             selectedScreen = .games
@@ -550,8 +584,8 @@ final class EncounterViewModel {
         return succeeded
     }
 
-    private func updateHomeDomainIfPossible(using client: EncounterClient) {
-        guard let profile = try? client.profile() else { return }
+    private func updateHomeDomainIfPossible(using client: EncounterClient) async {
+        guard let profile = try? await client.profile() else { return }
         let normalized = profile.domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty else { return }
 
@@ -2112,9 +2146,9 @@ final class EncounterViewModel {
 
     private func refreshGamesNow() async throws {
         try await withSessionRecovery { client in
-            let list = try client.gameList()
+            let list = try await client.gameList()
             games = list.activeGames + list.comingGames
-            domainGames = (try? client.domainGames()) ?? []
+            domainGames = (try? await client.domainGames()) ?? []
             try saveCookies(from: client)
             statusMessage = games.isEmpty && domainGames.isEmpty ? "Игры не найдены" : "Игры загружены"
         }
@@ -2162,10 +2196,10 @@ final class EncounterViewModel {
         return try rebuildClient()
     }
 
-    private func rebuildClient() throws -> EncounterClient {
+    private func rebuildClient(importStoredCookies: Bool = true) throws -> EncounterClient {
         saveSettings()
         let newClient = try EncounterClient(settings: settings)
-        if let cookies = loadSessionCookies() {
+        if importStoredCookies, let cookies = loadSessionCookies() {
             try? newClient.importCookies(cookies)
         }
         client = newClient
@@ -2348,14 +2382,14 @@ final class EncounterViewModel {
         }
 
         let task = Task<Void, Error> { @MainActor in
-            try self.performRelogin()
+            try await self.performRelogin()
         }
         reloginTask = task
         defer { reloginTask = nil }
         try await task.value
     }
 
-    private func performRelogin() throws {
+    private func performRelogin() async throws {
         let trimmedLogin = login.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedLogin.isEmpty else { throw SessionRecoveryError.reloginRequired }
         guard let storedPassword = KeychainCredentialsStore.loadPassword(
@@ -2366,7 +2400,7 @@ final class EncounterViewModel {
         }
 
         let client = try rebuildClient()
-        _ = try client.login(user: trimmedLogin, password: storedPassword)
+        _ = try await client.login(user: trimmedLogin, password: storedPassword)
         try saveCookies(from: client)
         try saveCredentials(password: storedPassword)
     }

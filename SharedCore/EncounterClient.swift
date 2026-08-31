@@ -225,6 +225,14 @@ nonisolated final class EncounterClient {
         #endif
     }
 
+    /// The gomobile binding exposes login synchronously. Keep that blocking call away from
+    /// the main actor so a slow or disappearing connection cannot freeze the app UI.
+    func login(user: String, password: String) async throws -> LoginResponse {
+        try await Task.detached(priority: .userInitiated) {
+            try self.login(user: user, password: password)
+        }.value
+    }
+
     func exportCookies() throws -> Data {
         #if canImport(Encx)
         return try client.exportCookies()
@@ -313,6 +321,12 @@ nonisolated final class EncounterClient {
         #endif
     }
 
+    func domainGames() async throws -> [DomainGame] {
+        try await Task.detached(priority: .userInitiated) {
+            try self.domainGames()
+        }.value
+    }
+
     func profile() throws -> UserProfile {
         #if canImport(Encx)
         var error: NSError?
@@ -322,6 +336,12 @@ nonisolated final class EncounterClient {
         #else
         throw EncounterClientError.bindingsUnavailable
         #endif
+    }
+
+    func profile() async throws -> UserProfile {
+        try await Task.detached(priority: .userInitiated) {
+            try self.profile()
+        }.value
     }
 
     func teamLinks(from html: String) throws -> [TeamInfo] {
@@ -449,6 +469,12 @@ nonisolated final class EncounterClient {
         #else
         throw EncounterClientError.bindingsUnavailable
         #endif
+    }
+
+    func gameList(page: Int64 = 0) async throws -> GameListResponse {
+        try await Task.detached(priority: .userInitiated) {
+            try self.gameList(page: page)
+        }.value
     }
 
     /// Submits a player application via encx EnterGame (MakeGameFee.aspx in Go).
