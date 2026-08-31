@@ -177,6 +177,22 @@
             <div class="phone gallery-phone"><img src="/assets/screenshots/settings.webp" alt="Настройки домена и аккаунта в enkapp" width="1284" height="2778" loading="lazy"></div>
             <figcaption><b>Гибкие настройки</b><span>Любой домен Encounter и безопасный вход</span></figcaption>
           </figure>
+          <figure>
+            <div class="phone gallery-phone"><img src="/assets/screenshots/onboarding.webp" alt="Первоначальная настройка enkapp после установки" width="1284" height="2778" loading="lazy"></div>
+            <figcaption><b>Настройка за минуту</b><span>Домен, вход и оповещения шаг за шагом</span></figcaption>
+          </figure>
+          <figure>
+            <div class="phone gallery-phone"><img src="/assets/screenshots/team.webp" alt="Управление командой в enkapp" width="1284" height="2778" loading="lazy"></div>
+            <figcaption><b>Команда под рукой</b><span>Состав, приглашения и заявки</span></figcaption>
+          </figure>
+          <figure>
+            <div class="phone gallery-phone"><img src="/assets/screenshots/tools.webp" alt="Инструменты игрока в enkapp" width="1284" height="2778" loading="lazy"></div>
+            <figcaption><b>Инструменты игрока</b><span>Шифры, журнал кодов и утилиты</span></figcaption>
+          </figure>
+          <figure>
+            <div class="phone gallery-phone"><img src="/assets/screenshots/anagramizer.webp" alt="Анаграмайзер enkapp" width="1284" height="2778" loading="lazy"></div>
+            <figcaption><b>Анаграмайзер</b><span>Разбор анаграмм по буквам и шаблону</span></figcaption>
+          </figure>
         </div>
       </div>
     </section>

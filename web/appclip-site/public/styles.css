@@ -126,6 +126,8 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(48px,6.5vw,86px); line-height
 .screenshot-gallery figure { margin: 0; }
 .gallery-phone { width: 100%; aspect-ratio: 1284/2778; }
 .featured-shot { padding-top: 55px; }
+/* Галерея не кратна трём: одинокий последний кадр встаёт по центру, а не у левого края. */
+.screenshot-gallery figure:last-child:nth-child(3n+1) { grid-column: 2; }
 .screenshot-gallery figcaption { display: grid; gap: 6px; margin-top: 20px; text-align: center; }
 .screenshot-gallery figcaption b { font-size: 17px; }
 .screenshot-gallery figcaption span { color: var(--muted); font-size: 13px; line-height: 1.4; }
@@ -195,6 +197,8 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(48px,6.5vw,86px); line-height
   .feature-card-wide .queue-demo, .feature-tools .tool-tags { position: relative; inset: auto; margin-top: 28px; }
   .feature-tools { padding-bottom: 25px; }
   .screenshot-gallery { width: min(430px,100%); grid-template-columns: 1fr; gap: 58px; }
+  /* В одну колонку центрирование последнего кадра создало бы фантомную вторую колонку. */
+  .screenshot-gallery figure:last-child:nth-child(3n+1) { grid-column: auto; }
   .featured-shot { padding-top: 0; }
   .install-card { min-height: 700px; grid-template-columns: 1fr; align-items: start; padding: 34px 26px; }
   .install-card .hero-actions { display: grid; }
