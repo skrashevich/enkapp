@@ -2,6 +2,7 @@ import Foundation
 
 struct AppClipInvocation: Equatable {
     private nonisolated static let fallbackDomain = "encounter.exe.xyz"
+    nonisolated static let webHost = "enkapp.svk.app"
 
     var domain: String
     var gameID: Int64?
@@ -49,5 +50,9 @@ struct AppClipInvocation: Equatable {
         }
 
         self.init(domain: domain ?? Self.fallbackDomain, gameID: gameID)
+    }
+
+    nonisolated static func isSupportedWebURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "https" && url.host?.lowercased() == webHost
     }
 }

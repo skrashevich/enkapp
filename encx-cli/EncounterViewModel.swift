@@ -1953,7 +1953,20 @@ final class EncounterViewModel {
         return queueConnectionStatus.label
     }
 
-    func handleWidgetURL(_ url: URL) async {
+    func handleIncomingURL(_ url: URL) async {
+        if AppClipInvocation.isSupportedWebURL(url) {
+            let invocation = AppClipInvocation(url: url)
+            guard let gameID = invocation.gameID else { return }
+
+            _ = applyDomainSelection(invocation.domain)
+            _ = await openGame(gameID, presentErrors: true)
+            return
+        }
+
+        await handleWidgetURL(url)
+    }
+
+    private func handleWidgetURL(_ url: URL) async {
         guard url.scheme?.lowercased() == "encx-cli" else { return }
 
         switch url.host?.lowercased() {

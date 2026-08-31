@@ -74,9 +74,9 @@ private struct RootView: View {
                     }
             }
         }
-        // Kept outside the branch so a widget deep link is not dropped while onboarding shows.
+        // Kept outside the branch so a widget or game deep link is not dropped while onboarding shows.
         .onOpenURL { url in
-            Task { await model.handleWidgetURL(url) }
+            Task { await model.handleIncomingURL(url) }
         }
     }
 }
