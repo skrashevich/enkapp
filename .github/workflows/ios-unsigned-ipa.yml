@@ -1,16 +1,43 @@
-name: iOS unsigned IPA
+name: iOS tagged release
 
 on:
   push:
-  pull_request:
-  workflow_dispatch:
+    tags:
+      - 'v*.*.*.*'
+
+permissions:
+  contents: read
 
 concurrency:
   group: ios-unsigned-ipa-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      app_version: ${{ steps.tag.outputs.app_version }}
+      build_number: ${{ steps.tag.outputs.build_number }}
+    steps:
+      - name: Parse release tag
+        id: tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.([1-9][0-9]*)$ ]]; then
+            echo "::error::Expected v<major>.<minor>.<patch>.<build>, e.g. v0.2.25.71"
+            exit 1
+          fi
+          echo "app_version=${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${BASH_REMATCH[4]}" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: version
+    env:
+      APP_VERSION: ${{ needs.version.outputs.app_version }}
+      BUILD_NUMBER: ${{ needs.version.outputs.build_number }}
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -21,7 +48,9 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
       - name: Build unsigned IPA
-        run: make unsigned-ipa SKIP_FRAMEWORK=1
+        run: >-
+          make unsigned-ipa SKIP_FRAMEWORK=1
+          XCODEBUILD="xcodebuild MARKETING_VERSION=$APP_VERSION CURRENT_PROJECT_VERSION=$BUILD_NUMBER"
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
@@ -30,3 +59,83 @@ jobs:
           path: build/*-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
+
+  testflight:
+    needs: version
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      APP_VERSION: ${{ needs.version.outputs.app_version }}
+      BUILD_NUMBER: ${{ needs.version.outputs.build_number }}
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      SIGNING_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
+      AUTH_KEY_PATH: ${{ runner.temp }}/app-store-connect.p8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Install signing credentials
+        env:
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          IOS_CERTIFICATES_P12_BASE64: ${{ secrets.IOS_CERTIFICATES_P12_BASE64 }}
+          IOS_CERTIFICATES_PASSWORD: ${{ secrets.IOS_CERTIFICATES_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_PRIVATE_KEY IOS_CERTIFICATES_P12_BASE64 IOS_CERTIFICATES_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing GitHub Actions secret: $name"
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$AUTH_KEY_PATH"
+          printf '%s' "$IOS_CERTIFICATES_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          keychain_password="$(openssl rand -hex 32)"
+          echo "::add-mask::$keychain_password"
+          security create-keychain -p "$keychain_password" "$SIGNING_KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$SIGNING_KEYCHAIN"
+          security unlock-keychain -p "$keychain_password" "$SIGNING_KEYCHAIN"
+          security import "$RUNNER_TEMP/signing.p12" -P "$IOS_CERTIFICATES_PASSWORD" -A -t cert -f pkcs12 -k "$SIGNING_KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$keychain_password" "$SIGNING_KEYCHAIN"
+          security list-keychains -d user -s "$SIGNING_KEYCHAIN" "$HOME/Library/Keychains/login.keychain-db"
+
+      - name: Archive tagged release
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project encx-cli.xcodeproj \
+            -scheme encx-cli \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/encx-cli.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$AUTH_KEY_PATH" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            MARKETING_VERSION="$APP_VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGN_STYLE=Automatic
+
+      - name: Upload to TestFlight internal testing
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath build/encx-cli.xcarchive \
+            -exportPath build/testflight \
+            -exportOptionsPlist export/TestFlightExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$AUTH_KEY_PATH" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          if [[ -f "$SIGNING_KEYCHAIN" ]]; then
+            security delete-keychain "$SIGNING_KEYCHAIN"
+          fi
+          rm -f "$AUTH_KEY_PATH" "$RUNNER_TEMP/signing.p12"

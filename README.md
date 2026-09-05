@@ -1,8 +1,7 @@
 # enkapp
 
-[![iOS unsigned IPA](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml/badge.svg)](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml)
+[![iOS tagged release](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml/badge.svg)](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml)
 [![TestFlight](https://img.shields.io/badge/TestFlight-Установить-0A84FF?logo=apple)](https://testflight.apple.com/join/QVfQ5Hzf)
-[![Download nightly IPA](https://img.shields.io/badge/dawnl.ink-download%20IPA-0A84FF)](https://dawnl.ink/skrashevich/enkapp/workflows/ios-unsigned-ipa/main/encx-cli-unsigned-ipa)
 [![License](https://img.shields.io/github/license/skrashevich/enkapp)](LICENSE)
 
 Нативное iOS-приложение для [Encounter](https://en.cx): очередь кодов, уровни, Live Activity, уведомления.
@@ -19,9 +18,9 @@
 
 ### Sideloading (без TestFlight)
 
-[Последний билд (unsigned IPA)](https://dawnl.ink/skrashevich/enkapp/workflows/ios-unsigned-ipa/main/encx-cli-unsigned-ipa)
+[Сборки по тегам (unsigned IPA)](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml)
 
-1. Скачай архив по ссылке выше и распакуй его. Внутри будет файл `.ipa`.
+1. Открой успешный запуск по тегу, скачай artifact `encx-cli-unsigned-ipa` (нужен вход в GitHub) и распакуй его. Внутри будет файл `.ipa`.
 2. Установи любой sideloading-инструмент:
    - `AltStore` / `SideStore` для установки прямо на устройство
    - `Sideloadly` если удобнее ставить с компьютера
@@ -34,7 +33,6 @@
 
 - На бесплатном Apple ID такая установка обычно живёт 7 дней, потом приложение надо переустановить или переподписать.
 - Название artifact и bundle местами ещё могут содержать старое имя `encx-cli`; это нормально.
-- Если ссылка на `dawnl.ink` не открывается, виноват обычно не iPhone, а сеть между тобой и `dawnl.ink`.
 
 ## Требования
 
@@ -65,6 +63,45 @@ make screenshots
 Открыть в Xcode: `encx-cli.xcodeproj`, схема `encx-cli`.
 
 `Encx.xcframework` лежит в `encx-cli/Frameworks/`. После `make framework` он синхронизируется из `encx-cli/build/gomobile/`.
+
+## Релизы в CI и внутренний TestFlight
+
+Workflow `iOS tagged release` запускается только при push тега формата `v<major>.<minor>.<patch>.<build>`. Он сохраняет
+unsigned IPA как artifact на 14 дней и отдельно собирает подписанный Release-архив
+из того же коммита с готовым `Encx.xcframework`, затем загружает его в App Store Connect
+как **TestFlight Internal Only**. Push веток, PR и ручной запуск релиз не собирают.
+Например, `v0.2.25.71` задаёт `MARKETING_VERSION=0.2.25` и `CURRENT_PROJECT_VERSION=71`
+для приложения, widget и App Clip, включая unsigned IPA. Xcode сохраняет эти значения
+при загрузке. Повторная загрузка уже использованной версии и номера сборки Apple
+не допускается: для следующей сборки увеличь последнюю часть тега. Неправильный формат
+тега отклоняется до сборки и использования секретов.
+
+В Settings → Secrets and variables → Actions добавь repository secrets:
+
+| Secret | Значение |
+|--------|----------|
+| `APP_STORE_CONNECT_KEY_ID` | ID командного API-ключа App Store Connect |
+| `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID команды |
+| `APP_STORE_CONNECT_PRIVATE_KEY` | Полное содержимое файла `.p8`, включая BEGIN/END |
+| `IOS_CERTIFICATES_P12_BASE64` | Base64 от `.p12` с сертификатами Apple Development и Apple Distribution и их приватными ключами |
+| `IOS_CERTIFICATES_PASSWORD` | Непустой пароль этого `.p12` |
+
+Ключу нужны права на загрузку сборок и Certificates, Identifiers & Profiles
+(командный ключ `enkapp-github-actions` с ролью Developer). Сертификаты должны принадлежать команде `ZLQX2C6SX2`.
+Provisioning profiles для приложения, widget и App Clip Xcode получает автоматически.
+Приложение с bundle ID `com.svk-team.encx-cli` должно уже существовать в App Store Connect.
+В TestFlight создай внутреннюю группу, добавь тестеров и включи **Enable automatic distribution**:
+после обработки Apple сборка будет доступна этой группе. Требуемые Apple сведения
+об экспортном соответствии должны быть заполнены. Такие сборки недоступны по публичной
+ссылке внешнего TestFlight и не предназначены для публикации в App Store.
+См. [инструкцию Apple по внутренним тестерам](https://developer.apple.com/help/app-store-connect/test-a-beta-version/add-internal-testers).
+
+```sh
+git tag v0.2.25.71
+git push origin v0.2.25.71
+```
+
+Workflow скриншотов продолжает работать на ветках, PR и вручную; теги его не запускают.
 
 ## Скриншоты
 
