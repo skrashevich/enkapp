@@ -1,0 +1,59 @@
+name: iOS TestFlight public release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to publish externally, e.g. v0.2.5.74'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight-public-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+    steps:
+      - name: Parse release tag
+        id: tag
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.([1-9][0-9]*)$ ]]; then
+            echo "::error::Expected v<major>.<minor>.<patch>.<build>, e.g. v0.2.25.71"
+            exit 1
+          fi
+          echo "build_number=${BASH_REMATCH[4]}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Check required secrets
+        run: |
+          set -euo pipefail
+          for name in APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_PRIVATE_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing GitHub Actions secret: $name"
+              exit 1
+            fi
+          done
+
+      - name: Install dependencies
+        run: pip install --quiet cryptography
+
+      - name: Submit build for external TestFlight testing
+        env:
+          BUILD_NUMBER: ${{ steps.tag.outputs.build_number }}
+        run: python3 scripts/publish-testflight-public.py

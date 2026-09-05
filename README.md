@@ -109,6 +109,20 @@ git tag v0.2.25.71
 git push origin v0.2.25.71
 ```
 
+### Публикация для внешнего (публичного) TestFlight
+
+Workflow `iOS TestFlight public release` запускается вручную (`workflow_dispatch`) с вводом
+`tag` — уже существующим тегом, для которого `iOS tagged release` успешно загрузил билд
+в TestFlight. Он **не пересобирает** приложение (Apple не разрешает повторно загрузить тот же
+номер сборки), а находит уже загруженный билд по номеру сборки из тега через App Store Connect
+API, добавляет его во внешнюю тестовую группу `encx-public-testflight` (публичная ссылка
+`https://testflight.apple.com/join/QVfQ5Hzf`) и отправляет билд на Beta App Review. После
+одобрения Apple билд станет доступен всем, у кого есть публичная ссылка. Проверка занимает
+от нескольких часов до пары дней; повторный запуск для уже отправленного билда безопасен.
+Использует те же секреты `APP_STORE_CONNECT_KEY_ID`/`APP_STORE_CONNECT_ISSUER_ID`/
+`APP_STORE_CONNECT_PRIVATE_KEY`, что и internal-релиз. Запустить: Actions →
+`iOS TestFlight public release` → Run workflow → указать тег.
+
 Workflow скриншотов продолжает работать на ветках, PR и вручную; теги его не запускают.
 
 ## Скриншоты
