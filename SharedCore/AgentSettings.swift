@@ -46,10 +46,6 @@ nonisolated enum AgentProvider: String, Codable, CaseIterable, Identifiable {
     case anthropic
     case openrouter
     case codex
-    /// Apple's on-device model. No key, no network.
-    case onDevice
-    /// An open model downloaded into the app and run locally.
-    case downloaded
 
     var id: String { rawValue }
 
@@ -59,22 +55,11 @@ nonisolated enum AgentProvider: String, Codable, CaseIterable, Identifiable {
         case .anthropic: return "Anthropic"
         case .openrouter: return "OpenRouter"
         case .codex: return "ChatGPT"
-        case .onDevice: return "Apple"
-        case .downloaded: return "Своя модель"
         }
     }
 
     /// True when the provider authenticates with a ChatGPT login rather than a key.
     var usesSubscriptionLogin: Bool { self == .codex }
-
-    /// True when the model runs inside the app and needs no credentials at all.
-    var runsOnDevice: Bool { self == .onDevice || self == .downloaded }
-
-    /// True when the model has to be downloaded before it can answer.
-    var needsModelDownload: Bool { self == .downloaded }
-
-    /// True when the provider needs no stored secret.
-    var needsNoCredential: Bool { runsOnDevice }
 
     var defaultModel: String {
         switch self {
@@ -82,14 +67,13 @@ nonisolated enum AgentProvider: String, Codable, CaseIterable, Identifiable {
         case .anthropic: return "claude-sonnet-4-6"
         case .openrouter: return "openai/gpt-5.4"
         case .codex: return "gpt-5.6-sol"
-        case .onDevice, .downloaded: return ""
         }
     }
 
     /// Empty means "let the provider use its own default endpoint".
     var defaultAPIBase: String {
         switch self {
-        case .openai, .anthropic, .codex, .onDevice, .downloaded: return ""
+        case .openai, .anthropic, .codex: return ""
         case .openrouter: return "https://openrouter.ai/api/v1"
         }
     }
@@ -99,7 +83,7 @@ nonisolated enum AgentProvider: String, Codable, CaseIterable, Identifiable {
     var acceptsCustomEndpoint: Bool {
         switch self {
         case .openai, .anthropic, .openrouter: return true
-        case .codex, .onDevice, .downloaded: return false
+        case .codex: return false
         }
     }
 }
@@ -134,8 +118,17 @@ nonisolated struct AgentSettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
-        provider = try container.decodeIfPresent(AgentProvider.self, forKey: .provider) ?? .openai
-        model = try container.decodeIfPresent(String.self, forKey: .model) ?? provider.defaultModel
+        // The local-model providers ("onDevice", "downloaded") were removed, so a
+        // stored value can name a provider that no longer exists. Falling back to
+        // the default keeps the rest of the settings — the policy above all —
+        // instead of failing the whole decode and resetting the assistant.
+        provider = (try? container.decodeIfPresent(AgentProvider.self, forKey: .provider)) ?? .openai
+        // A session stored for one of the removed local providers carries an empty
+        // model name, which no hosted provider accepts.
+        let storedModel = try container.decodeIfPresent(String.self, forKey: .model) ?? ""
+        model = storedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? provider.defaultModel
+            : storedModel
         apiBase = try container.decodeIfPresent(String.self, forKey: .apiBase) ?? provider.defaultAPIBase
         policy = try container.decodeIfPresent(AgentAccessPolicy.self, forKey: .policy) ?? .approve
         maxSteps = try container.decodeIfPresent(Int.self, forKey: .maxSteps) ?? Self.defaultMaxSteps
@@ -152,9 +145,6 @@ nonisolated struct AgentSettings: Codable, Equatable {
 
     /// Whether the assistant has everything it needs to start a session.
     var hasCredentials: Bool {
-        if provider.needsNoCredential {
-            return true
-        }
         if provider.usesSubscriptionLogin {
             return AgentCredentialsStore.codexCredential() != nil
         }
@@ -164,7 +154,7 @@ nonisolated struct AgentSettings: Codable, Equatable {
     /// Builds the JSON contract consumed by `EncClient.NewAgentSession`.
     func agentConfigJSON() throws -> String {
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedModel.isEmpty || provider.runsOnDevice else {
+        guard !trimmedModel.isEmpty else {
             throw AgentSessionError.notConfigured
         }
 
@@ -176,11 +166,7 @@ nonisolated struct AgentSettings: Codable, Equatable {
             "web_tools": webToolsEnabled,
         ]
 
-        if provider.runsOnDevice {
-            // There is no provider to build: the model lives in the app, and the
-            // host drives the conversation while Go keeps the toolset.
-            payload["auth_method"] = "on-device"
-        } else if provider.usesSubscriptionLogin {
+        if provider.usesSubscriptionLogin {
             guard let credential = AgentCredentialsStore.codexCredential() else {
                 throw AgentSessionError.chatGPTSignInRequired
             }

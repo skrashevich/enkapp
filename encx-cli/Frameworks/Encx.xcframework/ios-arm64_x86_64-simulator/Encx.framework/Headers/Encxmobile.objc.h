@@ -57,14 +57,6 @@ Mutating tools do not emit an event; they call OnConfirmationRequest and wait.
 - (nonnull instancetype)initWithRef:(_Nonnull id)ref;
 - (nonnull instancetype)init;
 /**
- * BeginHostTurn opens a host-driven turn and returns its number.
-
-It mirrors what SendMessage does for the built-in loop: it claims the session,
-bumps the turn counter so confirmations can be matched, and drops cached reads
-so a new question sees fresh state.
- */
-- (BOOL)beginHostTurn:(int64_t* _Nullable)ret0_ error:(NSError* _Nullable* _Nullable)error;
-/**
  * Cancel aborts the running turn. SendMessage then returns the cancellation
 error and any pending confirmation is released as declined.
  */
@@ -76,32 +68,14 @@ string for sessions that authenticate with an API key.
  */
 - (NSString* _Nonnull)codexCredentialJSON:(NSError* _Nullable* _Nullable)error;
 /**
- * EndHostTurn closes a host-driven turn. content is the reply the host produced;
-an empty string reports the turn as failed with reason.
- */
-- (void)endHostTurn:(NSString* _Nullable)content reason:(NSString* _Nullable)reason;
-/**
  * HistoryJSON returns the remembered transcript as a JSON array of
 {"role","content"} objects.
  */
 - (NSString* _Nonnull)historyJSON:(NSError* _Nullable* _Nullable)error;
 /**
- * InvokeTool runs one engine tool by name and returns its JSON result.
-
-This is the same path the built-in loop takes: the policy gate runs first, so
-a mutating call still needs the player's confirmation, and pacing and caching
-still apply.
- */
-- (NSString* _Nonnull)invokeTool:(NSString* _Nullable)name argsJSON:(NSString* _Nullable)argsJSON error:(NSError* _Nullable* _Nullable)error;
-/**
  * Policy reports the engine access policy the session was built with.
  */
 - (NSString* _Nonnull)policy;
-/**
- * RecordHostExchange appends a completed host-driven exchange to the transcript
-the session remembers.
- */
-- (void)recordHostExchange:(NSString* _Nullable)userMessage assistantMessage:(NSString* _Nullable)assistantMessage;
 /**
  * ResetHistory forgets the transcript without rebuilding the session.
  */
@@ -122,18 +96,6 @@ cached level or code log would be worse than a fresh read.
  * SetDelegate attaches (or, with nil, detaches) the host callbacks.
  */
 - (void)setDelegate:(id<EncxmobileAgentDelegate> _Nullable)delegate;
-/**
- * SystemPrompt is the instruction text describing the engine and the active
-access policy. A host-driven loop has to supply it itself.
- */
-- (NSString* _Nonnull)systemPrompt;
-/**
- * ToolCatalogJSON lists the engine tools for a host-driven loop.
-
-Apple's on-device model runs inside the app and cannot be reached through a
-provider, so the host owns the conversation and asks for the toolset instead.
- */
-- (NSString* _Nonnull)toolCatalogJSON:(NSError* _Nullable* _Nullable)error;
 /**
  * ToolCount reports how many engine tools the model can see.
  */
@@ -205,6 +167,10 @@ and cannot react to them. The last one is reported only if the wait runs out.
 - (nonnull instancetype)initWithRef:(_Nonnull id)ref;
 - (nonnull instancetype)init;
 /**
+ * APIBaseURL returns the host the new engine is reached at.
+ */
+- (NSString* _Nonnull)apiBaseURL;
+/**
  * AcceptTeamInvitation accepts a team invitation.
  */
 - (BOOL)acceptTeamInvitation:(int64_t)teamID error:(NSError* _Nullable* _Nullable)error;
@@ -220,6 +186,10 @@ and cannot react to them. The last one is reported only if the wait runs out.
  * Domain returns the configured Encounter domain.
  */
 - (NSString* _Nonnull)domain;
+/**
+ * Engine reports which backend is actually serving this client.
+ */
+- (NSString* _Nonnull)engine;
 /**
  * EnterGame registers the player in a game. Returns raw server response.
  */
@@ -349,6 +319,15 @@ Zero or negative values reset to the default (1 second).
  */
 - (void)setCodeSendTimeoutSeconds:(int64_t)seconds;
 /**
+ * SetEngine selects the Encounter backend: "legacy" (default), "new", or
+"auto" to probe the API host once. Unknown values are ignored so a caller
+cannot silently end up on the wrong engine.
+
+Encounter is migrating from the ASP.NET engine to a REST one; both are
+implemented, and every method of this client works the same on either.
+ */
+- (void)setEngine:(NSString* _Nullable)mode;
+/**
  * SetGameRequestMinIntervalMillis sets the minimum interval between mobile game-engine requests.
 Zero or negative values disable pacing.
  */
@@ -384,12 +363,6 @@ Zero or negative values disable pacing.
  * AuthMethodCodex selects a ChatGPT subscription instead of an API key.
  */
 FOUNDATION_EXPORT NSString* _Nonnull const EncxmobileAuthMethodCodex;
-/**
- * AuthMethodOnDevice runs the model in the host process instead of calling a
-provider. The host drives the conversation and calls InvokeTool; the engine
-toolset, its policy gate, confirmations, pacing and caching are unchanged.
- */
-FOUNDATION_EXPORT NSString* _Nonnull const EncxmobileAuthMethodOnDevice;
 
 /**
  * AntiSpamURLFromError returns the verification page URL when err is anti-spam.

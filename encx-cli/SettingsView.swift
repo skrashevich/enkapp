@@ -23,7 +23,6 @@ struct SettingsView: View {
     @State private var agentKeyStored = false
     @State private var agentKeyStatus: String?
     @State private var codexSignIn = CodexSignInModel()
-    @State private var downloadedModel = DownloadedModelPreference.selected
     @Environment(\.scenePhase) private var scenePhase
 
     private var appVersion: String {
@@ -289,11 +288,7 @@ struct SettingsView: View {
 
             if model.agentSettings.enabled {
                 agentProviderRows
-                if model.agentSettings.provider.needsModelDownload {
-                    agentDownloadedModelRows
-                } else if model.agentSettings.provider.runsOnDevice {
-                    agentOnDeviceRows
-                } else if model.agentSettings.provider.usesSubscriptionLogin {
+                if model.agentSettings.provider.usesSubscriptionLogin {
                     agentChatGPTRows
                 } else {
                     agentKeyRows
@@ -328,11 +323,6 @@ struct SettingsView: View {
             refreshAgentCredentialState()
             agentKeyStatus = nil
         }
-        .onChange(of: downloadedModel) { _, newValue in
-            DownloadedModelPreference.selected = newValue
-            // The chosen model is captured when the session is built.
-            model.invalidateAgentSession()
-        }
     }
 
     @ViewBuilder
@@ -344,14 +334,12 @@ struct SettingsView: View {
         }
         .pickerStyle(.segmented)
 
-        if !model.agentSettings.provider.runsOnDevice {
-            TextField("Модель", text: $model.agentSettings.model)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .foregroundStyle(GameTheme.text)
-                .padding(12)
-                .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
-        }
+        TextField("Модель", text: $model.agentSettings.model)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .foregroundStyle(GameTheme.text)
+            .padding(12)
+            .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
 
         if model.agentSettings.provider.acceptsCustomEndpoint {
             TextField("Endpoint API (необязательно)", text: $model.agentSettings.apiBase)
@@ -365,43 +353,6 @@ struct SettingsView: View {
             Text("Endpoint должен обслуживать /chat/completions. Шлюзы только с Responses API (например api.openmodel.ai) отвечают 404.")
                 .font(.caption)
                 .foregroundStyle(GameTheme.muted)
-        }
-    }
-
-    @ViewBuilder
-    private var agentDownloadedModelRows: some View {
-        Picker("Модель", selection: $downloadedModel) {
-            ForEach(DownloadableModel.allCases) { candidate in
-                Text(candidate.title).tag(candidate)
-            }
-        }
-        .pickerStyle(.segmented)
-
-        Text("\(downloadedModel.approximateSize) · \(downloadedModel.note)")
-            .font(.caption)
-            .foregroundStyle(GameTheme.muted)
-
-        Text("Веса скачиваются с Hugging Face при первом вопросе и остаются на устройстве. "
-            + "Дальше всё работает без сети и без ключей. Такая модель заметно слабее облачной: "
-            + "она хуже держит длинные рассуждения и не умеет смотреть картинки заданий. "
-            + "Поиск в интернете в этом режиме выключен.")
-            .font(.caption)
-            .foregroundStyle(GameTheme.muted)
-    }
-
-    @ViewBuilder
-    private var agentOnDeviceRows: some View {
-        switch OnDeviceAgentBackend.availability {
-        case .available:
-            Text("Модель Apple работает прямо на устройстве: ключ не нужен, запросы никуда не уходят. "
-                + "Она заметно меньше облачных, поэтому хуже справляется с длинными рассуждениями "
-                + "и не умеет смотреть картинки заданий. Поиск в интернете в этом режиме выключен.")
-                .font(.caption)
-                .foregroundStyle(GameTheme.muted)
-        case .unsupported(let reason):
-            Label(reason, systemImage: "exclamationmark.triangle")
-                .font(.caption)
-                .foregroundStyle(.orange)
         }
     }
 

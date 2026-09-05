@@ -69,7 +69,6 @@ nonisolated struct AgentConfirmation: Identifiable, Equatable {
 final class AgentChatSession {
     private(set) var messages: [AgentMessage] = []
     private(set) var activity: [AgentToolActivity] = []
-    private(set) var localModelActivity: LocalAgentActivity?
     private(set) var isRunning = false
     private(set) var toolCount = 0
 
@@ -94,31 +93,12 @@ final class AgentChatSession {
     private let session: EncxmobileAgentSession
     private var delegate: AgentDelegateBridge?
     #endif
-    /// Non-nil when the model runs inside the app instead of behind a provider.
-    private let onDevice: (any LocalAgentModel)?
 
     /// - Parameters:
     ///   - client: the authenticated Encounter client the agent plays through.
     ///   - settings: provider, model and access policy.
     init(client: EncounterClient, settings: AgentSettings) throws {
         policy = settings.policy
-
-        switch settings.provider {
-        case .onDevice:
-            if case .unsupported(let reason) = OnDeviceAgentBackend.availability {
-                throw OnDeviceAgentError.unsupported(reason)
-            }
-            onDevice = OnDeviceAgentBackend()
-        case .downloaded:
-            // The factory is installed by the app target only, so the widget and
-            // App Clip never link the inference runtime.
-            guard let backend = LocalAgentModelFactory.makeDownloadedModel?() else {
-                throw OnDeviceAgentError.unsupported("Локальная модель недоступна в этой сборке.")
-            }
-            onDevice = backend
-        default:
-            onDevice = nil
-        }
 
         #if canImport(Encx)
         session = try client.makeAgentSession(configJSON: try settings.agentConfigJSON())
@@ -158,7 +138,6 @@ final class AgentChatSession {
         isRunning = true
         defer {
             isRunning = false
-            localModelActivity = nil
             lastFinishedTurn = currentTurn
             pendingConfirmations.removeAll()
             // A token refreshed mid-turn must be stored even when the turn failed:
@@ -170,18 +149,13 @@ final class AgentChatSession {
         #if canImport(Encx)
         let session = self.session
         do {
-            let reply: String
-            if let onDevice {
-                reply = try await replyOnDevice(modelInput, backend: onDevice)
-            } else {
-                // The gomobile call blocks for the whole turn; keep it off the main actor.
-                reply = try await Task.detached(priority: .userInitiated) {
-                    var error: NSError?
-                    let reply = session.sendMessage(modelInput, error: &error)
-                    if let error { throw error }
-                    return reply
-                }.value
-            }
+            // The gomobile call blocks for the whole turn; keep it off the main actor.
+            let reply = try await Task.detached(priority: .userInitiated) {
+                var error: NSError?
+                let reply = session.sendMessage(modelInput, error: &error)
+                if let error { throw error }
+                return reply
+            }.value
             messages.append(AgentMessage(role: .assistant, text: reply))
         } catch {
             messages.append(AgentMessage(role: .failure, text: error.localizedDescription))
@@ -245,63 +219,10 @@ final class AgentChatSession {
         guard !isRunning else { return }
         messages.removeAll()
         activity.removeAll()
-        onDevice?.reset()
         #if canImport(Encx)
         session.resetHistory()
         #endif
     }
-
-    #if canImport(Encx)
-    /// Runs one turn on Apple's on-device model.
-    ///
-    /// Go still owns the toolset, so the access policy, confirmations, pacing and
-    /// caching are the same as for the hosted backends. Only the decision of
-    /// which tool to call moves into the app.
-    private func replyOnDevice(_ text: String, backend: any LocalAgentModel) async throws -> String {
-        let session = self.session
-
-        // gomobile returns a nonnull string plus NSError**, so the error stays an
-        // explicit parameter rather than becoming a throwing call.
-        var error: NSError?
-        let catalogJSON = session.toolCatalogJSON(&error)
-        if let error { throw error }
-        let instructions = session.systemPrompt()
-
-        var turn: Int64 = 0
-        try session.beginHostTurn(&turn)
-
-        var turnError: Error?
-        defer {
-            session.endHostTurn(turnError == nil ? "…" : "", reason: turnError?.localizedDescription ?? "")
-        }
-
-        do {
-            let reply = try await backend.reply(
-                to: text,
-                instructions: instructions,
-                catalogJSON: catalogJSON,
-                reportActivity: { [weak self] activity in
-                    self?.localModelActivity = activity
-                },
-                invoke: { name, argsJSON in
-                    // The Go call blocks while a tool talks to the engine, and can
-                    // block much longer while the player answers a confirmation.
-                    try await Task.detached(priority: .userInitiated) {
-                        var error: NSError?
-                        let result = session.invokeTool(name, argsJSON: argsJSON, error: &error)
-                        if let error { throw error }
-                        return result
-                    }.value
-                }
-            )
-            session.recordHostExchange(text, assistantMessage: reply)
-            return reply
-        } catch {
-            turnError = error
-            throw error
-        }
-    }
-    #endif
 
     /// Stores a ChatGPT token that the Go session refreshed mid-turn.
     private func persistRefreshedCredential() {

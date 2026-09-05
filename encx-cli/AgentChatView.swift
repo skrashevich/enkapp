@@ -92,10 +92,7 @@ struct AgentChatView: View {
                             .id(message.id)
                     }
                     if session.isRunning {
-                        AgentActivityPanel(
-                            activity: session.activity,
-                            localModelActivity: session.localModelActivity
-                        )
+                        AgentActivityPanel(activity: session.activity)
                             .id(Self.activityAnchor)
                     }
                 }
@@ -258,26 +255,10 @@ private struct AgentMessageBubble: View {
 
 private struct AgentActivityPanel: View {
     let activity: [AgentToolActivity]
-    let localModelActivity: LocalAgentActivity?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if case .downloadingModel(let fractionCompleted) = localModelActivity {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.down.circle")
-                            .font(.caption)
-                            .foregroundStyle(GameTheme.accent)
-                        Text("Загрузка локальной модели… \(Int(fractionCompleted * 100))%")
-                            .font(.caption)
-                            .foregroundStyle(GameTheme.muted)
-                    }
-                    ProgressView(value: fractionCompleted)
-                        .tint(GameTheme.accent)
-                        .accessibilityLabel("Загрузка локальной модели")
-                        .accessibilityValue("\(Int(fractionCompleted * 100)) процентов")
-                }
-            } else if activity.isEmpty {
+            if activity.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Думает…")
