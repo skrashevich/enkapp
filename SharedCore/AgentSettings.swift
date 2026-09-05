@@ -88,7 +88,7 @@ nonisolated enum AgentProvider: String, Codable, CaseIterable, Identifiable {
         case .openai: return "gpt-5.4"
         case .anthropic: return "claude-sonnet-4-6"
         // Polza is an aggregator, so its model names carry a vendor prefix.
-        case .polza: return "openai/gpt-5.4"
+        case .polza: return "deepseek/deepseek-v4-flash-vision-exp"
         case .codex: return "gpt-5.6-sol"
         }
     }
