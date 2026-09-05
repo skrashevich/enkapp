@@ -92,13 +92,23 @@ struct AgentChatView: View {
                             .id(message.id)
                     }
                     if session.isRunning {
-                        AgentActivityPanel(activity: session.activity)
+                        AgentActivityPanel(
+                            activity: session.activity,
+                            startedAt: session.runStartedAt,
+                            awaitingConfirmation: session.currentConfirmation != nil
+                        )
                             .id(Self.activityAnchor)
                     }
                 }
                 .padding(14)
             }
             .scrollContentBackground(.hidden)
+            .onAppear {
+                scrollToBottom(session, proxy: proxy)
+            }
+            .onChange(of: session.isRunning) { _, _ in
+                scrollToBottom(session, proxy: proxy)
+            }
             .onChange(of: session.messages.count) { _, _ in
                 scrollToBottom(session, proxy: proxy)
             }
@@ -387,17 +397,17 @@ private struct AgentMarkdownText: View {
 
 private struct AgentActivityPanel: View {
     let activity: [AgentToolActivity]
+    let startedAt: Date?
+    let awaitingConfirmation: Bool
+
+    private var status: String {
+        if awaitingConfirmation { return "Ждёт вашего подтверждения" }
+        if activity.contains(where: { !$0.isFinished }) { return "Выполняет действия…" }
+        return activity.isEmpty ? "Ассистент думает…" : "Обдумывает результаты…"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if activity.isEmpty {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Думает…")
-                        .font(.caption)
-                        .foregroundStyle(GameTheme.muted)
-                }
-            }
             ForEach(activity) { item in
                 HStack(spacing: 8) {
                     icon(for: item)
@@ -413,10 +423,40 @@ private struct AgentActivityPanel: View {
                     }
                 }
             }
+
+            HStack(alignment: .top, spacing: 10) {
+                ProgressView()
+                    .tint(GameTheme.bonusTitle)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(status)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GameTheme.text)
+                    Text(awaitingConfirmation
+                         ? "Подтвердите или отклоните действие, чтобы продолжить."
+                         : "Ответ появится здесь. Можно остановить выполнение кнопкой ниже.")
+                        .font(.caption)
+                        .foregroundStyle(GameTheme.muted)
+                    if let startedAt {
+                        HStack(spacing: 4) {
+                            Text("Прошло")
+                            Text(startedAt, style: .timer)
+                                .monospacedDigit()
+                        }
+                        .font(.caption)
+                        .foregroundStyle(GameTheme.muted)
+                    }
+                }
+            }
+            .padding(.top, activity.isEmpty ? 0 : 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(GameTheme.panel.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
+        .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(GameTheme.bonusTitle.opacity(0.3), lineWidth: 1)
+        }
     }
 
     @ViewBuilder

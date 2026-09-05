@@ -85,7 +85,7 @@ struct ContentView: View {
                             Button {
                                 model.showAgentSheet = true
                             } label: {
-                                Image(systemName: "sparkles")
+                                AgentIcon()
                             }
                             .tint(GameTheme.bonusTitle)
                             .disabled(model.isBusy)

@@ -31,3 +31,14 @@ extension View {
             }
     }
 }
+
+/// Shared appearance for the assistant entry point on the home and game screens.
+struct AgentIcon: View {
+    var body: some View {
+        Image(systemName: "sparkles")
+            .font(.system(size: 18, weight: .medium))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(GameTheme.bonusTitle)
+            .accessibilityHidden(true)
+    }
+}

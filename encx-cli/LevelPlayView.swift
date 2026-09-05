@@ -494,7 +494,15 @@ struct LevelPlayView: View {
                     Button {
                         model.showAgentSheet = true
                     } label: {
-                        headerAction("Ассистент", systemImage: "sparkles")
+                        VStack(spacing: 2) {
+                            AgentIcon()
+                            Text("Ассистент")
+                                .font(.system(size: 9))
+                                .foregroundStyle(GameTheme.text)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .frame(minWidth: 44)
                     }
                     .disabled(model.isBusy)
                 }

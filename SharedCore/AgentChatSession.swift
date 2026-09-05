@@ -70,6 +70,7 @@ final class AgentChatSession {
     private(set) var messages: [AgentMessage] = []
     private(set) var activity: [AgentToolActivity] = []
     private(set) var isRunning = false
+    private(set) var runStartedAt: Date?
     private(set) var toolCount = 0
 
     /// Mutating calls awaiting a decision.
@@ -135,9 +136,11 @@ final class AgentChatSession {
 
         messages.append(AgentMessage(role: .user, text: trimmed))
         activity.removeAll()
+        runStartedAt = Date()
         isRunning = true
         defer {
             isRunning = false
+            runStartedAt = nil
             lastFinishedTurn = currentTurn
             pendingConfirmations.removeAll()
             // A token refreshed mid-turn must be stored even when the turn failed:
