@@ -39,12 +39,14 @@ nonisolated enum AgentAccessPolicy: String, Codable, CaseIterable, Identifiable 
 
 /// LLM backends the assistant can talk to.
 ///
-/// The raw values match PicoClaw provider names, except `codex`, which selects a
-/// ChatGPT subscription over OAuth instead of an API key.
+/// The raw values are passed to the engine as the provider name, except `codex`,
+/// which selects a ChatGPT subscription over OAuth instead of an API key. A name
+/// the engine does not know is fine as long as the provider carries an endpoint:
+/// they all speak the same OpenAI-compatible chat API.
 nonisolated enum AgentProvider: String, Codable, CaseIterable, Identifiable {
     case openai
     case anthropic
-    case openrouter
+    case polza
     case codex
 
     var id: String { rawValue }
@@ -53,8 +55,28 @@ nonisolated enum AgentProvider: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .openai: return "OpenAI"
         case .anthropic: return "Anthropic"
-        case .openrouter: return "OpenRouter"
+        case .polza: return "Polza.AI"
         case .codex: return "ChatGPT"
+        }
+    }
+
+    /// Shown under the provider picker. Empty when the provider needs no
+    /// explaining — everyone knows what OpenAI is.
+    var explanation: String {
+        switch self {
+        case .polza:
+            return "Российский агрегатор: сотни моделей OpenAI, Anthropic, Google и других "
+                + "по одному ключу, с оплатой картами РФ."
+        case .openai, .anthropic, .codex:
+            return ""
+        }
+    }
+
+    /// Where to get an account for providers that need one before the key.
+    var signupURL: URL? {
+        switch self {
+        case .polza: return URL(string: "https://polza.ai/?referral=6GWIX1KxUI")
+        case .openai, .anthropic, .codex: return nil
         }
     }
 
@@ -65,7 +87,8 @@ nonisolated enum AgentProvider: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .openai: return "gpt-5.4"
         case .anthropic: return "claude-sonnet-4-6"
-        case .openrouter: return "openai/gpt-5.4"
+        // Polza is an aggregator, so its model names carry a vendor prefix.
+        case .polza: return "openai/gpt-5.4"
         case .codex: return "gpt-5.6-sol"
         }
     }
@@ -74,7 +97,7 @@ nonisolated enum AgentProvider: String, Codable, CaseIterable, Identifiable {
     var defaultAPIBase: String {
         switch self {
         case .openai, .anthropic, .codex: return ""
-        case .openrouter: return "https://openrouter.ai/api/v1"
+        case .polza: return "https://polza.ai/api/v1"
         }
     }
 
@@ -82,7 +105,7 @@ nonisolated enum AgentProvider: String, Codable, CaseIterable, Identifiable {
     /// URL to serve `/chat/completions`.
     var acceptsCustomEndpoint: Bool {
         switch self {
-        case .openai, .anthropic, .openrouter: return true
+        case .openai, .anthropic, .polza: return true
         case .codex: return false
         }
     }
@@ -118,10 +141,12 @@ nonisolated struct AgentSettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
-        // The local-model providers ("onDevice", "downloaded") were removed, so a
-        // stored value can name a provider that no longer exists. Falling back to
-        // the default keeps the rest of the settings — the policy above all —
-        // instead of failing the whole decode and resetting the assistant.
+        // Providers get removed over time — the local models ("onDevice",
+        // "downloaded"), later OpenRouter — so a stored value can name a provider
+        // that no longer exists. Falling back to the default keeps the rest of the
+        // settings — the policy above all — instead of failing the whole decode and
+        // resetting the assistant. The stored endpoint survives too, so a player
+        // who was on OpenRouter keeps reaching it until they pick a new provider.
         provider = (try? container.decodeIfPresent(AgentProvider.self, forKey: .provider)) ?? .openai
         // A session stored for one of the removed local providers carries an empty
         // model name, which no hosted provider accepts.
@@ -178,7 +203,14 @@ nonisolated struct AgentSettings: Codable, Equatable {
             }
             payload["provider"] = provider.rawValue
             payload["api_key"] = apiKey
-            let trimmedBase = apiBase.trimmingCharacters(in: .whitespacesAndNewlines)
+            // The engine only knows the endpoints of the providers it was built
+            // with, and falls back to its own defaults for the rest — so a provider
+            // it has never heard of has to carry its endpoint along. An empty field
+            // in the settings means "the provider's default", not "no endpoint".
+            var trimmedBase = apiBase.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedBase.isEmpty {
+                trimmedBase = provider.defaultAPIBase
+            }
             if !trimmedBase.isEmpty {
                 payload["api_base"] = trimmedBase
             }

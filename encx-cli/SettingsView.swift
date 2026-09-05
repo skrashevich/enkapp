@@ -334,6 +334,8 @@ struct SettingsView: View {
         }
         .pickerStyle(.segmented)
 
+        agentProviderDescription
+
         TextField("Модель", text: $model.agentSettings.model)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
@@ -353,6 +355,29 @@ struct SettingsView: View {
             Text("Endpoint должен обслуживать /chat/completions. Шлюзы только с Responses API (например api.openmodel.ai) отвечают 404.")
                 .font(.caption)
                 .foregroundStyle(GameTheme.muted)
+        }
+    }
+
+    /// Explains the picked provider and, when it needs an account first, links to
+    /// the sign-up page.
+    @ViewBuilder
+    private var agentProviderDescription: some View {
+        let provider = model.agentSettings.provider
+        let explanation = provider.explanation
+        if !explanation.isEmpty || provider.signupURL != nil {
+            VStack(alignment: .leading, spacing: 4) {
+                if !explanation.isEmpty {
+                    Text(explanation)
+                        .font(.caption)
+                        .foregroundStyle(GameTheme.muted)
+                }
+                if let signupURL = provider.signupURL {
+                    Link("Зарегистрироваться и получить ключ", destination: signupURL)
+                        .font(.caption.weight(.semibold))
+                        .tint(GameTheme.accent)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
