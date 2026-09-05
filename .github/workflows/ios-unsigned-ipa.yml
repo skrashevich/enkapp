@@ -33,33 +33,6 @@ jobs:
           echo "app_version=${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}" >> "$GITHUB_OUTPUT"
           echo "build_number=${BASH_REMATCH[4]}" >> "$GITHUB_OUTPUT"
 
-  build:
-    needs: version
-    env:
-      APP_VERSION: ${{ needs.version.outputs.app_version }}
-      BUILD_NUMBER: ${{ needs.version.outputs.build_number }}
-    runs-on: macos-26
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-
-      - name: Build unsigned IPA
-        run: >-
-          make unsigned-ipa SKIP_FRAMEWORK=1
-          XCODEBUILD="xcodebuild MARKETING_VERSION=$APP_VERSION CURRENT_PROJECT_VERSION=$BUILD_NUMBER"
-
-      - name: Upload unsigned IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: encx-cli-unsigned-ipa
-          path: build/*-unsigned.ipa
-          if-no-files-found: error
-          retention-days: 14
-
   testflight:
     needs: version
     runs-on: macos-26
@@ -101,6 +74,13 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$keychain_password" "$RUNNER_TEMP/app-signing.keychain-db"
           security list-keychains -d user -s "$RUNNER_TEMP/app-signing.keychain-db" "$HOME/Library/Keychains/login.keychain-db"
 
+      - name: Install App Store provisioning profiles
+        env:
+          IOS_APP_STORE_PROFILE_APP: ${{ secrets.IOS_APP_STORE_PROFILE_APP }}
+          IOS_APP_STORE_PROFILE_WIDGET: ${{ secrets.IOS_APP_STORE_PROFILE_WIDGET }}
+          IOS_APP_STORE_PROFILE_CLIP: ${{ secrets.IOS_APP_STORE_PROFILE_CLIP }}
+        run: python3 scripts/install-testflight-profiles.py
+
       - name: Archive tagged release
         run: |
           set -euo pipefail
@@ -124,7 +104,7 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath build/encx-cli.xcarchive \
             -exportPath build/testflight \
-            -exportOptionsPlist export/TestFlightExportOptions.plist \
+            -exportOptionsPlist build/TestFlightExportOptions.plist \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/app-store-connect.p8" \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \

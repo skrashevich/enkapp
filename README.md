@@ -18,9 +18,7 @@
 
 ### Sideloading (без TestFlight)
 
-[Сборки по тегам (unsigned IPA)](https://github.com/skrashevich/enkapp/actions/workflows/ios-unsigned-ipa.yml)
-
-1. Открой успешный запуск по тегу, скачай artifact `encx-cli-unsigned-ipa` (нужен вход в GitHub) и распакуй его. Внутри будет файл `.ipa`.
+1. На Mac собери IPA командой `make unsigned-ipa`; файл появится в `build/`.
 2. Установи любой sideloading-инструмент:
    - `AltStore` / `SideStore` для установки прямо на устройство
    - `Sideloadly` если удобнее ставить с компьютера
@@ -32,7 +30,7 @@
 Что важно:
 
 - На бесплатном Apple ID такая установка обычно живёт 7 дней, потом приложение надо переустановить или переподписать.
-- Название artifact и bundle местами ещё могут содержать старое имя `encx-cli`; это нормально.
+- Название файла IPA и bundle местами ещё могут содержать старое имя `encx-cli`; это нормально.
 
 ## Требования
 
@@ -66,12 +64,12 @@ make screenshots
 
 ## Релизы в CI и внутренний TestFlight
 
-Workflow `iOS tagged release` запускается только при push тега формата `v<major>.<minor>.<patch>.<build>`. Он сохраняет
-unsigned IPA как artifact на 14 дней и отдельно собирает подписанный Release-архив
-из того же коммита с готовым `Encx.xcframework`, затем загружает его в App Store Connect
+Workflow `iOS tagged release` запускается только при push тега формата `v<major>.<minor>.<patch>.<build>`.
+После проверки версии (`version`) job `testflight` один раз собирает подписанный
+Release-архив из коммита тега с готовым `Encx.xcframework` и загружает его в App Store Connect
 как **TestFlight Internal Only**. Push веток, PR и ручной запуск релиз не собирают.
 Например, `v0.2.25.71` задаёт `MARKETING_VERSION=0.2.25` и `CURRENT_PROJECT_VERSION=71`
-для приложения, widget и App Clip, включая unsigned IPA. Xcode сохраняет эти значения
+для приложения, widget и App Clip. Xcode сохраняет эти значения
 при загрузке. Повторная загрузка уже использованной версии и номера сборки Apple
 не допускается: для следующей сборки увеличь последнюю часть тега. Неправильный формат
 тега отклоняется до сборки и использования секретов.
@@ -85,10 +83,20 @@ unsigned IPA как artifact на 14 дней и отдельно собирае
 | `APP_STORE_CONNECT_PRIVATE_KEY` | Полное содержимое файла `.p8`, включая BEGIN/END |
 | `IOS_CERTIFICATES_P12_BASE64` | Base64 от `.p12` с сертификатами Apple Development и Apple Distribution и их приватными ключами |
 | `IOS_CERTIFICATES_PASSWORD` | Непустой пароль этого `.p12` |
+| `IOS_APP_STORE_PROFILE_APP` | Base64 содержимого App Store `.mobileprovision` для `com.svk-team.encx-cli` |
+| `IOS_APP_STORE_PROFILE_WIDGET` | Base64 содержимого App Store `.mobileprovision` для `com.svk-team.encx-cli.widget` |
+| `IOS_APP_STORE_PROFILE_CLIP` | Base64 содержимого App Store `.mobileprovision` для `com.svk-team.encx-cli.Clip` |
 
-Ключу нужны права на загрузку сборок и Certificates, Identifiers & Profiles
-(командный ключ `enkapp-github-actions` с ролью Developer). Сертификаты должны принадлежать команде `ZLQX2C6SX2`.
-Provisioning profiles для приложения, widget и App Clip Xcode получает автоматически.
+Профили разделены на отдельные секреты, потому что один общий JSON-секрет с тремя
+профилями превышает лимит размера GitHub Actions secret (48 КБ).
+Ключу нужны права на загрузку сборок и на создание/чтение Certificates, Identifiers & Profiles
+(роль Admin или App Manager — роли Developer для создания профилей через API недостаточно).
+Сертификаты должны принадлежать команде `ZLQX2C6SX2`.
+Для архивации Xcode получает Development profiles автоматически. Для экспорта используются
+явные App Store profiles из секретов выше и установленный Distribution
+сертификат; Cloud Signing не используется. Профили проверяются на срок действия,
+команду, bundle ID и наличие соответствующего приватного ключа. При продлении
+сертификата обнови также профили в секретах.
 Приложение с bundle ID `com.svk-team.encx-cli` должно уже существовать в App Store Connect.
 В TestFlight создай внутреннюю группу, добавь тестеров и включи **Enable automatic distribution**:
 после обработки Apple сборка будет доступна этой группе. Требуемые Apple сведения
