@@ -22,6 +22,7 @@ struct SettingsView: View {
     @State private var agentAPIKeyDraft = ""
     @State private var agentKeyStored = false
     @State private var agentKeyStatus: String?
+    @State private var agentApprovalTapCount = 0
     @State private var codexSignIn = CodexSignInModel()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -481,12 +482,38 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var agentPolicyRows: some View {
-        Picker("Доступ к движку", selection: $model.agentSettings.policy) {
-            ForEach(AgentAccessPolicy.allCases) { policy in
-                Text(policy.title).tag(policy)
+        // Buttons also receive taps on the selected option, unlike a Picker.
+        HStack(spacing: 4) {
+            ForEach(AgentAccessPolicy.allCases.filter {
+                $0 != .full || model.agentSettings.fullAccessUnlocked
+            }) { policy in
+                Button {
+                    if policy == .approve && !model.agentSettings.fullAccessUnlocked {
+                        agentApprovalTapCount += 1
+                        if agentApprovalTapCount >= 10 {
+                            model.agentSettings.fullAccessUnlocked = true
+                        }
+                    }
+                    model.agentSettings.policy = policy
+                } label: {
+                    Text(policy.title)
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .foregroundStyle(GameTheme.text)
+                        .background(
+                            model.agentSettings.policy == policy ? GameTheme.accent : .clear,
+                            in: RoundedRectangle(cornerRadius: 8)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(model.agentSettings.policy == policy ? .isSelected : [])
             }
         }
-        .pickerStyle(.segmented)
+        .padding(4)
+        .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Доступ к движку")
 
         Text(model.agentSettings.policy.explanation)
             .font(.caption)

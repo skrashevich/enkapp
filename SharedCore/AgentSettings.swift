@@ -85,7 +85,7 @@ nonisolated enum AgentProvider: String, Codable, CaseIterable, Identifiable {
 
     var defaultModel: String {
         switch self {
-        case .openai: return "gpt-5.4"
+        case .openai: return "gpt-5.6-sol"
         case .anthropic: return "claude-sonnet-4-6"
         // Polza is an aggregator, so its model names carry a vendor prefix.
         case .polza: return "deepseek/deepseek-v4-flash-vision-exp"
@@ -118,10 +118,11 @@ nonisolated struct AgentSettings: Codable, Equatable {
     static let defaultMaxSteps = 100
 
     var enabled = false
-    var provider: AgentProvider = .openai
-    var model = AgentProvider.openai.defaultModel
+    var provider: AgentProvider = .polza
+    var model = AgentProvider.polza.defaultModel
     var apiBase = ""
     var policy: AgentAccessPolicy = .approve
+    var fullAccessUnlocked = false
     var maxSteps = AgentSettings.defaultMaxSteps
     /// Lets the assistant search the web (DuckDuckGo) and read pages.
     var webToolsEnabled = true
@@ -134,6 +135,7 @@ nonisolated struct AgentSettings: Codable, Equatable {
         case model
         case apiBase
         case policy
+        case fullAccessUnlocked
         case maxSteps
         case webToolsEnabled
     }
@@ -147,7 +149,7 @@ nonisolated struct AgentSettings: Codable, Equatable {
         // settings — the policy above all — instead of failing the whole decode and
         // resetting the assistant. The stored endpoint survives too, so a player
         // who was on OpenRouter keeps reaching it until they pick a new provider.
-        provider = (try? container.decodeIfPresent(AgentProvider.self, forKey: .provider)) ?? .openai
+        provider = (try? container.decodeIfPresent(AgentProvider.self, forKey: .provider)) ?? .polza
         // A session stored for one of the removed local providers carries an empty
         // model name, which no hosted provider accepts.
         let storedModel = try container.decodeIfPresent(String.self, forKey: .model) ?? ""
@@ -156,6 +158,10 @@ nonisolated struct AgentSettings: Codable, Equatable {
             : storedModel
         apiBase = try container.decodeIfPresent(String.self, forKey: .apiBase) ?? provider.defaultAPIBase
         policy = try container.decodeIfPresent(AgentAccessPolicy.self, forKey: .policy) ?? .approve
+        fullAccessUnlocked = try container.decodeIfPresent(Bool.self, forKey: .fullAccessUnlocked) ?? false
+        if policy == .full && !fullAccessUnlocked {
+            policy = .approve
+        }
         maxSteps = try container.decodeIfPresent(Int.self, forKey: .maxSteps) ?? Self.defaultMaxSteps
         webToolsEnabled = try container.decodeIfPresent(Bool.self, forKey: .webToolsEnabled) ?? true
     }
