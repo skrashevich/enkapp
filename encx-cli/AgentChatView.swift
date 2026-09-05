@@ -228,7 +228,7 @@ private struct AgentMessageBubble: View {
         HStack {
             if message.role == .user { Spacer(minLength: 40) }
 
-            Text(message.text)
+            messageContent
                 .font(.subheadline)
                 .foregroundStyle(foreground)
                 .textSelection(.enabled)
@@ -237,6 +237,15 @@ private struct AgentMessageBubble: View {
                 .background(background, in: RoundedRectangle(cornerRadius: 10))
 
             if message.role != .user { Spacer(minLength: 40) }
+        }
+    }
+
+    @ViewBuilder
+    private var messageContent: some View {
+        if message.role == .assistant {
+            AgentMarkdownText(source: message.text)
+        } else {
+            Text(message.text)
         }
     }
 
@@ -250,6 +259,129 @@ private struct AgentMessageBubble: View {
         case .assistant: return GameTheme.panel
         case .failure: return Color.red.opacity(0.14)
         }
+    }
+}
+
+/// Foundation parses Markdown; separate views retain its block structure, which
+/// SwiftUI Text alone does not render (headings, lists, quotes and code blocks).
+private struct AgentMarkdownText: View {
+    private let blocks: [Block]
+
+    init(source: String) {
+        blocks = Self.parse(source)
+    }
+
+    private struct Block: Identifiable {
+        let id: Int
+        let intent: PresentationIntent?
+        var text: AttributedString
+
+        var heading: Int? {
+            intent?.components.compactMap {
+                if case .header(let level) = $0.kind { return level }
+                return nil
+            }.first
+        }
+
+        var isCode: Bool {
+            intent?.components.contains {
+                if case .codeBlock = $0.kind { return true }
+                return false
+            } ?? false
+        }
+
+        var isQuote: Bool {
+            intent?.components.contains { $0.kind == .blockQuote } ?? false
+        }
+
+        var listDepth: Int {
+            intent?.components.filter {
+                switch $0.kind {
+                case .orderedList, .unorderedList: return true
+                default: return false
+                }
+            }.count ?? 0
+        }
+
+        var marker: String? {
+            guard let components = intent?.components,
+                  let itemIndex = components.firstIndex(where: {
+                      if case .listItem = $0.kind { return true }
+                      return false
+                  }),
+                  case .listItem(let ordinal) = components[itemIndex].kind
+            else { return nil }
+            let parent = components.dropFirst(itemIndex + 1).first {
+                switch $0.kind {
+                case .orderedList, .unorderedList: return true
+                default: return false
+                }
+            }
+            return parent?.kind == .orderedList ? "\(ordinal)." : "•"
+        }
+
+        var font: Font {
+            if isCode { return .system(.footnote, design: .monospaced) }
+            switch heading {
+            case 1: return .title2.bold()
+            case 2: return .title3.bold()
+            case .some: return .headline
+            case nil: return .subheadline
+            }
+        }
+    }
+
+    private static func parse(_ source: String) -> [Block] {
+        guard let parsed = try? AttributedString(markdown: source) else {
+            return [Block(id: 0, intent: nil, text: AttributedString(source))]
+        }
+        var result: [Block] = []
+        for run in parsed.runs {
+            var text = AttributedString(parsed[run.range])
+            if run.inlinePresentationIntent?.contains(.code) == true {
+                text.font = .system(.subheadline, design: .monospaced)
+            }
+            if let last = result.last, last.intent == run.presentationIntent {
+                result[result.count - 1].text.append(text)
+            } else {
+                result.append(Block(id: result.count, intent: run.presentationIntent, text: text))
+            }
+        }
+        return result
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(blocks) { block in
+                HStack(alignment: .top, spacing: 8) {
+                    if block.isQuote {
+                        Rectangle()
+                            .fill(GameTheme.muted)
+                            .frame(width: 3)
+                    }
+                    if let marker = block.marker {
+                        Text(marker)
+                            .monospacedDigit()
+                    }
+                    if block.isCode {
+                        ScrollView(.horizontal) {
+                            Text(block.text)
+                                .font(block.font)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(8)
+                        }
+                        .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 6))
+                    } else {
+                        Text(block.text)
+                            .font(block.font)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, CGFloat(max(0, block.listDepth - 1)) * 16)
+            }
+        }
+        .tint(GameTheme.accent)
     }
 }
 
