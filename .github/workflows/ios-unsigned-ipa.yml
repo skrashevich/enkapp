@@ -69,8 +69,6 @@ jobs:
       BUILD_NUMBER: ${{ needs.version.outputs.build_number }}
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      SIGNING_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
-      AUTH_KEY_PATH: ${{ runner.temp }}/app-store-connect.p8
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -92,16 +90,16 @@ jobs:
             fi
           done
           umask 077
-          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$AUTH_KEY_PATH"
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$RUNNER_TEMP/app-store-connect.p8"
           printf '%s' "$IOS_CERTIFICATES_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/signing.p12"
           keychain_password="$(openssl rand -hex 32)"
           echo "::add-mask::$keychain_password"
-          security create-keychain -p "$keychain_password" "$SIGNING_KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$SIGNING_KEYCHAIN"
-          security unlock-keychain -p "$keychain_password" "$SIGNING_KEYCHAIN"
-          security import "$RUNNER_TEMP/signing.p12" -P "$IOS_CERTIFICATES_PASSWORD" -A -t cert -f pkcs12 -k "$SIGNING_KEYCHAIN"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$keychain_password" "$SIGNING_KEYCHAIN"
-          security list-keychains -d user -s "$SIGNING_KEYCHAIN" "$HOME/Library/Keychains/login.keychain-db"
+          security create-keychain -p "$keychain_password" "$RUNNER_TEMP/app-signing.keychain-db"
+          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/app-signing.keychain-db"
+          security unlock-keychain -p "$keychain_password" "$RUNNER_TEMP/app-signing.keychain-db"
+          security import "$RUNNER_TEMP/signing.p12" -P "$IOS_CERTIFICATES_PASSWORD" -A -t cert -f pkcs12 -k "$RUNNER_TEMP/app-signing.keychain-db"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$keychain_password" "$RUNNER_TEMP/app-signing.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/app-signing.keychain-db" "$HOME/Library/Keychains/login.keychain-db"
 
       - name: Archive tagged release
         run: |
@@ -113,7 +111,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath build/encx-cli.xcarchive \
             -allowProvisioningUpdates \
-            -authenticationKeyPath "$AUTH_KEY_PATH" \
+            -authenticationKeyPath "$RUNNER_TEMP/app-store-connect.p8" \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
             MARKETING_VERSION="$APP_VERSION" \
@@ -128,14 +126,14 @@ jobs:
             -exportPath build/testflight \
             -exportOptionsPlist export/TestFlightExportOptions.plist \
             -allowProvisioningUpdates \
-            -authenticationKeyPath "$AUTH_KEY_PATH" \
+            -authenticationKeyPath "$RUNNER_TEMP/app-store-connect.p8" \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
 
       - name: Remove signing credentials
         if: always()
         run: |
-          if [[ -f "$SIGNING_KEYCHAIN" ]]; then
-            security delete-keychain "$SIGNING_KEYCHAIN"
+          if [[ -f "$RUNNER_TEMP/app-signing.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db"
           fi
-          rm -f "$AUTH_KEY_PATH" "$RUNNER_TEMP/signing.p12"
+          rm -f "$RUNNER_TEMP/app-store-connect.p8" "$RUNNER_TEMP/signing.p12"
