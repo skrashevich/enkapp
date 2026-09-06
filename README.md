@@ -48,7 +48,7 @@ make framework
 make framework ENCX_CLI_ROOT=/path/to/encx-cli
 
 # Зафиксировать версию upstream
-make framework ENCX_CLI_REF=v0.12.0
+make framework ENCX_CLI_REF=v0.14.0
 
 # Unsigned / signed IPA (см. make help)
 make unsigned-ipa
