@@ -234,6 +234,15 @@ struct AccountGamesView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(Color.white.opacity(0.5))
                         .lineLimit(2)
+                    if showApplicationHint {
+                        let startLine = upcomingStartSubline(game: game)
+                        if !startLine.isEmpty {
+                            Text(verbatim: startLine)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.white.opacity(0.4))
+                                .lineLimit(2)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -331,12 +340,27 @@ struct AccountGamesView: View {
 
     private func rowSubline(game: GameInfo, showApplicationHint: Bool) -> String {
         var parts = ["#\(game.displayNumberText)"]
+        if showApplicationHint && !game.typeAndZoneLine.isEmpty {
+            parts.append(game.typeAndZoneLine)
+        }
         let descr = game.description.strippingHTML()
         if !descr.isEmpty {
             parts.append(descr)
         }
         if showApplicationHint && game.isModerated {
             parts.append("нужна заявка")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Second subline for "Скоро" rows: start time and (when still open) the application deadline.
+    private func upcomingStartSubline(game: GameInfo) -> String {
+        var parts: [String] = []
+        if let start = game.startDateTime {
+            parts.append("Старт: \(GameScheduleFormatter.absolute(start))")
+        }
+        if let deadline = game.requestLastDate, deadline > Date() {
+            parts.append("приём заявок до \(GameScheduleFormatter.absolute(deadline))")
         }
         return parts.joined(separator: " · ")
     }

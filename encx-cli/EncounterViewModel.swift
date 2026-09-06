@@ -337,6 +337,11 @@ final class EncounterViewModel {
         return moderationByGameID[Int(gameID)] ?? false
     }
 
+    /// Full list-response metadata for a game present in `games` (upcoming or active domain games).
+    func gameInfo(for gameID: Int64) -> GameInfo? {
+        games.first { $0.id == Int(gameID) }
+    }
+
     func isApplicationPending(_ game: GameModel) -> Bool {
         game.event == GameEvent.playerNotAccepted
     }

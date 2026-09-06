@@ -77,6 +77,74 @@ enum GameDurationFormatter {
     }
 }
 
+nonisolated enum GameScheduleFormatter {
+    private static let ruLocale = Locale(identifier: "ru_RU")
+
+    /// Example: `12 сент, 21:00`.
+    private static let absoluteFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = ruLocale
+        formatter.setLocalizedDateFormatFromTemplate("d MMM HH:mm")
+        if !formatter.string(from: Date(timeIntervalSince1970: 0)).contains(",") {
+            formatter.dateFormat = "d MMM, HH:mm"
+        }
+        return formatter
+    }()
+
+    /// Example: `4 дн 3 ч`.
+    private static let relativeFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .short
+        formatter.allowedUnits = [.day, .hour, .minute]
+        formatter.maximumUnitCount = 2
+        formatter.calendar?.locale = ruLocale
+        return formatter
+    }()
+
+    /// Example: `12 сент, 21:00`.
+    static func absolute(_ date: Date) -> String {
+        absoluteFormatter.string(from: date)
+    }
+
+    /// Example: `через 4 дн 3 ч`, `через 2 ч 10 мин`, `менее минуты`. Empty when `date` is past.
+    static func relativeFromNow(_ date: Date) -> String {
+        let interval = date.timeIntervalSinceNow
+        guard interval > 0 else { return "" }
+        if interval < 60 {
+            return "менее минуты"
+        }
+        guard let formatted = relativeFormatter.string(from: interval), !formatted.isEmpty else {
+            return ""
+        }
+        return "через \(formatted)"
+    }
+
+    /// Approximate span, e.g. `~6 ч`, `~1 ч 30 мин`, `~2 дн`. Empty unless `end > start`.
+    static func span(from start: Date, to end: Date) -> String {
+        guard end > start else { return "" }
+        let total = Int(end.timeIntervalSince(start))
+        let days = total / 86400
+        let hours = (total % 86400) / 3600
+        let minutes = (total % 3600) / 60
+
+        var parts: [String] = []
+        if days > 0 {
+            parts.append("\(days) дн")
+            if hours > 0 {
+                parts.append("\(hours) ч")
+            }
+        } else if hours > 0 {
+            parts.append("\(hours) ч")
+            if minutes > 0 {
+                parts.append("\(minutes) мин")
+            }
+        } else {
+            parts.append("\(max(1, minutes)) мин")
+        }
+        return "~" + parts.joined(separator: " ")
+    }
+}
+
 struct TickingCountdownText: View {
     let countdown: SyncedSecondsCountdown
     let label: (Int) -> String

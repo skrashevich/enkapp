@@ -223,6 +223,17 @@ nonisolated struct GameInfo: Decodable, Identifiable, Hashable {
     let inProgress: Bool
     let isModerated: Bool
     let levelNumber: Int?
+    let startDateTime: Date?
+    let finishDateTime: Date?
+    /// Deadline to submit an application for a moderated game.
+    let requestLastDate: Date?
+    let descrWrapped: String
+    let gameTypeID: Int
+    let zoneID: Int
+    let maxPlayers: Int
+    let maxTeamMembers: Int
+    let feeName: String
+    let hideGameDescr: Bool
 
     enum CodingKeys: String, CodingKey {
         case id = "GameID"
@@ -234,6 +245,16 @@ nonisolated struct GameInfo: Decodable, Identifiable, Hashable {
         case inProgress = "InProgress"
         case isModerated = "IsModerated"
         case levelNumber = "LevelNumber"
+        case startDateTime = "StartDateTime"
+        case finishDateTime = "FinishDateTime"
+        case requestLastDate = "RequestLastDate"
+        case descrWrapped = "DescrWrapped"
+        case gameTypeID = "GameTypeID"
+        case zoneID = "ZoneId"
+        case maxPlayers = "MaxPlayers"
+        case maxTeamMembers = "MaxTeamMembers"
+        case feeName = "FeeName"
+        case hideGameDescr = "HideGameDescr"
     }
 
     init(from decoder: Decoder) throws {
@@ -247,11 +268,87 @@ nonisolated struct GameInfo: Decodable, Identifiable, Hashable {
         inProgress = try container.decodeIfPresent(Bool.self, forKey: .inProgress) ?? false
         isModerated = try container.decodeIfPresent(Bool.self, forKey: .isModerated) ?? false
         levelNumber = try container.decodeIfPresent(Int.self, forKey: .levelNumber)
+        startDateTime = Self.decodeGameDate(from: container, forKey: .startDateTime)
+        finishDateTime = Self.decodeGameDate(from: container, forKey: .finishDateTime)
+        requestLastDate = Self.decodeGameDate(from: container, forKey: .requestLastDate)
+        descrWrapped = try container.decodeIfPresent(String.self, forKey: .descrWrapped) ?? ""
+        gameTypeID = try container.decodeIfPresent(Int.self, forKey: .gameTypeID) ?? 0
+        zoneID = try container.decodeIfPresent(Int.self, forKey: .zoneID) ?? 0
+        maxPlayers = try container.decodeIfPresent(Int.self, forKey: .maxPlayers) ?? 0
+        maxTeamMembers = try container.decodeIfPresent(Int.self, forKey: .maxTeamMembers) ?? 0
+        feeName = try container.decodeIfPresent(String.self, forKey: .feeName) ?? ""
+        hideGameDescr = try container.decodeIfPresent(Bool.self, forKey: .hideGameDescr) ?? false
+    }
+
+    /// Engine date field shaped `{"Value": <OLE date>, "Timestamp": <unix seconds>}`, or a bare
+    /// number of seconds. Prefers `Timestamp`; falls back to the OLE Automation `Value`.
+    private struct DateEnvelope: Decodable {
+        let value: Double?
+        let timestamp: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case value = "Value"
+            case timestamp = "Timestamp"
+        }
+
+        var date: Date? {
+            if let timestamp, timestamp > 0 {
+                return Date(timeIntervalSince1970: timestamp)
+            }
+            if let value, value > 0 {
+                return Date(timeIntervalSince1970: (value - 25569.0) * 86400.0)
+            }
+            return nil
+        }
+    }
+
+    private static func decodeGameDate(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> Date? {
+        if let envelope = try? container.decodeIfPresent(DateEnvelope.self, forKey: key),
+           let date = envelope.date {
+            return date
+        }
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key), value > 0 {
+            return Date(timeIntervalSince1970: value)
+        }
+        return nil
     }
 
     /// Public game number for UI (`GameNum`), without locale-specific grouping.
     var displayNumberText: String {
         String(number > 0 ? number : id)
+    }
+
+    /// `GameTypeID`: 0 single, 1 team, 2 personal. Empty for unknown values.
+    var gameTypeLabel: String {
+        switch gameTypeID {
+        case 0: return "Одиночная"
+        case 1: return "Командная"
+        case 2: return "Личная"
+        default: return ""
+        }
+    }
+
+    /// `ZoneId` mapped to a Russian label. Empty for unknown values.
+    var zoneLabel: String {
+        switch zoneID {
+        case 0: return "Квест"
+        case 1: return "Мозговой штурм"
+        case 2: return "Фотоохота"
+        case 3: return "ВетКач"
+        case 4: return "Конкурс"
+        case 5: return "Фотоэкстрим"
+        case 7: return "Точки"
+        case 9: return "Викторина"
+        default: return ""
+        }
+    }
+
+    /// Type and zone labels joined by " · ", skipping blanks.
+    var typeAndZoneLine: String {
+        [gameTypeLabel, zoneLabel].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
 

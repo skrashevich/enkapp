@@ -73,8 +73,8 @@ struct LevelPlayView: View {
         let detailMessage = model.statusMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         let showsDetailMessage = !detailMessage.isEmpty && detailMessage != primaryMessage
 
-        return VStack(spacing: 16) {
-            Spacer()
+        return ScrollView {
+            VStack(spacing: 16) {
             Image(systemName: waitingStateIcon(
                 game: game,
                 needsEntry: needsEntry,
@@ -112,6 +112,10 @@ struct LevelPlayView: View {
                     .padding(.horizontal, 32)
             }
 
+            if !isActive, let info = model.gameInfo(for: gameID) {
+                upcomingInfoPanel(info: info, game: game)
+            }
+
             if needsEntry, !isPending {
                 Button(model.entryActionTitle(gameID: gameID)) {
                     Task { await model.enterGame(gameID) }
@@ -131,7 +135,9 @@ struct LevelPlayView: View {
                 model.selectedScreen = .games
             }
             .buttonStyle(.bordered)
-            Spacer()
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(GameTheme.background)
@@ -192,6 +198,84 @@ struct LevelPlayView: View {
             return "Ждём открытия уровня…"
         }
         return "Игра скоро начнётся."
+    }
+
+    @ViewBuilder
+    private func upcomingInfoPanel(info: GameInfo, game: GameModel) -> some View {
+        let start = info.startDateTime ?? game.gameDateTimeStart
+        let fee = info.feeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let wrapped = info.descrWrapped.trimmingCharacters(in: .whitespacesAndNewlines)
+        let plain = info.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let descriptionHTML: String? = {
+            guard !info.hideGameDescr else { return nil }
+            if !wrapped.isEmpty { return wrapped }
+            if !plain.isEmpty { return plain }
+            return nil
+        }()
+
+        VStack(alignment: .leading, spacing: 8) {
+            if !info.typeAndZoneLine.isEmpty {
+                Text(verbatim: info.typeAndZoneLine)
+                    .font(.caption)
+                    .foregroundStyle(GameTheme.muted)
+            }
+
+            if let start {
+                let relative = GameScheduleFormatter.relativeFromNow(start)
+                let absolute = GameScheduleFormatter.absolute(start)
+                Text(verbatim: relative.isEmpty
+                    ? "Старт: \(absolute)"
+                    : "Старт: \(absolute) · \(relative)")
+                    .font(.subheadline)
+                    .foregroundStyle(GameTheme.text)
+            }
+
+            if let deadline = info.requestLastDate, deadline > Date() {
+                Text(verbatim: "Приём заявок до: \(GameScheduleFormatter.absolute(deadline))")
+                    .font(.subheadline)
+                    .foregroundStyle(GameTheme.text)
+            }
+
+            if let start, let finish = info.finishDateTime {
+                let span = GameScheduleFormatter.span(from: start, to: finish)
+                if !span.isEmpty {
+                    Text(verbatim: "Длительность: \(span)")
+                        .font(.subheadline)
+                        .foregroundStyle(GameTheme.text)
+                }
+            }
+
+            if info.maxTeamMembers > 0 {
+                Text(verbatim: "Игроков в команде: до \(info.maxTeamMembers)")
+                    .font(.subheadline)
+                    .foregroundStyle(GameTheme.text)
+            } else if info.maxPlayers > 0 {
+                Text(verbatim: "Игроков: до \(info.maxPlayers)")
+                    .font(.subheadline)
+                    .foregroundStyle(GameTheme.text)
+            }
+
+            if !fee.isEmpty {
+                Text(verbatim: "Взнос: \(fee)")
+                    .font(.subheadline)
+                    .foregroundStyle(GameTheme.text)
+            }
+
+            if let descriptionHTML {
+                Text("Описание")
+                    .font(.caption)
+                    .foregroundStyle(GameTheme.muted)
+                EncounterHTMLView(html: descriptionHTML, fontSize: 15, lineHeight: 1.4)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color(white: 0.15), lineWidth: 1)
+        }
+        .padding(.horizontal, 24)
     }
 
     private func finishedState(game: GameModel) -> some View {
@@ -989,12 +1073,29 @@ private struct LevelPlayScrollBody: View {
     }
 
     private func sectorChip(_ sector: Sector) -> some View {
-        HStack(spacing: 8) {
-            if sector.isAnswered {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(GameTheme.accent)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                if sector.isAnswered {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(GameTheme.accent)
+                }
 
+                Text(verbatim: sectorChipTitle(sector))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(sector.isAnswered ? GameTheme.accent : GameTheme.text)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 4)
+
+                Text(verbatim: "\(sector.displayOrder)")
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.35))
+            }
+
+            if sector.isAnswered {
                 Text(verbatim: sectorChipCode(sector))
                     .font(.system(size: 14, weight: .semibold, design: .monospaced))
                     .foregroundStyle(GameTheme.accent)
@@ -1005,13 +1106,6 @@ private struct LevelPlayScrollBody: View {
                     .font(.system(size: 14, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.28))
             }
-
-            Spacer(minLength: 4)
-
-            Text(verbatim: "\(sector.displayOrder)")
-                .font(.system(size: 10))
-                .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.35))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -1032,12 +1126,18 @@ private struct LevelPlayScrollBody: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// Sector name for the chip header; falls back to «Сектор N» when the API omits a name.
+    private func sectorChipTitle(_ sector: Sector) -> String {
+        let name = sector.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Сектор \(sector.displayOrder)" : name
+    }
+
     private func sectorChipCode(_ sector: Sector) -> String {
         let answer = sector.answer.trimmingCharacters(in: .whitespacesAndNewlines)
         if !answer.isEmpty {
             return answer
         }
-        return sector.name.isEmpty ? "Сектор \(sector.displayOrder)" : sector.name
+        return sectorChipTitle(sector)
     }
 
     private var helpsSection: some View {
