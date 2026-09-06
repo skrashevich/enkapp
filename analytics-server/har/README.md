@@ -30,7 +30,7 @@ If `VIEW_PASSWORD` is not set, viewer endpoints fail closed with HTTP 503.
 `POST /api/har` remains unauthenticated for mobile uploads.
 
 The service expects TLS to be terminated by the public reverse proxy for
-`https://enkapp-telemetry.exe.xyz/api/har`.
+`https://telemetry.enkapp.svk.app/api/har`.
 
 ## Large session viewer
 

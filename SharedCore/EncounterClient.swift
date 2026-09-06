@@ -43,7 +43,7 @@ nonisolated struct LiveActivityDisplayOptions: Codable, Equatable {
 nonisolated struct DomainSettings: Codable, Equatable {
     /// Default Encounter host for development (public mock at https://encounter.exe.xyz).
     static let defaultDomain = "encounter.exe.xyz"
-    static let defaultHARUploadEndpoint = "https://enkapp-telemetry.exe.xyz/api/har"
+    static let defaultHARUploadEndpoint = "https://telemetry.enkapp.svk.app/api/har"
     static let defaultHARRecordingEnabled = false
     static let defaultHARUploadEnabled = false
 

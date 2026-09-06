@@ -107,7 +107,7 @@ func TestHandleShareCreatesPublicURL(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/sessions/share", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("X-Forwarded-Proto", "https")
-	req.Header.Set("X-Forwarded-Host", "enkapp-telemetry.exe.xyz")
+	req.Header.Set("X-Forwarded-Host", "telemetry.enkapp.svk.app")
 	rec := httptest.NewRecorder()
 
 	srv.handleShare(rec, req)
@@ -119,7 +119,7 @@ func TestHandleShareCreatesPublicURL(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode share response: %v", err)
 	}
-	if !strings.HasPrefix(payload.URL, "https://enkapp-telemetry.exe.xyz/share/") {
+	if !strings.HasPrefix(payload.URL, "https://telemetry.enkapp.svk.app/share/") {
 		t.Fatalf("share URL = %q, want public share URL", payload.URL)
 	}
 	if sub.ShareToken == "" {
