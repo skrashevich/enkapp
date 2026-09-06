@@ -598,6 +598,7 @@
 				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = \"com.svk-team.encx-cli.clip\";\n    CFBundleURLSchemes =     (\n        \"enkapp-clip\"\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Геолокация нужна, чтобы ассистент мог отвечать на вопросы о местах и маршрутах рядом с вами. Координаты запрашиваются только при использовании геолокации в чате с ассистентом.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -637,6 +638,7 @@
 				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = \"com.svk-team.encx-cli.clip\";\n    CFBundleURLSchemes =     (\n        \"enkapp-clip\"\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Геолокация нужна, чтобы ассистент мог отвечать на вопросы о местах и маршрутах рядом с вами. Координаты запрашиваются только при использовании геолокации в чате с ассистентом.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
