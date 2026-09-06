@@ -533,12 +533,16 @@ nonisolated struct Level: Decodable {
         mixedActions = mixedActions.map { $0.resolvingLevelNumber(using: levelNumbersByID) }
     }
 
-    /// Seconds until the nearest hint that is still locked (`RemainSeconds` > 0, no text yet).
-    var nearestLockedHintRemainSeconds: Int {
+    /// The hint that unlocks next: still locked (`RemainSeconds` > 0, no text yet) with the smallest remainder.
+    var nearestLockedHint: Help? {
         (helps + penaltyHelps)
             .filter { $0.remainSeconds > 0 && $0.unlockedText == nil }
-            .map(\.remainSeconds)
-            .min() ?? 0
+            .min { $0.remainSeconds < $1.remainSeconds }
+    }
+
+    /// Seconds until the nearest hint that is still locked (`RemainSeconds` > 0, no text yet).
+    var nearestLockedHintRemainSeconds: Int {
+        nearestLockedHint?.remainSeconds ?? 0
     }
 
     /// Mirrors encx.Level.CanSubmitLevelAnswer(). Bonus answers are deliberately not covered by

@@ -178,9 +178,16 @@ final class EncounterViewModel {
     /// Steady-state poll interval for an active level on screen. Kept well above the transient 5s cadence
     /// so ordinary play does not trip the Encounter server anti-spam ("NotHumanRequest") wall.
     private let activeLevelPollInterval: TimeInterval = 12
-    /// Floor for the hint/level-timeout self-rescheduling refreshes so a small (or clock-skewed) server
-    /// `RemainSeconds` cannot spin a tight ~2s refresh loop.
+    /// Retry cap for the hint-unlock and level-timeout self-rescheduling refreshes, so a small (or
+    /// clock-skewed) server `RemainSeconds` cannot spin a tight ~2s refresh loop.
     private let minTimerRefreshInterval: TimeInterval = 15
+    /// The locked hint the unlock refresh is currently waiting on, and how many unlock-driven refreshes have
+    /// already come back with it still locked. Drives the retry backoff after the countdown reaches zero.
+    private var hintUnlockRetryHelpID: Int?
+    private var hintUnlockRetryCount = 0
+    /// Same bookkeeping for the level-timeout refresh, keyed by level ID.
+    private var levelTimeoutRetryLevelID: Int?
+    private var levelTimeoutRetryCount = 0
     /// While set to a future date, background polling is suspended because the server returned the
     /// anti-spam wall; hammering it further only prolongs the block.
     private var antiSpamBackoffUntil: Date?
@@ -188,8 +195,9 @@ final class EncounterViewModel {
     private let antiSpamBackoffSeconds: TimeInterval = 90
     /// Backoff for queue retries while the engine is unreachable (cap keeps UI responsive).
     private var queueRetryBackoffSeconds: TimeInterval = 0.4
-    /// Anchor for Live Activity countdowns; updated when `currentModel` changes, not on every sync.
-    private var liveActivityModelAnchor = Date()
+    /// When `currentModel` was fetched. Anchors every countdown derived from the server's `RemainSeconds`
+    /// (Live Activity, hint-unlock refresh deadline); updated when the model changes, not on every sync.
+    private var currentModelSyncedAt = Date()
     private var lastSyncedLiveActivityState: QueueActivityAttributes.ContentState?
     private var hintUnlockRefreshTask: Task<Void, Never>?
     private var levelTimeoutRefreshTask: Task<Void, Never>?
@@ -1664,7 +1672,7 @@ final class EncounterViewModel {
         updateNewHintPopup(previousModel: previousModel, currentModel: model)
         updateTeammateCodePopup(previousModel: previousModel, currentModel: model)
         mergeCodeLogActions(model.level?.mixedActions ?? [], gameID: selectedGameID)
-        liveActivityModelAnchor = Date()
+        currentModelSyncedAt = Date()
         lastSyncedLiveActivityState = nil
         scheduleHintUnlockRefresh(for: model)
         scheduleLevelTimeoutRefresh(for: model)
@@ -1755,20 +1763,35 @@ final class EncounterViewModel {
               let model,
               model.gameID == Int(selectedGameID),
               model.isPlayable,
-              let level = model.level else {
+              let level = model.level,
+              let hint = level.nearestLockedHint else {
+            hintUnlockRetryHelpID = nil
+            hintUnlockRetryCount = 0
             return
         }
 
-        let nearestHintRemain = level.nearestLockedHintRemainSeconds
-        guard nearestHintRemain > 0 else { return }
+        if hintUnlockRetryHelpID != hint.helpID {
+            hintUnlockRetryHelpID = hint.helpID
+            hintUnlockRetryCount = 0
+        }
 
-        // Floor the delay: a persistently small (or clock-skewed) server RemainSeconds must not spin a tight loop.
-        let delay = max(TimeInterval(nearestHintRemain) + 1, minTimerRefreshInterval)
+        // Fire one second after the on-screen countdown reaches zero. The deadline is anchored to when the
+        // model was fetched, so a periodic poll landing mid-countdown re-arms for the same instant instead
+        // of pushing the refresh further out. Once the deadline has passed and the server still reports the
+        // hint as locked (clock skew, engine caching), back off exponentially up to `minTimerRefreshInterval`.
+        let unlockAt = currentModelSyncedAt.addingTimeInterval(TimeInterval(hint.remainSeconds) + 1)
+        let delay = max(unlockAt.timeIntervalSinceNow, timerRefreshRetryDelay(attempt: hintUnlockRetryCount))
         hintUnlockRefreshTask = Task { [weak self, selectedGameID] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
             await self?.refreshAfterHintUnlock(gameID: selectedGameID)
         }
+    }
+
+    /// 1s for the first shot, then 2s, 4s, 8s, capped at `minTimerRefreshInterval`.
+    private func timerRefreshRetryDelay(attempt: Int) -> TimeInterval {
+        guard attempt > 0 else { return 1 }
+        return min(pow(2, TimeInterval(attempt)), minTimerRefreshInterval)
     }
 
     private func refreshAfterHintUnlock(gameID: Int64) async {
@@ -1780,7 +1803,16 @@ final class EncounterViewModel {
             return
         }
 
+        hintUnlockRetryCount += 1
+        let syncedBefore = currentModelSyncedAt
         await refreshLevel(showUI: false)
+
+        // A background refresh stands down while the app is busy, the engine is unreachable or the anti-spam
+        // backoff is active. Nothing replaced the model in that case, so re-arm here or the hint stays on
+        // "Открывается…" until an unrelated poll happens to bring it.
+        if currentModelSyncedAt == syncedBefore {
+            scheduleHintUnlockRefresh(for: currentModel)
+        }
     }
 
     private func scheduleLevelTimeoutRefresh(for model: GameModel?) {
@@ -1793,10 +1825,20 @@ final class EncounterViewModel {
               model.isPlayable,
               let level = model.level,
               level.timeoutSecondsRemain > 0 else {
+            levelTimeoutRetryLevelID = nil
+            levelTimeoutRetryCount = 0
             return
         }
 
-        let delay = max(TimeInterval(level.timeoutSecondsRemain) + 1, minTimerRefreshInterval)
+        if levelTimeoutRetryLevelID != level.levelID {
+            levelTimeoutRetryLevelID = level.levelID
+            levelTimeoutRetryCount = 0
+        }
+
+        // Same scheme as the hint-unlock refresh: an absolute deadline anchored to the fetch time, then an
+        // exponential backoff while the server keeps the timed-out level on screen.
+        let drainAt = currentModelSyncedAt.addingTimeInterval(TimeInterval(level.timeoutSecondsRemain) + 1)
+        let delay = max(drainAt.timeIntervalSinceNow, timerRefreshRetryDelay(attempt: levelTimeoutRetryCount))
         levelTimeoutRefreshTask = Task { [weak self, selectedGameID, levelID = level.levelID] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
@@ -1814,7 +1856,13 @@ final class EncounterViewModel {
             return
         }
 
+        levelTimeoutRetryCount += 1
+        let syncedBefore = currentModelSyncedAt
         await refreshLevel(showUI: false)
+
+        if currentModelSyncedAt == syncedBefore {
+            scheduleLevelTimeoutRefresh(for: currentModel)
+        }
     }
 
     private func updateNewHintPopup(previousModel: GameModel?, currentModel: GameModel) {
@@ -2018,7 +2066,7 @@ final class EncounterViewModel {
 
         let status = display.showStatus ? liveActivityStatus(for: level) : ""
 
-        let syncedAt = liveActivityModelAnchor
+        let syncedAt = currentModelSyncedAt
         let levelEndsAt: Date? = level.timeoutSecondsRemain > 0
             ? syncedAt.addingTimeInterval(TimeInterval(level.timeoutSecondsRemain))
             : nil
