@@ -168,8 +168,6 @@ struct AccountGamesView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            heroMetrics(game: game)
-
             Button {
                 Task { await model.openGame(Int64(game.id)) }
             } label: {
@@ -201,57 +199,6 @@ struct AccountGamesView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(GameTheme.accent.opacity(0.55), lineWidth: 1)
-        }
-    }
-
-    private func heroMetrics(game: GameInfo) -> some View {
-        HStack(alignment: .bottom, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                metricLabel("уровень")
-                Text(verbatim: levelProgressText(for: game))
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(GameTheme.text)
-                    .monospacedDigit()
-                    .lineLimit(1)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                metricLabel("до слива")
-                drainValue(for: game)
-            }
-
-            Spacer(minLength: 8)
-
-            progressSegments(for: game)
-        }
-    }
-
-    private func metricLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 11, weight: .medium))
-            .textCase(.uppercase)
-            .foregroundStyle(Color.white.opacity(0.45))
-    }
-
-    @ViewBuilder
-    private func drainValue(for game: GameInfo) -> some View {
-        if let seconds = drainSeconds(for: game), seconds > 0 {
-            HeroDrainCountdown(remainSeconds: seconds)
-        } else {
-            Text(verbatim: "—")
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(GameTheme.accent)
-        }
-    }
-
-    private func progressSegments(for game: GameInfo) -> some View {
-        let closed = closedSegments(for: game)
-        return HStack(spacing: 4) {
-            ForEach(0..<5, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(index < closed ? GameTheme.accent : GameTheme.trackEmpty)
-                    .frame(width: 14, height: 6)
-            }
         }
     }
 
@@ -411,41 +358,6 @@ struct AccountGamesView: View {
         return "игр"
     }
 
-    /// Live level progress, available only while the engine model belongs to the shown game.
-    private func levelProgress(for game: GameInfo) -> (current: Int, total: Int)? {
-        guard let current = model.currentModel,
-              current.gameID == game.id,
-              let level = current.level else {
-            return nil
-        }
-        return (level.number, max(current.levels.count, level.number))
-    }
-
-    private func levelProgressText(for game: GameInfo) -> String {
-        if let progress = levelProgress(for: game) {
-            return "\(progress.current) из \(progress.total)"
-        }
-        if let total = game.levelNumber, total > 0 {
-            return "— из \(total)"
-        }
-        return "—"
-    }
-
-    private func drainSeconds(for game: GameInfo) -> Int? {
-        guard let current = model.currentModel,
-              current.gameID == game.id,
-              let level = current.level else {
-            return nil
-        }
-        return level.timeoutSecondsRemain
-    }
-
-    private func closedSegments(for game: GameInfo) -> Int {
-        guard let progress = levelProgress(for: game), progress.total > 0 else { return 0 }
-        let ratio = Double(progress.current) / Double(progress.total)
-        return min(5, max(0, Int((ratio * 5).rounded())))
-    }
-
     private var loginHintSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
@@ -476,22 +388,3 @@ struct AccountGamesView: View {
     }
 }
 
-/// Compact `m:ss` drain countdown for the hero card, re-anchored whenever the engine reports a new value.
-private struct HeroDrainCountdown: View {
-    let remainSeconds: Int
-    @State private var syncedAt = Date()
-
-    var body: some View {
-        TickingCountdownText(
-            countdown: SyncedSecondsCountdown(remainSeconds: remainSeconds, syncedAt: syncedAt),
-            label: GameDurationFormatter.compactDrain
-        )
-        .font(.system(size: 22, weight: .bold))
-        .foregroundStyle(GameTheme.accent)
-        .lineLimit(1)
-        .onAppear { syncedAt = Date() }
-        .onChange(of: remainSeconds) { _, _ in
-            syncedAt = Date()
-        }
-    }
-}

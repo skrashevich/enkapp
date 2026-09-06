@@ -943,12 +943,11 @@ private struct LevelPlayScrollBody: View {
     private func taskView(_ task: LevelTask) -> some View {
         let html = task.formattedText.isEmpty ? task.taskText : task.formattedText
         if html.contains("<") {
-            // The task is the only large text on this screen; the web view needs the size passed in.
-            EncounterHTMLView(html: html, fontSize: 19, lineHeight: 1.38)
+            EncounterHTMLView(html: html, fontSize: 16, lineHeight: 1.4)
         } else {
             CoordinateText(text: task.displayText)
-                .font(.system(size: 19))
-                .lineSpacing(7)
+                .font(.system(size: 16))
+                .lineSpacing(5)
                 .foregroundStyle(GameTheme.text)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
