@@ -1,5 +1,6 @@
 services:
   telemetry:
+    image: ${TELEMETRY_IMAGE:-ghcr.io/skrashevich/enkapp/har-telemetry:latest}
     build:
       context: .
     restart: unless-stopped

@@ -43,12 +43,19 @@ cp .env.example .env
 
 Set `VIEW_PASSWORD` in `.env` to a strong password (for example, generate one
 with `openssl rand -hex 32`). Compose refuses to start with an empty password.
-Then build and start the service:
+Then start the service with the prebuilt image from GHCR:
 
 ```sh
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 docker compose logs -f telemetry
 ```
+
+The image is published as `ghcr.io/skrashevich/enkapp/har-telemetry:latest`
+(linux/amd64 and linux/arm64) by the `telemetry-docker` GitHub Actions
+workflow on every push to `main` that touches `analytics-server/har/`. Set
+`TELEMETRY_IMAGE` in `.env` to pin a specific tag. To build locally instead,
+run `docker compose up -d --build`.
 
 The viewer is available at `http://127.0.0.1:8080` with the credentials from
 `.env`. By default the published port is accessible only on the Docker host.
@@ -65,8 +72,8 @@ Captures and share links persist in the `telemetry-data` named volume across
 container rebuilds and `docker compose down`. Back up this volume; running
 `docker compose down -v` deletes its data.
 
-To update after pulling repository changes, run `docker compose up -d --build`
-again. To stop the service, run `docker compose down`.
+To update to the latest published image, run `docker compose pull && docker
+compose up -d`. To stop the service, run `docker compose down`.
 
 ## Large session viewer
 
