@@ -26,8 +26,14 @@ enum EncounterSessionStore {
     static func loadSettings() -> DomainSettings {
         migrateLegacyStorageIfNeeded()
         guard let data = EncounterSharedStorage.data(forKey: settingsKey),
-              let decoded = try? JSONDecoder().decode(DomainSettings.self, from: data) else {
+              var decoded = try? JSONDecoder().decode(DomainSettings.self, from: data) else {
             return DomainSettings()
+        }
+        // Existing installations retain the retired endpoint even after the default changes.
+        let endpoint = decoded.harUploadEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        if URL(string: endpoint)?.host?.lowercased() == "enkapp-telemetry.exe.xyz" {
+            decoded.harUploadEndpoint = DomainSettings.defaultHARUploadEndpoint
+            saveSettings(decoded)
         }
         return decoded
     }
