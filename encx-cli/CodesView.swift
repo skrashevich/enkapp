@@ -4,10 +4,14 @@ import UIKit
 
 struct CodesView: View {
     @Bindable var model: EncounterViewModel
+    @Environment(\.dismiss) private var dismiss
     @State private var copiedActionID: Int?
     @State private var codeLogShareURL: URL?
     @State private var codeLogExportError: String?
     @State private var showCodeLogShareSheet = false
+    @State private var showClearQueueConfirmation = false
+    @State private var codeDraft = ""
+    @FocusState private var codeFieldFocused: Bool
 
     private var codeLogSnapshot: CodeLogSnapshot {
         let actions = model.codeLogActions.sorted {
@@ -41,31 +45,40 @@ struct CodesView: View {
             || showsEmptyState
             || !snapshot.groups.isEmpty
 
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                pendingSection
-                    .padding(.bottom, 20)
+        VStack(spacing: 0) {
+            header
+            serviceLine
 
-                logSectionHeader(actionCount: snapshot.actions.count)
-                    .padding(.bottom, hasLogContent ? 12 : 0)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    pendingSection
+                        .padding(.bottom, 22)
 
-                if !model.codeLogStatusMessage.isEmpty {
-                    Text(model.codeLogStatusMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(GameTheme.muted)
-                        .padding(.bottom, snapshot.groups.isEmpty ? 0 : 12)
-                }
+                    if snapshot.groups.isEmpty {
+                        sectionLabel(
+                            title: "ПРОБИТЫЕ КОДЫ",
+                            titleColor: GameTheme.sectionHeader,
+                            hint: nil
+                        )
+                        .padding(.bottom, hasLogContent ? 10 : 0)
+                    }
 
-                if showsEmptyState {
-                    Text("Пробитых кодов пока нет")
-                        .font(.subheadline)
-                        .foregroundStyle(GameTheme.muted)
-                } else {
-                    ForEach(snapshot.groups) { group in
-                        Text("Уровень \(group.levelNumber)")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(GameTheme.sectionHeader)
-                            .padding(.bottom, 8)
+                    if !model.codeLogStatusMessage.isEmpty {
+                        Text(model.codeLogStatusMessage)
+                            .font(.system(size: 13))
+                            .foregroundStyle(GameTheme.muted)
+                            .padding(.bottom, snapshot.groups.isEmpty ? 0 : 12)
+                    }
+
+                    if showsEmptyState {
+                        Text("Пробитых кодов пока нет")
+                            .font(.system(size: 13))
+                            .foregroundStyle(GameTheme.muted)
+                    }
+
+                    ForEach(Array(snapshot.groups.enumerated()), id: \.element.id) { index, group in
+                        logGroupHeader(group, isFirst: index == 0)
+                            .padding(.bottom, 10)
 
                         ForEach(group.actions) { action in
                             sentCodeRow(action)
@@ -80,21 +93,21 @@ struct CodesView: View {
                         }
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 16)
             }
-            .padding()
+            .refreshable {
+                await model.flushQueue()
+                await model.refreshLevel()
+                await model.refreshCodeLog()
+            }
         }
         .background(GameTheme.background)
-        .navigationTitle("Журнал кодов")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    exportCodeLog()
-                } label: {
-                    Label("Экспортировать", systemImage: "square.and.arrow.up")
-                }
-                .disabled(model.codeLogActions.isEmpty)
-            }
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            codeInputBar
         }
         .sheet(isPresented: $showCodeLogShareSheet, onDismiss: {
             if let codeLogShareURL {
@@ -111,10 +124,17 @@ struct CodesView: View {
         } message: {
             Text(codeLogExportError ?? "")
         }
-        .refreshable {
-            await model.flushQueue()
-            await model.refreshLevel()
-            await model.refreshCodeLog()
+        .confirmationDialog(
+            "Очистить очередь кодов?",
+            isPresented: $showClearQueueConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Очистить очередь", role: .destructive) {
+                model.clearQueue()
+            }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Неотправленные коды будут удалены безвозвратно.")
         }
         .task(id: model.currentModel?.gameID) {
             await model.refreshCodeLog()
@@ -126,92 +146,200 @@ struct CodesView: View {
         }
     }
 
-    private var pendingSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            GameSectionHeader(title: "Ожидают отправки")
+    // MARK: - Header
 
-            HStack {
-                Label(
-                    model.codesConnectionStatusLabel,
-                    systemImage: model.queueConnectionStatus.systemImage
-                )
-                .foregroundStyle(connectionStatusColor)
-                Spacer()
-                Text("\(model.queue.pending.count)")
-                    .font(.headline.monospacedDigit())
-                    .foregroundStyle(GameTheme.sectionHeader)
+    private var header: some View {
+        HStack(spacing: 12) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "arrow.backward")
+                    .font(.system(size: 22))
+                    .foregroundStyle(GameTheme.text)
             }
-            .font(.subheadline)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Назад")
+
+            Text("Журнал кодов")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(GameTheme.text)
+
+            Spacer(minLength: 8)
+
+            Button {
+                exportCodeLog()
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 21))
+                    .foregroundStyle(model.codeLogActions.isEmpty ? GameTheme.muted : GameTheme.text)
+            }
+            .buttonStyle(.plain)
+            .disabled(model.codeLogActions.isEmpty)
+            .accessibilityLabel("Экспортировать")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private var serviceLine: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(statusDotColor)
+                .frame(width: 7, height: 7)
+
+            Text(serviceStatusText)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.55))
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: 5) {
+                Text("в очереди \(model.queue.pending.count)")
+                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(GameTheme.sectionHeader)
+                Text("·")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.3))
+                Text("пробито \(solvedCodeCount)")
+                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            .lineLimit(1)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 14)
+    }
+
+    private var statusDotColor: Color {
+        model.queueConnectionStatus == .ready ? GameTheme.accent : .orange
+    }
+
+    private var serviceStatusText: String {
+        switch model.queueConnectionStatus {
+        case .ready:
+            if let serverRoundTripMs = model.serverRoundTripMs {
+                return "Сервер отвечает · \(serverRoundTripMs) мс"
+            }
+            return "Сервер отвечает"
+        case .offline, .serverUnreachable:
+            return model.queueConnectionStatus.label
+        }
+    }
+
+    private var solvedCodeCount: Int {
+        model.codeLogActions.reduce(into: 0) { total, action in
+            if action.isCorrect { total += 1 }
+        }
+    }
+
+    // MARK: - Pending queue
+
+    private var pendingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel(
+                title: "ОЖИДАЮТ ОТПРАВКИ",
+                titleColor: GameTheme.sectionHeader,
+                hint: "таймаут попытки \(EncounterTimeouts.codeSendSeconds) сек."
+            )
 
             if model.queue.pending.isEmpty {
                 Text("Нет кодов в очереди")
-                    .font(.subheadline)
+                    .font(.system(size: 13))
                     .foregroundStyle(GameTheme.muted)
             } else {
-                Text(pendingHint)
-                    .font(.caption)
-                    .foregroundStyle(GameTheme.muted)
-
                 ForEach(model.queue.pending) { item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.code)
-                            .font(.body.monospaced())
-                            .foregroundStyle(GameTheme.text)
-                        Text("Уровень \(item.levelNumber)")
-                            .font(.caption)
-                            .foregroundStyle(GameTheme.muted)
+                    pendingRow(item)
+                }
+
+                HStack(spacing: 18) {
+                    Button("Отправить сейчас") {
+                        Task { await model.flushQueue() }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 8))
-                }
-            }
+                    .foregroundStyle(GameTheme.accent)
+                    .disabled(model.isBusy)
 
-            HStack {
-                Button {
-                    Task { await model.flushQueue() }
-                } label: {
-                    Label("Отправить", systemImage: "tray.and.arrow.up")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(GameTheme.accent)
-                .disabled(model.queue.pending.isEmpty || model.isBusy)
+                    Button("Очистить очередь") {
+                        showClearQueueConfirmation = true
+                    }
+                    .foregroundStyle(.white.opacity(0.4))
 
-                Spacer()
-
-                Button(role: .destructive) {
-                    model.clearQueue()
-                } label: {
-                    Label("Очистить", systemImage: "trash")
+                    Spacer(minLength: 0)
                 }
-                .disabled(model.queue.pending.isEmpty)
+                .font(.system(size: 14, weight: .semibold))
+                .buttonStyle(.plain)
+                .padding(.top, 2)
             }
         }
     }
 
-    private var connectionStatusColor: Color {
-        switch model.queueConnectionStatus {
-        case .ready: return GameTheme.text
-        case .offline, .serverUnreachable: return .orange
+    private func pendingRow(_ item: CodeSubmission) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock")
+                .font(.system(size: 17))
+                .foregroundStyle(GameTheme.sectionHeader)
+
+            Text(item.code)
+                .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                .tracking(0.68)
+                .foregroundStyle(GameTheme.text)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            Text("Уровень \(item.levelNumber)")
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.45))
+                .lineLimit(1)
+        }
+        .padding(.vertical, 11)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(GameTheme.sectionHeader.opacity(0.09), in: RoundedRectangle(cornerRadius: 11))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11)
+                .stroke(GameTheme.sectionHeader.opacity(0.28), lineWidth: 1)
         }
     }
 
-    private var pendingHint: String {
-        switch model.queueConnectionStatus {
-        case .offline:
-            return "Отправка возобновится, когда появится сеть."
-        case .serverUnreachable:
-            return "Сеть есть, но сервер игры не отвечает. Коды сохранены, повтор с паузой до 8 сек."
-        case .ready:
-            return "Отправятся автоматически. Таймаут одной попытки — \(EncounterTimeouts.codeSendSeconds) сек."
+    // MARK: - Sent code log
+
+    private func sectionLabel(title: String, titleColor: Color, hint: String?) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .tracking(0.6)
+                .foregroundStyle(titleColor)
+
+            Spacer(minLength: 8)
+
+            if let hint {
+                Text(hint)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .lineLimit(1)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func logSectionHeader(actionCount: Int) -> some View {
-        HStack {
-            GameSectionHeader(title: "Пробитые коды (\(actionCount))")
-            Spacer()
-            if model.isCodeLogLoading {
+    @ViewBuilder
+    private func logGroupHeader(_ group: CodeActionLevelGroup, isFirst: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if isFirst {
+                sectionLabel(
+                    title: "ПРОБИТЫЕ КОДЫ · УРОВЕНЬ \(group.levelNumber)",
+                    titleColor: GameTheme.sectionHeader,
+                    hint: "тап — копировать"
+                )
+            } else {
+                Text("Уровень \(group.levelNumber)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.45))
+                Spacer(minLength: 8)
+            }
+
+            if isFirst, model.isCodeLogLoading {
                 ProgressView()
                     .controlSize(.small)
             }
@@ -224,37 +352,51 @@ struct CodesView: View {
         groups: [CodeActionLevelGroup]
     ) -> CGFloat {
         guard action.id == group.actions.last?.id else { return 8 }
-        return group.id == groups.last?.id ? 0 : 12
+        return group.id == groups.last?.id ? 0 : 16
     }
 
     private func sentCodeRow(_ action: CodeAction) -> some View {
-        let resultColor = action.isCorrect ? GameTheme.accent : GameTheme.muted
+        let isCopied = copiedActionID == action.id
 
         return Button {
             copyCode(action.answer, actionID: action.id)
         } label: {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(spacing: 10) {
                 Image(systemName: action.isCorrect ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(resultColor)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(action.answer)
-                        .font(.body.monospaced())
-                        .foregroundStyle(action.isCorrect ? GameTheme.accent : GameTheme.text)
-                    Text(action.locDateTime.isEmpty ? action.login : "\(action.login), \(action.locDateTime)")
-                        .font(.caption)
-                        .foregroundStyle(GameTheme.muted)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: copiedActionID == action.id ? "checkmark" : "doc.on.doc")
-                    .font(.subheadline)
-                    .foregroundStyle(copiedActionID == action.id ? GameTheme.accent : GameTheme.muted)
+                    .font(.system(size: 17))
+                    .foregroundStyle(action.isCorrect ? GameTheme.accent : .white.opacity(0.3))
+
+                Text(action.answer)
+                    .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                    .tracking(0.68)
+                    .foregroundStyle(action.isCorrect ? GameTheme.accent : .white.opacity(0.7))
+                    .strikethrough(!action.isCorrect, color: .white.opacity(0.3))
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Text(timestampLabel(action))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.45))
+                    .lineLimit(1)
+
+                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 17))
+                    .foregroundStyle(isCopied ? GameTheme.accent : .white.opacity(0.35))
             }
+            .padding(.vertical, 11)
+            .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 8))
+            .background(
+                action.isCorrect ? GameTheme.accent.opacity(0.10) : Color(white: 0.063),
+                in: RoundedRectangle(cornerRadius: 11)
+            )
             .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(action.isCorrect ? GameTheme.accent.opacity(0.55) : Color.clear, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 11)
+                    .stroke(
+                        action.isCorrect ? GameTheme.accent.opacity(0.45) : Color(white: 0.15),
+                        lineWidth: 1
+                    )
             }
         }
         .buttonStyle(.plain)
@@ -266,6 +408,10 @@ struct CodesView: View {
             }
         }
         .sensoryFeedback(.success, trigger: copiedActionID)
+    }
+
+    private func timestampLabel(_ action: CodeAction) -> String {
+        action.locDateTime.isEmpty ? action.login : "\(action.login) · \(action.locDateTime)"
     }
 
     private func copyCode(_ code: String, actionID: Int) {
@@ -280,6 +426,75 @@ struct CodesView: View {
             }
         }
     }
+
+    // MARK: - Code input
+
+    private var codeInputBar: some View {
+        HStack(spacing: 10) {
+            ZStack(alignment: .leading) {
+                if codeDraft.isEmpty {
+                    Text("КОД")
+                        .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.32))
+                }
+
+                TextField("", text: $codeDraft)
+                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(GameTheme.text)
+                    .tint(GameTheme.accent)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.send)
+                    .focused($codeFieldFocused)
+                    .onSubmit(submitCodeDraft)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56)
+            .background(GameTheme.fieldFill, in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(GameTheme.fieldStroke, lineWidth: 1)
+            }
+
+            Button(action: submitCodeDraft) {
+                Image(systemName: "paperplane.fill")
+                    .font(.system(size: 25))
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .background(
+                        canSubmitCode ? GameTheme.accent : GameTheme.fieldFill,
+                        in: RoundedRectangle(cornerRadius: 14)
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSubmitCode)
+            .accessibilityLabel("Отправить код")
+            .accessibilityHint("Отправить как ответ на текущий уровень")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(GameTheme.background)
+    }
+
+    private var canSubmitCode: Bool {
+        let hasText = !codeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard hasText, let level = model.currentModel?.level else { return false }
+        return model.canSubmitLevelCode(on: level)
+    }
+
+    private func submitCodeDraft() {
+        let trimmed = codeDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if let level = model.currentModel?.level, !model.canSubmitLevelCode(on: level) {
+            // Let the model publish the precise reason, but keep the unsent draft intact.
+            model.submitCode(trimmed, kind: .level)
+            return
+        }
+        codeDraft = ""
+        model.submitCode(trimmed, kind: .level)
+    }
+
+    // MARK: - Export
 
     private var codeLogExportErrorPresented: Binding<Bool> {
         Binding(

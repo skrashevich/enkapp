@@ -5,12 +5,22 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        NavigationStack(path: $model.navigationPath) {
-            mainContent
-                .navigationDestination(for: AppRoute.self, destination: destination)
+        // The tab bar is a sibling of the stack, not a safe-area inset on it: an inset would let
+        // the screens' own bottom insets (the level/codes input bar) lay out underneath the bar.
+        // As a sibling it consumes real layout height, so those bars land right above it, and it
+        // still stays visible on pushed destinations.
+        VStack(spacing: 0) {
+            NavigationStack(path: $model.navigationPath) {
+                mainContent
+                    .navigationDestination(for: AppRoute.self, destination: destination)
+            }
+            bottomTabBar
         }
-        // Present model errors from the navigation container so they are visible on the
-        // currently displayed destination (not only after returning to the root screen).
+        // Present model errors and the tools sheet from the navigation container so they are visible
+        // on the currently displayed destination (not only after returning to the root screen).
+        .sheet(isPresented: $model.showToolsSheet) {
+            ToolsHubView()
+        }
         .modifier(ErrorAlertPresenter(model: model))
         .preferredColorScheme(.dark)
     }
@@ -33,30 +43,23 @@ struct ContentView: View {
             .sheet(isPresented: $model.showAntiSpamVerification) {
                 AntiSpamVerificationView(model: model)
             }
-            .sheet(isPresented: $model.showToolsSheet) {
-                ToolsHubView()
-            }
             .sheet(isPresented: $model.showAgentSheet) {
                 AgentChatView(model: model)
             }
     }
 
     private var screenContent: some View {
-        VStack(spacing: 0) {
-            screenNavigation
-
-            Group {
-                switch model.selectedScreen {
-                case .games:
+        Group {
+            switch model.selectedScreen {
+            case .games:
                 AccountGamesView(model: model)
-                case .game:
+            case .game:
                 LevelPlayView(model: model)
-                case .team:
+            case .team:
                 TeamManagementView(model: model)
-                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(GameTheme.background)
         .navigationTitle(model.selectedScreen.title)
         .toolbar(model.selectedScreen == .game ? .hidden : .visible, for: .navigationBar)
@@ -124,48 +127,86 @@ struct ContentView: View {
         }
     }
 
-    private var screenNavigation: some View {
-        HStack(spacing: 8) {
-            screenNavigationButton(
-                screen: .games,
-                title: "Игры",
-                systemImage: "list.bullet.rectangle"
-            )
-            screenNavigationButton(
-                screen: .game,
-                title: "Игра",
-                systemImage: "gamecontroller.fill"
-            )
+    private enum BottomTab: Hashable {
+        case games
+        case game
+        case codes
+        case tools
+    }
+
+    private var bottomTabBar: some View {
+        HStack(spacing: 0) {
+            bottomTabButton(.games, title: "Игры", systemImage: "list.bullet.rectangle")
+            bottomTabButton(.game, title: "Игра", systemImage: "gamecontroller.fill")
+            bottomTabButton(.codes, title: "Коды", systemImage: "list.bullet.rectangle.portrait")
+            bottomTabButton(.tools, title: "Инструменты", systemImage: "wrench.and.screwdriver")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(GameTheme.panel)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(GameTheme.border)
-                .frame(height: 1)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+        .background {
+            Color(white: 0.05)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(Color(white: 0.15))
+                        .frame(height: 1)
+                }
+                .ignoresSafeArea(edges: .bottom)
         }
     }
 
-    private func screenNavigationButton(
-        screen: AppScreen,
+    private func bottomTabButton(
+        _ tab: BottomTab,
         title: String,
         systemImage: String
     ) -> some View {
         Button {
-            model.selectedScreen = screen
+            selectTab(tab)
         } label: {
-            Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .foregroundStyle(model.selectedScreen == screen ? .white : GameTheme.muted)
-                .background(
-                    model.selectedScreen == screen ? GameTheme.accent : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 8)
-                )
+            VStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 24))
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(selectedTab == tab ? GameTheme.accent : Color.white.opacity(0.45))
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+
+    private var selectedTab: BottomTab? {
+        if model.navigationPath.contains(.codes) {
+            return .codes
+        }
+        switch model.selectedScreen {
+        case .games:
+            return .games
+        case .game:
+            return .game
+        case .team:
+            return nil
+        }
+    }
+
+    private func selectTab(_ tab: BottomTab) {
+        switch tab {
+        case .games:
+            model.navigationPath.removeAll()
+            model.selectedScreen = .games
+        case .game:
+            model.navigationPath.removeAll()
+            model.selectedScreen = .game
+        case .codes:
+            if !model.navigationPath.contains(.codes) {
+                model.navigationPath.append(.codes)
+            }
+        case .tools:
+            model.showToolsSheet = true
+        }
     }
 
     private func refreshCurrentTab() async {

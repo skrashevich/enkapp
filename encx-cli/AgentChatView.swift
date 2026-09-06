@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Chat with the in-app assistant. The assistant reads the live game through the
-/// engine toolset; anything that changes the game is confirmed here first.
+/// engine toolset; anything that changes the game is confirmed here first — in the
+/// transcript itself, so the pending call stays visible next to its context.
 struct AgentChatView: View {
     @Bindable var model: EncounterViewModel
     @Environment(\.dismiss) private var dismiss
@@ -13,35 +14,19 @@ struct AgentChatView: View {
     @FocusState private var inputFocused: Bool
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let session {
-                    chat(session)
-                } else {
-                    unavailable
-                }
+        VStack(spacing: 0) {
+            header
+            if let session {
+                serviceLine(session)
+                chat(session)
+            } else {
+                unavailable
             }
-            .background(GameTheme.background)
-            .navigationTitle("Ассистент")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Очистить") { session?.reset() }
-                        .tint(GameTheme.muted)
-                        .disabled(session == nil || session?.isRunning == true || session?.messages.isEmpty == true)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Готово") { dismiss() }
-                        .tint(GameTheme.text)
-                }
-            }
-            .toolbarBackground(GameTheme.background, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
         }
+        .background(GameTheme.background)
         .preferredColorScheme(.dark)
         .task { start() }
         .onDisappear { dictation.stop() }
-        .confirmationSheet(session: session)
     }
 
     private func start() {
@@ -52,6 +37,85 @@ struct AgentChatView: View {
         } catch {
             startupError = error.localizedDescription
         }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        ZStack {
+            HStack(spacing: 7) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18))
+                    .foregroundStyle(GameTheme.bonusTitle)
+                Text("Ассистент")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(GameTheme.text)
+            }
+
+            HStack {
+                Button {
+                    session?.reset()
+                } label: {
+                    Text("Очистить")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.white.opacity(canClear ? 0.45 : 0.2))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canClear)
+
+                Spacer(minLength: 12)
+
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Готово")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(GameTheme.text)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
+    private var canClear: Bool {
+        guard let session else { return false }
+        return !session.isRunning && !session.messages.isEmpty
+    }
+
+    /// Level on the left, access policy and toolset size on the right.
+    private func serviceLine(_ session: AgentChatSession) -> some View {
+        HStack(spacing: 5) {
+            if let levelCaption {
+                Text(levelCaption)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            Spacer(minLength: 10)
+
+            Text(session.policy.title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(GameTheme.bonusTitle)
+            Text("·")
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.5))
+            Text("\(session.toolCount) инструментов")
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.5))
+                .fixedSize()
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 10)
+    }
+
+    private var levelCaption: String? {
+        guard let level = model.currentModel?.level else { return nil }
+        let name = level.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Ур. \(level.number)" : "Ур. \(level.number) · \(name)"
     }
 
     @ViewBuilder
@@ -80,45 +144,62 @@ struct AgentChatView: View {
         }
     }
 
+    // MARK: - Transcript
+
     private func transcript(_ session: AgentChatSession) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    if session.messages.isEmpty {
-                        emptyState(session)
+        // Bubbles are sized as a share of the transcript width, so the width has
+        // to be measured rather than guessed.
+        GeometryReader { geometry in
+            let contentWidth = max(0, geometry.size.width - 28)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        if session.messages.isEmpty {
+                            emptyState(session)
+                        }
+                        ForEach(session.messages) { message in
+                            AgentMessageRow(message: message, availableWidth: contentWidth)
+                                .id(message.id)
+                        }
+                        if session.isRunning {
+                            AgentActivityPanel(
+                                activity: session.activity,
+                                startedAt: session.runStartedAt,
+                                awaitingConfirmation: session.currentConfirmation != nil
+                            )
+                                .id(Self.activityAnchor)
+                        }
+                        if let confirmation = session.currentConfirmation {
+                            AgentConfirmationCard(confirmation: confirmation) { approved in
+                                session.resolve(confirmation, approved: approved)
+                            }
+                            .id(Self.confirmationAnchor)
+                        }
                     }
-                    ForEach(session.messages) { message in
-                        AgentMessageBubble(message: message)
-                            .id(message.id)
-                    }
-                    if session.isRunning {
-                        AgentActivityPanel(
-                            activity: session.activity,
-                            startedAt: session.runStartedAt,
-                            awaitingConfirmation: session.currentConfirmation != nil
-                        )
-                            .id(Self.activityAnchor)
-                    }
+                    .padding(14)
                 }
-                .padding(14)
-            }
-            .scrollContentBackground(.hidden)
-            .onAppear {
-                scrollToBottom(session, proxy: proxy)
-            }
-            .onChange(of: session.isRunning) { _, _ in
-                scrollToBottom(session, proxy: proxy)
-            }
-            .onChange(of: session.messages.count) { _, _ in
-                scrollToBottom(session, proxy: proxy)
-            }
-            .onChange(of: session.activity.count) { _, _ in
-                scrollToBottom(session, proxy: proxy)
+                .scrollContentBackground(.hidden)
+                .onAppear {
+                    scrollToBottom(session, proxy: proxy)
+                }
+                .onChange(of: session.isRunning) { _, _ in
+                    scrollToBottom(session, proxy: proxy)
+                }
+                .onChange(of: session.messages.count) { _, _ in
+                    scrollToBottom(session, proxy: proxy)
+                }
+                .onChange(of: session.activity.count) { _, _ in
+                    scrollToBottom(session, proxy: proxy)
+                }
+                .onChange(of: session.currentConfirmation?.id) { _, _ in
+                    scrollToBottom(session, proxy: proxy)
+                }
             }
         }
     }
 
     private static let activityAnchor = "agent-activity"
+    private static let confirmationAnchor = "agent-confirmation"
 
     private func submit(_ session: AgentChatSession) {
         dictation.stop()
@@ -135,7 +216,9 @@ struct AgentChatView: View {
 
     private func scrollToBottom(_ session: AgentChatSession, proxy: ScrollViewProxy) {
         withAnimation(.easeOut(duration: 0.2)) {
-            if session.isRunning {
+            if session.currentConfirmation != nil {
+                proxy.scrollTo(Self.confirmationAnchor, anchor: .bottom)
+            } else if session.isRunning {
                 proxy.scrollTo(Self.activityAnchor, anchor: .bottom)
             } else if let last = session.messages.last {
                 proxy.scrollTo(last.id, anchor: .bottom)
@@ -160,38 +243,30 @@ struct AgentChatView: View {
         .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 10))
     }
 
+    // MARK: - Composer
+
     private func composer(_ session: AgentChatSession) -> some View {
         VStack(spacing: 0) {
             Rectangle()
-                .fill(GameTheme.border)
+                .fill(GameTheme.hairline)
                 .frame(height: 1)
 
             HStack(alignment: .bottom, spacing: 10) {
-                TextField("Спросите об игре…", text: $draft, axis: .vertical)
-                    .lineLimit(1...5)
-                    .textFieldStyle(.plain)
-                    .padding(10)
-                    .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
-                    .foregroundStyle(GameTheme.text)
-                    .focused($inputFocused)
-                    .disabled(session.isRunning)
-                    // With a hardware keyboard Return sends and Shift+Return breaks
-                    // the line. A vertical-axis TextField never calls onSubmit, so
-                    // the key has to be intercepted directly.
-                    .onKeyPress(.return, phases: .down) { keyPress in
-                        guard !keyPress.modifiers.contains(.shift) else { return .ignored }
-                        submit(session)
-                        return .handled
-                    }
+                inputField(session)
 
                 if !session.isRunning && dictation.isSupported {
                     Button {
                         dictation.toggle { text in draft = text }
                     } label: {
-                        Image(systemName: dictation.isListening ? "mic.fill" : "mic")
-                            .font(.title2)
+                        composerButtonLabel {
+                            Image(systemName: dictation.isListening ? "mic.fill" : "mic")
+                                .font(.system(size: 20))
+                                .foregroundStyle(dictation.isListening
+                                                 ? GameTheme.accent
+                                                 : .white.opacity(0.55))
+                        }
                     }
-                    .tint(dictation.isListening ? GameTheme.accent : GameTheme.muted)
+                    .buttonStyle(.plain)
                     .accessibilityLabel(dictation.isListening ? "Остановить диктовку" : "Продиктовать")
                 }
 
@@ -199,20 +274,28 @@ struct AgentChatView: View {
                     Button {
                         session.cancel()
                     } label: {
-                        Image(systemName: "stop.circle.fill")
-                            .font(.title2)
+                        composerButtonLabel {
+                            Image(systemName: "stop.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundStyle(.white.opacity(0.35))
+                        }
                     }
-                    .tint(GameTheme.muted)
+                    .buttonStyle(.plain)
                     .accessibilityLabel("Остановить")
                 } else {
+                    let canSend = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     Button {
                         submit(session)
                     } label: {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.title2)
+                        composerButtonLabel {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundStyle(GameTheme.accent)
+                                .opacity(canSend ? 1 : 0.35)
+                        }
                     }
-                    .tint(GameTheme.accent)
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
                     .accessibilityLabel("Отправить")
                 }
             }
@@ -227,47 +310,105 @@ struct AgentChatView: View {
                     .padding(.bottom, 8)
             }
         }
-        .background(GameTheme.panel)
+        .background(GameTheme.background)
     }
-}
 
-private struct AgentMessageBubble: View {
-    let message: AgentMessage
+    /// The placeholder colour cannot be set on a `TextField` prompt, so it is
+    /// drawn behind an untitled field instead.
+    private func inputField(_ session: AgentChatSession) -> some View {
+        ZStack(alignment: .topLeading) {
+            if draft.isEmpty {
+                Text("Спросите об игре…")
+                    .font(.system(size: 17))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 17)
+                    .allowsHitTesting(false)
+            }
 
-    var body: some View {
-        HStack {
-            if message.role == .user { Spacer(minLength: 40) }
-
-            messageContent
-                .font(.subheadline)
-                .foregroundStyle(foreground)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(background, in: RoundedRectangle(cornerRadius: 10))
-
-            if message.role != .user { Spacer(minLength: 40) }
+            TextField("", text: $draft, axis: .vertical)
+                .lineLimit(1...5)
+                .textFieldStyle(.plain)
+                .font(.system(size: 17))
+                .foregroundStyle(GameTheme.text)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 17)
+                .focused($inputFocused)
+                .disabled(session.isRunning)
+                // With a hardware keyboard Return sends and Shift+Return breaks
+                // the line. A vertical-axis TextField never calls onSubmit, so
+                // the key has to be intercepted directly.
+                .onKeyPress(.return, phases: .down) { keyPress in
+                    guard !keyPress.modifiers.contains(.shift) else { return .ignored }
+                    submit(session)
+                    return .handled
+                }
+        }
+        .frame(minHeight: 56)
+        .background(GameTheme.fieldFill, in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(GameTheme.fieldStroke, lineWidth: 1)
         }
     }
 
+    private func composerButtonLabel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .frame(width: 56, height: 56)
+            .background(GameTheme.fieldFill, in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(GameTheme.fieldStroke, lineWidth: 1)
+            }
+    }
+}
+
+/// The player's turns are bubbles; the assistant answers straight onto the
+/// background, so long replies read as a document rather than as chat.
+private struct AgentMessageRow: View {
+    let message: AgentMessage
+    let availableWidth: CGFloat
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if message.role == .user {
+                Spacer(minLength: 0)
+                Text(message.text)
+                    .font(.system(size: 16))
+                    .lineSpacing(16 * 0.4)
+                    .foregroundStyle(GameTheme.text)
+                    .textSelection(.enabled)
+                    .padding(.vertical, 11)
+                    .padding(.horizontal, 13)
+                    .background(GameTheme.accent.opacity(0.22), in: Self.userBubble)
+                    .frame(maxWidth: availableWidth * 0.78, alignment: .trailing)
+            } else {
+                assistantContent
+                    .foregroundStyle(message.role == .failure ? Color.red : GameTheme.text)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: availableWidth * 0.88, alignment: .leading)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private static let userBubble = UnevenRoundedRectangle(
+        topLeadingRadius: 14,
+        bottomLeadingRadius: 14,
+        bottomTrailingRadius: 4,
+        topTrailingRadius: 14,
+        style: .continuous
+    )
+
     @ViewBuilder
-    private var messageContent: some View {
+    private var assistantContent: some View {
         if message.role == .assistant {
             AgentMarkdownText(source: message.text)
         } else {
             Text(message.text)
-        }
-    }
-
-    private var foreground: Color {
-        message.role == .failure ? .red : GameTheme.text
-    }
-
-    private var background: Color {
-        switch message.role {
-        case .user: return GameTheme.accent.opacity(0.22)
-        case .assistant: return GameTheme.panel
-        case .failure: return Color.red.opacity(0.14)
+                .font(.system(size: 16))
+                .lineSpacing(16 * 0.45)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -336,7 +477,7 @@ private struct AgentMarkdownText: View {
             case 1: return .title2.bold()
             case 2: return .title3.bold()
             case .some: return .headline
-            case nil: return .subheadline
+            case nil: return .system(size: 16)
             }
         }
     }
@@ -349,7 +490,7 @@ private struct AgentMarkdownText: View {
         for run in parsed.runs {
             var text = AttributedString(parsed[run.range])
             if run.inlinePresentationIntent?.contains(.code) == true {
-                text.font = .system(.subheadline, design: .monospaced)
+                text.font = .system(size: 14, design: .monospaced)
             }
             if let last = result.last, last.intent == run.presentationIntent {
                 result[result.count - 1].text.append(text)
@@ -372,6 +513,7 @@ private struct AgentMarkdownText: View {
                     if let marker = block.marker {
                         Text(marker)
                             .monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.4))
                     }
                     if block.isCode {
                         ScrollView(.horizontal) {
@@ -391,6 +533,7 @@ private struct AgentMarkdownText: View {
                 .padding(.leading, CGFloat(max(0, block.listDepth - 1)) * 16)
             }
         }
+        .lineSpacing(16 * 0.45)
         .tint(GameTheme.accent)
     }
 }
@@ -407,54 +550,63 @@ private struct AgentActivityPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
             ForEach(activity) { item in
                 HStack(spacing: 8) {
                     icon(for: item)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(item.title)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(item.isError ? .red : GameTheme.text)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(item.isError ? Color.red : GameTheme.text)
                         if !item.arguments.isEmpty {
                             Text(item.arguments)
-                                .font(.caption2)
-                                .foregroundStyle(GameTheme.muted)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white.opacity(0.45))
                         }
                     }
                 }
             }
 
-            HStack(alignment: .top, spacing: 10) {
-                ProgressView()
-                    .tint(GameTheme.bonusTitle)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(status)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(GameTheme.text)
-                    Text(awaitingConfirmation
-                         ? "Подтвердите или отклоните действие, чтобы продолжить."
-                         : "Ответ появится здесь. Можно остановить выполнение кнопкой ниже.")
-                        .font(.caption)
-                        .foregroundStyle(GameTheme.muted)
-                    if let startedAt {
-                        HStack(spacing: 4) {
-                            Text("Прошло")
-                            Text(startedAt, style: .timer)
-                                .monospacedDigit()
-                        }
-                        .font(.caption)
-                        .foregroundStyle(GameTheme.muted)
+            if !activity.isEmpty {
+                Rectangle()
+                    .fill(Color(white: 0.118))
+                    .frame(height: 1)
+            }
+
+            HStack(spacing: 10) {
+                if awaitingConfirmation {
+                    Image(systemName: "hourglass")
+                        .font(.system(size: 16))
+                        .foregroundStyle(GameTheme.bonusTitle)
+                        .accessibilityHidden(true)
+                } else {
+                    ProgressView()
+                        .tint(GameTheme.bonusTitle)
+                        .accessibilityHidden(true)
+                }
+                Text(status)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(GameTheme.text)
+                Spacer(minLength: 8)
+                if let startedAt {
+                    HStack(spacing: 4) {
+                        Text("Прошло")
+                        // A relative timer text ticks up on its own, without a
+                        // per-second refresh of the whole panel.
+                        Text(startedAt, style: .timer)
+                            .monospacedDigit()
                     }
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .fixedSize()
                 }
             }
-            .padding(.top, activity.isEmpty ? 0 : 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 10))
+        .padding(11)
+        .background(Color(white: 0.063), in: RoundedRectangle(cornerRadius: 12))
         .overlay {
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(GameTheme.bonusTitle.opacity(0.3), lineWidth: 1)
         }
     }
@@ -465,56 +617,92 @@ private struct AgentActivityPanel: View {
             ProgressView().controlSize(.small)
         } else if item.isError {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.caption)
+                .font(.system(size: 15))
                 .foregroundStyle(.red)
         } else {
             Image(systemName: "checkmark.circle.fill")
-                .font(.caption)
+                .font(.system(size: 15))
                 .foregroundStyle(GameTheme.accent)
         }
     }
 }
 
-private extension View {
-    /// Presents the approval sheet for a mutating engine call.
-    func confirmationSheet(session: AgentChatSession?) -> some View {
-        modifier(AgentConfirmationPresenter(session: session))
-    }
-}
+/// Approval for a mutating engine call, asked inside the transcript.
+///
+/// A system alert hid the conversation and the tool arguments behind it; here the
+/// request stays in place, under the activity it belongs to.
+private struct AgentConfirmationCard: View {
+    let confirmation: AgentConfirmation
+    let resolve: (Bool) -> Void
 
-private struct AgentConfirmationPresenter: ViewModifier {
-    let session: AgentChatSession?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.shield")
+                    .font(.system(size: 18))
+                Text("Подтвердите действие")
+                    .font(.system(size: 15, weight: .bold))
+            }
+            .foregroundStyle(GameTheme.sectionHeader)
 
-    func body(content: Content) -> some View {
-        content.alert(
-            "Подтвердите действие",
-            isPresented: isPresented,
-            presenting: session?.currentConfirmation
-        ) { confirmation in
-            Button("Отклонить", role: .cancel) {
-                session?.resolve(confirmation, approved: false)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Ассистент хочет выполнить:")
+                    .font(.system(size: 16))
+                    .lineSpacing(16 * 0.4)
+                    .foregroundStyle(GameTheme.text)
+                chip(confirmation.title)
+                if !confirmation.arguments.isEmpty {
+                    chip(confirmation.arguments)
+                }
             }
-            Button("Разрешить") {
-                session?.resolve(confirmation, approved: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 10) {
+                Button {
+                    resolve(true)
+                } label: {
+                    Text("Разрешить")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(GameTheme.accent, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    resolve(false)
+                } label: {
+                    Text("Отклонить")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.65))
+                        .padding(.horizontal, 18)
+                        .frame(height: 48)
+                        .background(Color(white: 0.102), in: RoundedRectangle(cornerRadius: 12))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color(white: 0.2), lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
             }
-        } message: { confirmation in
-            if confirmation.arguments.isEmpty {
-                Text("Ассистент хочет выполнить: \(confirmation.title).")
-            } else {
-                Text("Ассистент хочет выполнить: \(confirmation.title).\n\(confirmation.arguments)")
-            }
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(GameTheme.sectionHeader.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(GameTheme.sectionHeader.opacity(0.45), lineWidth: 1)
         }
     }
 
-    /// An alert can only be dismissed through one of its buttons, and both
-    /// buttons resolve the call explicitly. The setter therefore does nothing:
-    /// deciding here as well would race the button action, and whichever ran
-    /// first would win — silently denying an approval on some SwiftUI versions.
-    /// Presentation is driven purely by the queue, which `resolve` pops.
-    private var isPresented: Binding<Bool> {
-        Binding(
-            get: { session?.currentConfirmation != nil },
-            set: { _ in }
-        )
+    private func chip(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 14, design: .monospaced))
+            .foregroundStyle(GameTheme.text)
+            .textSelection(.enabled)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 6)
+            .background(Color(white: 0.102), in: RoundedRectangle(cornerRadius: 5))
     }
 }

@@ -539,6 +539,19 @@ final class EncounterViewModel {
         syncWidgetSnapshot()
     }
 
+    /// Signs the player out: drops the stored session, clears the saved password, and
+    /// forgets the active client so the account card falls back to the signed-out state.
+    func logoutAction() async {
+        // `saveCredentials` and `hasStoredCredentials` both key off the trimmed login, so deleting
+        // under the raw field value would leave the password behind and keep the session "stored".
+        let trimmedLogin = login.trimmingCharacters(in: .whitespacesAndNewlines)
+        KeychainCredentialsStore.delete(domain: settings.domain, login: trimmedLogin)
+        EncounterSessionStore.clearSessionCookies()
+        client = nil
+        password = ""
+        statusMessage = "Вы вышли из аккаунта"
+    }
+
     @discardableResult
     func loginAction() async -> Bool {
         // A second tap (or another view observing the same model) joins the active attempt.

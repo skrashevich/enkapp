@@ -28,6 +28,8 @@ struct OnboardingView: View {
 
     @State private var step: OnboardingStep = .welcome
     @State private var customDomain = ""
+    /// The free-form domain row swaps its placeholder for the real text field once tapped.
+    @State private var isEnteringCustomDomain = false
     @State private var loginError: String?
     @State private var notificationsGranted: Bool?
     @State private var isRequestingNotifications = false
@@ -40,12 +42,20 @@ struct OnboardingView: View {
         case password
     }
 
+    private enum Metrics {
+        static let rowHeight: CGFloat = 60
+        static let rowRadius: CGFloat = 16
+        static let rowSpacing: CGFloat = 10
+        static let blockSpacing: CGFloat = 26
+        static let sideInset: CGFloat = 20
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            progressHeader
+            progressIndicator
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 0) {
                     switch step {
                     case .welcome: welcomeStep
                     case .domain: domainStep
@@ -54,7 +64,9 @@ struct OnboardingView: View {
                     case .ready: readyStep
                     }
                 }
-                .padding()
+                .padding(.horizontal, Metrics.sideInset)
+                .padding(.top, 34)
+                .padding(.bottom, 28)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollDismissesKeyboard(.interactively)
@@ -92,253 +104,198 @@ struct OnboardingView: View {
 
     // MARK: - Chrome
 
-    private var progressHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Шаг \(step.rawValue + 1) из \(OnboardingStep.allCases.count)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(GameTheme.muted)
-                Spacer()
-                Text(step.title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(GameTheme.sectionHeader)
+    private var progressIndicator: some View {
+        HStack(spacing: 5) {
+            ForEach(OnboardingStep.allCases) { candidate in
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(candidate.rawValue <= step.rawValue ? GameTheme.accent : GameTheme.trackEmpty)
+                    .frame(height: 3)
             }
-
-            HStack(spacing: 4) {
-                ForEach(OnboardingStep.allCases) { candidate in
-                    Capsule()
-                        .fill(candidate.rawValue <= step.rawValue ? GameTheme.accent : GameTheme.border)
-                        .frame(height: 4)
-                }
-            }
-            .animation(.easeInOut(duration: 0.2), value: step)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
-        .background(GameTheme.panel)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(GameTheme.border)
-                .frame(height: 1)
-        }
+        .padding(.horizontal, Metrics.sideInset)
+        .animation(.easeInOut(duration: 0.2), value: step)
     }
 
     private var footer: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 14) {
             Button {
                 advance()
             } label: {
-                Label(primaryButtonTitle, systemImage: primaryButtonIcon)
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 10) {
+                    Text(primaryButtonTitle)
+                        .font(.system(size: 18, weight: .bold))
+                    Image(systemName: primaryButtonIcon)
+                        .font(.system(size: 22, weight: .semibold))
+                }
+                .foregroundStyle(GameTheme.text)
+                .frame(maxWidth: .infinity, minHeight: 58)
+                .background(
+                    RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+                        .fill(GameTheme.accent)
+                )
+                .opacity(isPrimaryButtonDisabled ? 0.45 : 1)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(GameTheme.accent)
+            .buttonStyle(.plain)
             .disabled(isPrimaryButtonDisabled)
 
             HStack {
                 if step != .welcome {
                     Button("Назад") { retreat() }
-                        .font(.subheadline)
-                        .tint(GameTheme.muted)
+                        .font(.system(size: 15))
+                        .foregroundStyle(.white.opacity(0.5))
                         .disabled(model.isBusy)
                 }
                 Spacer()
                 if let secondaryTitle = secondaryButtonTitle {
                     Button(secondaryTitle) { skipStep() }
-                        .font(.subheadline)
-                        .tint(GameTheme.muted)
+                        .font(.system(size: 15))
+                        .foregroundStyle(.white.opacity(0.5))
                         .disabled(model.isBusy)
                 }
             }
+            .buttonStyle(.plain)
         }
-        .padding(16)
-        .background(GameTheme.panel)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(GameTheme.border)
-                .frame(height: 1)
-        }
+        .padding(.horizontal, Metrics.sideInset)
+        .padding(.top, 12)
     }
 
     // MARK: - Steps
 
     private var welcomeStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 12) {
-                Image(systemName: "flag.checkered.2.crossed")
-                    .font(.system(size: 40, weight: .semibold))
-                    .foregroundStyle(GameTheme.accent)
-                Text(AppMetadata.displayName)
-                    .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(GameTheme.text)
-                Text("Клиент для игр Encounter: уровни, коды, подсказки и статус команды на одном экране.")
-                    .font(.subheadline)
-                    .foregroundStyle(GameTheme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .sectionPanel()
+        VStack(alignment: .leading, spacing: Metrics.blockSpacing) {
+            Image(systemName: "flag.checkered.2.crossed")
+                .font(.system(size: 40, weight: .semibold))
+                .foregroundStyle(GameTheme.accent)
 
-            VStack(alignment: .leading, spacing: 12) {
-                SectionTitle("Что внутри")
-                featureRow(
+            stepIntro(
+                question: AppMetadata.displayName,
+                explainer: "Клиент для игр Encounter: уровни, коды, подсказки и статус команды на одном экране."
+            )
+
+            VStack(alignment: .leading, spacing: Metrics.rowSpacing) {
+                groupLabel("Что внутри")
+                detailRow(
                     title: "Быстрая отправка кодов",
                     subtitle: "Очередь работает даже без связи и досылает коды сама.",
                     systemImage: "paperplane.fill",
                     tint: GameTheme.accent
                 )
-                featureRow(
+                detailRow(
                     title: "Игра на экране блокировки",
                     subtitle: "Live Activity с уровнем, секторами и таймерами.",
                     systemImage: "rectangle.on.rectangle",
                     tint: GameTheme.bonusTitle
                 )
-                featureRow(
+                detailRow(
                     title: "Оповещения по ходу игры",
                     subtitle: "Смена уровня и новые подсказки приходят уведомлением.",
                     systemImage: "bell.badge.fill",
                     tint: GameTheme.sectionHeader
                 )
-                featureRow(
+                detailRow(
                     title: "Инструменты игрока",
                     subtitle: "Шифры, анаграммизатор и журнал кодов под рукой.",
                     systemImage: "wrench.and.screwdriver.fill",
                     tint: .orange
                 )
             }
-            .sectionPanel()
 
-            Text("Настройка займёт меньше минуты. Всё, что здесь выбрано, потом меняется в настройках.")
-                .font(.caption)
-                .foregroundStyle(GameTheme.muted)
-                .fixedSize(horizontal: false, vertical: true)
+            footnote("Настройка займёт меньше минуты. Всё, что здесь выбрано, потом меняется в настройках.")
         }
     }
 
     private var domainStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            stepHeader(
-                title: "Выберите домен",
-                subtitle: "Домен Encounter, на котором вы играете. Позже его можно сменить в списке игр или настройках.",
-                systemImage: "globe"
+        VStack(alignment: .leading, spacing: Metrics.blockSpacing) {
+            stepIntro(
+                question: "На каком домене вы играете?",
+                explainer: "Домен Encounter, на котором вы играете. Позже его можно сменить в списке игр или настройках."
             )
 
-            VStack(alignment: .leading, spacing: 12) {
-                SectionTitle("Известные домены")
+            VStack(spacing: Metrics.rowSpacing) {
                 ForEach(model.knownDomains, id: \.self) { domain in
                     Button {
                         focusedField = nil
+                        isEnteringCustomDomain = false
                         model.applyDomainSelection(domain)
                         customDomain = domain
                     } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: domain == model.settings.domain ? "checkmark.circle.fill" : "globe")
-                                .foregroundStyle(domain == model.settings.domain ? GameTheme.accent : GameTheme.bonusTitle)
-                                .frame(width: 28, height: 28)
-                            Text(domain)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(GameTheme.text)
-                            Spacer()
-                        }
-                        .padding(12)
-                        .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+                        optionRow(
+                            title: domain,
+                            systemImage: "globe",
+                            isSelected: domain == model.settings.domain
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(model.isBusy)
                 }
-            }
-            .sectionPanel()
 
-            VStack(alignment: .leading, spacing: 12) {
-                SectionTitle("Другой домен")
-                HStack(spacing: 8) {
-                    TextField("например, moscow.en.cx", text: $customDomain)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                        .focused($focusedField, equals: .domain)
-                        .submitLabel(.done)
-                        .onSubmit { applyCustomDomain() }
-                        .foregroundStyle(GameTheme.text)
-                        .padding(12)
-                        .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
-
-                    Button("Применить") { applyCustomDomain() }
-                        .buttonStyle(.bordered)
-                        .tint(GameTheme.accent)
-                        .disabled(!canApplyCustomDomain)
-                }
-                Text("Текущий домен: \(model.settings.domain)")
-                    .font(.caption)
-                    .foregroundStyle(GameTheme.muted)
+                customDomainRow
             }
-            .sectionPanel()
+
+            footnote("Текущий домен: \(model.settings.domain)")
         }
     }
 
     private var accountStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            stepHeader(
-                title: "Вход в аккаунт",
-                subtitle: "Учётная запись Encounter для домена \(model.settings.domain). Без входа доступен только общий список игр домена.",
-                systemImage: "person.crop.circle"
+        VStack(alignment: .leading, spacing: Metrics.blockSpacing) {
+            stepIntro(
+                question: "Вход в аккаунт",
+                explainer: "Учётная запись Encounter для домена \(model.settings.domain). Без входа доступен только общий список игр домена."
             )
 
-            VStack(alignment: .leading, spacing: 12) {
-                SectionTitle("Учётные данные")
+            VStack(alignment: .leading, spacing: Metrics.rowSpacing) {
+                entryRow(systemImage: "person.crop.circle") {
+                    TextField("Логин", text: $model.login)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textContentType(.username)
+                        .focused($focusedField, equals: .login)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .password }
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(GameTheme.text)
+                }
 
-                TextField("Логин", text: $model.login)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .textContentType(.username)
-                    .focused($focusedField, equals: .login)
-                    .submitLabel(.next)
-                    .onSubmit { focusedField = .password }
-                    .foregroundStyle(GameTheme.text)
-                    .padding(12)
-                    .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
-
-                SecureField("Пароль", text: $model.password)
-                    .textContentType(.password)
-                    .focused($focusedField, equals: .password)
-                    .submitLabel(.go)
-                    .onSubmit { Task { await performLogin() } }
-                    .foregroundStyle(GameTheme.text)
-                    .padding(12)
-                    .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
+                entryRow(systemImage: "lock.fill") {
+                    SecureField("Пароль", text: $model.password)
+                        .textContentType(.password)
+                        .focused($focusedField, equals: .password)
+                        .submitLabel(.go)
+                        .onSubmit { Task { await performLogin() } }
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(GameTheme.text)
+                }
 
                 if model.hasStoredSession {
-                    Label("Вход выполнен", systemImage: "checkmark.seal.fill")
-                        .font(.caption)
-                        .foregroundStyle(GameTheme.accent)
+                    statusLine(
+                        text: "Вход выполнен",
+                        systemImage: "checkmark.seal.fill",
+                        tint: GameTheme.accent
+                    )
                 }
 
                 if let loginError {
-                    Label(loginError, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
+                    statusLine(
+                        text: loginError,
+                        systemImage: "exclamationmark.triangle",
+                        tint: .orange
+                    )
                 }
-
-                Text("Пароль сохраняется в Keychain устройства и используется только для входа на выбранный домен.")
-                    .font(.caption)
-                    .foregroundStyle(GameTheme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            .sectionPanel()
+
+            footnote("Пароль сохраняется в Keychain устройства и используется только для входа на выбранный домен.")
         }
     }
 
     private var notificationsStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            stepHeader(
-                title: "Оповещения",
-                subtitle: "Уведомления и Live Activity помогают не пропустить смену уровня, пока приложение свёрнуто.",
-                systemImage: "bell.badge"
+        VStack(alignment: .leading, spacing: Metrics.blockSpacing) {
+            stepIntro(
+                question: "Оповещения",
+                explainer: "Уведомления и Live Activity помогают не пропустить смену уровня, пока приложение свёрнуто."
             )
 
-            VStack(alignment: .leading, spacing: 12) {
-                SectionTitle("Что включить")
+            VStack(alignment: .leading, spacing: Metrics.rowSpacing) {
+                groupLabel("Что включить")
                 toggleRow(
                     title: "Новый уровень",
                     subtitle: "Уведомление, когда команда переходит на следующий уровень.",
@@ -360,79 +317,77 @@ struct OnboardingView: View {
                     isOn: $model.settings.liveActivityEnabled
                 )
             }
-            .sectionPanel()
 
-            VStack(alignment: .leading, spacing: 12) {
-                SectionTitle("Разрешение системы")
+            VStack(alignment: .leading, spacing: Metrics.rowSpacing) {
+                groupLabel("Разрешение системы")
 
-                HStack(spacing: 10) {
+                rowChrome(fill: GameTheme.panel, stroke: Color(white: 0.15)) {
                     if isRequestingNotifications {
                         ProgressView().controlSize(.small)
                         Text("Запрашиваем разрешение…")
-                            .font(.subheadline)
-                            .foregroundStyle(GameTheme.muted)
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white.opacity(0.55))
                     } else {
                         switch notificationsGranted {
                         case true?:
-                            Label("Уведомления разрешены", systemImage: "checkmark.circle.fill")
-                                .font(.subheadline)
-                                .foregroundStyle(.green)
+                            permissionLabel("Уведомления разрешены", systemImage: "checkmark.circle.fill", tint: .green)
                         case false?:
-                            Label("Нет доступа к уведомлениям", systemImage: "xmark.circle.fill")
-                                .font(.subheadline)
-                                .foregroundStyle(.orange)
+                            permissionLabel("Нет доступа к уведомлениям", systemImage: "xmark.circle.fill", tint: .orange)
                         case nil:
-                            Label("Разрешение ещё не запрошено", systemImage: "questionmark.circle")
-                                .font(.subheadline)
-                                .foregroundStyle(GameTheme.muted)
+                            permissionLabel("Разрешение ещё не запрошено", systemImage: "questionmark.circle", tint: .white.opacity(0.55))
                         }
                     }
-                    Spacer()
                 }
-                .padding(12)
-                .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
 
                 if notificationsGranted != true && anyNotificationOptionEnabled {
                     Button {
                         Task { await requestNotifications() }
                     } label: {
-                        Label("Разрешить уведомления", systemImage: "bell.badge")
-                            .frame(maxWidth: .infinity)
+                        HStack(spacing: 12) {
+                            Image(systemName: "bell.badge")
+                                .font(.system(size: 24))
+                                .foregroundStyle(GameTheme.accent)
+                                .frame(width: 26)
+                            Text("Разрешить уведомления")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(GameTheme.text)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity, minHeight: Metrics.rowHeight)
+                        .background(
+                            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+                                .fill(GameTheme.accent.opacity(0.14))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+                                .strokeBorder(GameTheme.accent.opacity(0.6), lineWidth: 1)
+                        )
                     }
-                    .buttonStyle(.bordered)
-                    .tint(GameTheme.accent)
+                    .buttonStyle(.plain)
                     .disabled(isRequestingNotifications)
                 }
-
-                Text(notificationsFooterText)
-                    .font(.caption)
-                    .foregroundStyle(GameTheme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            .sectionPanel()
+
+            footnote(notificationsFooterText)
         }
     }
 
     private var readyStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 12) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 40, weight: .semibold))
-                    .foregroundStyle(GameTheme.accent)
-                Text("Всё готово")
-                    .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(GameTheme.text)
-                Text(model.hasStoredSession
-                     ? "Осталось выбрать игру в списке и начать."
-                     : "Список игр домена доступен без входа. Войти в аккаунт можно в любой момент из настроек.")
-                    .font(.subheadline)
-                    .foregroundStyle(GameTheme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .sectionPanel()
+        VStack(alignment: .leading, spacing: Metrics.blockSpacing) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 40, weight: .semibold))
+                .foregroundStyle(GameTheme.accent)
 
-            VStack(alignment: .leading, spacing: 12) {
-                SectionTitle("Итог настройки")
+            stepIntro(
+                question: "Всё готово",
+                explainer: model.hasStoredSession
+                    ? "Осталось выбрать игру в списке и начать."
+                    : "Список игр домена доступен без входа. Войти в аккаунт можно в любой момент из настроек."
+            )
+
+            VStack(alignment: .leading, spacing: Metrics.rowSpacing) {
+                groupLabel("Итог настройки")
                 summaryRow(
                     title: "Домен",
                     value: model.settings.domain,
@@ -458,50 +413,189 @@ struct OnboardingView: View {
                     tint: GameTheme.bonusTitle
                 )
             }
-            .sectionPanel()
 
-            Text("Эти параметры и остальные опции доступны в разделе «Настройки».")
-                .font(.caption)
-                .foregroundStyle(GameTheme.muted)
-                .fixedSize(horizontal: false, vertical: true)
+            footnote("Эти параметры и остальные опции доступны в разделе «Настройки».")
         }
     }
 
     // MARK: - Building blocks
 
-    private func stepHeader(title: String, subtitle: String, systemImage: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(GameTheme.text)
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(GameTheme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 8)
-            Image(systemName: systemImage)
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(GameTheme.sectionHeader)
-                .frame(width: 44, height: 44)
-                .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 12))
-        }
-        .sectionPanel()
+    @ViewBuilder
+    private func stepIntro(question: String, explainer: String) -> some View {
+        Text("Шаг \(step.rawValue + 1) из \(OnboardingStep.allCases.count)")
+            .font(.system(size: 12, weight: .bold))
+            .textCase(.uppercase)
+            .foregroundStyle(GameTheme.sectionHeader)
+
+        Text(question)
+            .font(.system(size: 34, weight: .bold))
+            .foregroundStyle(GameTheme.text)
+            .lineSpacing(3)
+            .lineLimit(2)
+            .minimumScaleFactor(0.75)
+            .fixedSize(horizontal: false, vertical: true)
+
+        Text(explainer)
+            .font(.system(size: 16))
+            .foregroundStyle(.white.opacity(0.55))
+            .lineSpacing(7)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func featureRow(
+    private func groupLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12, weight: .bold))
+            .textCase(.uppercase)
+            .foregroundStyle(GameTheme.sectionHeader)
+    }
+
+    private func footnote(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13))
+            .foregroundStyle(.white.opacity(0.4))
+            .lineSpacing(3)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Shared geometry for every 60pt row on the flow.
+    private func rowChrome<Content: View>(
+        fill: Color,
+        stroke: Color,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(spacing: 12) {
+            content()
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: Metrics.rowHeight)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+                .fill(fill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+                .strokeBorder(stroke, lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+    }
+
+    private func optionRow(title: String, systemImage: String, isSelected: Bool) -> some View {
+        rowChrome(
+            fill: isSelected ? GameTheme.accent.opacity(0.14) : GameTheme.panel,
+            stroke: isSelected ? GameTheme.accent.opacity(0.6) : Color(white: 0.15)
+        ) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : systemImage)
+                .font(.system(size: 24))
+                .foregroundStyle(isSelected ? GameTheme.accent : GameTheme.bonusTitle)
+                .frame(width: 26)
+            Text(title)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(GameTheme.text)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Free-form domain entry: a dashed row that turns into the real text field on tap.
+    @ViewBuilder
+    private var customDomainRow: some View {
+        if isEnteringCustomDomain {
+            customDomainChrome {
+                TextField("например, moscow.en.cx", text: $customDomain)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+                    .focused($focusedField, equals: .domain)
+                    .submitLabel(.done)
+                    .onSubmit { applyCustomDomain() }
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(GameTheme.text)
+
+                Button("Применить") { applyCustomDomain() }
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(GameTheme.accent)
+                    .buttonStyle(.plain)
+                    .disabled(!canApplyCustomDomain)
+                    .opacity(canApplyCustomDomain ? 1 : 0.35)
+            }
+        } else {
+            Button {
+                isEnteringCustomDomain = true
+                focusedField = .domain
+            } label: {
+                customDomainChrome {
+                    Text("Другой домен…")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.45))
+                    Spacer(minLength: 0)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isBusy)
+        }
+    }
+
+    private func customDomainChrome<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "pencil")
+                .font(.system(size: 24))
+                .foregroundStyle(.white.opacity(0.35))
+                .frame(width: 26)
+            content()
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: Metrics.rowHeight)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+                .fill(Color(white: 0.059))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+                .strokeBorder(
+                    Color(white: 0.23),
+                    style: StrokeStyle(lineWidth: 1, dash: [6, 4])
+                )
+        )
+        .contentShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+    }
+
+    private func entryRow<Content: View>(
+        systemImage: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        rowChrome(fill: GameTheme.panel, stroke: Color(white: 0.15)) {
+            Image(systemName: systemImage)
+                .font(.system(size: 24))
+                .foregroundStyle(GameTheme.bonusTitle)
+                .frame(width: 26)
+            content()
+        }
+    }
+
+    private func detailRow(
         title: String,
         subtitle: String,
         systemImage: String,
         tint: Color
     ) -> some View {
-        DashboardSettingsRow(
-            title: title,
-            subtitle: subtitle,
-            systemImage: systemImage,
-            tint: tint
-        )
+        rowChrome(fill: GameTheme.panel, stroke: Color(white: 0.15)) {
+            Image(systemName: systemImage)
+                .font(.system(size: 24))
+                .foregroundStyle(tint)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(GameTheme.text)
+                Text(subtitle)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     private func toggleRow(
@@ -511,12 +605,21 @@ struct OnboardingView: View {
         tint: Color = GameTheme.accent,
         isOn: Binding<Bool>
     ) -> some View {
-        DashboardSettingsRow(
-            title: title,
-            subtitle: subtitle,
-            systemImage: systemImage,
-            tint: tint
-        ) {
+        rowChrome(fill: GameTheme.panel, stroke: Color(white: 0.15)) {
+            Image(systemName: systemImage)
+                .font(.system(size: 24))
+                .foregroundStyle(tint)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(GameTheme.text)
+                Text(subtitle)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
             Toggle(title, isOn: isOn)
                 .labelsHidden()
                 .tint(GameTheme.accent)
@@ -529,17 +632,46 @@ struct OnboardingView: View {
         systemImage: String,
         tint: Color
     ) -> some View {
-        DashboardSettingsRow(
-            title: title,
-            systemImage: systemImage,
-            tint: tint
-        ) {
-            Text(value)
-                .font(.subheadline.weight(.semibold))
+        rowChrome(fill: GameTheme.panel, stroke: Color(white: 0.15)) {
+            Image(systemName: systemImage)
+                .font(.system(size: 24))
+                .foregroundStyle(tint)
+                .frame(width: 26)
+            Text(title)
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(GameTheme.text)
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
         }
+    }
+
+    private func statusLine(text: String, systemImage: String, tint: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+            Text(text)
+                .font(.system(size: 13))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(tint)
+    }
+
+    @ViewBuilder
+    private func permissionLabel(_ text: String, systemImage: String, tint: Color) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 24))
+            .foregroundStyle(tint)
+            .frame(width: 26)
+        Text(text)
+            .font(.system(size: 16))
+            .foregroundStyle(tint)
+            .fixedSize(horizontal: false, vertical: true)
+        Spacer(minLength: 0)
     }
 
     // MARK: - Navigation

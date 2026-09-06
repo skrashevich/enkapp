@@ -3,11 +3,20 @@ import WebKit
 
 struct EncounterHTMLView: View {
     let html: String
+    /// Body type for the rendered document. SwiftUI's `.font()` cannot reach the web view, so the
+    /// caller passes the size the surrounding design calls for (level task 19/1.38, hints 16/1.4).
+    var fontSize: CGFloat = 15
+    var lineHeight: CGFloat = 1.45
     @State private var height: CGFloat = 80
     @State private var zoomImage: ZoomImageTarget?
 
     var body: some View {
-        EncounterHTMLWebView(html: html, contentHeight: $height) { url in
+        EncounterHTMLWebView(
+            html: html,
+            fontSize: fontSize,
+            lineHeight: lineHeight,
+            contentHeight: $height
+        ) { url in
             zoomImage = ZoomImageTarget(url: url)
         }
         .frame(height: max(height, 44))
@@ -32,6 +41,8 @@ struct ZoomImageTarget: Identifiable {
 
 private struct EncounterHTMLWebView: UIViewRepresentable {
     let html: String
+    let fontSize: CGFloat
+    let lineHeight: CGFloat
     @Binding var contentHeight: CGFloat
     var onImageTap: (URL) -> Void
 
@@ -232,7 +243,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
             padding: 0;
             background: transparent;
             color: #fff;
-            font: 15px/1.45 -apple-system, BlinkMacSystemFont, sans-serif;
+            font: \(fontSize)px/\(lineHeight) -apple-system, BlinkMacSystemFont, sans-serif;
             overflow: visible;
           }
           body { padding-bottom: 12px; box-sizing: border-box; }

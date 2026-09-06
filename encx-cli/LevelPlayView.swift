@@ -301,13 +301,12 @@ struct LevelPlayView: View {
 
     private func gameScreen(game: GameModel, level: Level) -> some View {
         VStack(spacing: 0) {
-            gameHeader(game: game)
-            levelProgress(game: game, level: level)
+            gameTopBar(game: game, level: level)
 
             if let popup = model.teammateCodePopup {
                 teammateCodePopupView(popup)
                     .padding(.horizontal, 14)
-                    .padding(.bottom, 8)
+                    .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
@@ -321,12 +320,10 @@ struct LevelPlayView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             LevelCodeInputBar(
                 text: $codeDraft,
-                previousText: previousCodeDraft,
                 canSubmitLevel: canSubmitCode(level: level, kind: .level),
-                canSubmitBonus: canSubmitCode(level: level, kind: .bonus),
+                showsBonusAction: model.canSubmitBonusCode(on: level),
                 levelBlockDuration: level.canSubmitLevelAnswer() ? 0 : level.blockDuration,
                 isFocused: $codeFieldFocused,
-                onRepeatPrevious: repeatPreviousCodeDraft,
                 onSubmitLevel: { submitCodeDraft(kind: .level) },
                 onSubmitBonus: { submitCodeDraft(kind: .bonus) },
                 onLevelBlockExpired: {
@@ -469,156 +466,147 @@ struct LevelPlayView: View {
         codeFieldFocused = true
     }
 
-    private func gameHeader(game: GameModel) -> some View {
-        HStack(spacing: 12) {
+    private func gameTopBar(game: GameModel, level: Level) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 RoundedRectangle(cornerRadius: 5)
                     .fill(GameTheme.accent)
-                    .frame(width: 30, height: 30)
+                    .frame(width: 20, height: 20)
                     .overlay {
                         Text("EN")
-                            .font(.caption2.weight(.bold))
+                            .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(.white)
                     }
 
-                Text(game.gameTitle.isEmpty ? "Игра #\(game.gameID)" : game.gameTitle)
-                    .font(.headline)
-                    .foregroundStyle(GameTheme.text)
+                Text(headerIdentityLine(game: game))
+                    .font(.caption)
+                    .foregroundStyle(GameTheme.muted)
                     .lineLimit(1)
-            }
+                    .truncationMode(.tail)
 
-            Spacer()
-
-            HStack(spacing: 18) {
-                if model.agentSettings.enabled {
-                    Button {
-                        model.showAgentSheet = true
-                    } label: {
-                        VStack(spacing: 2) {
-                            AgentIcon()
-                            Text("Ассистент")
-                                .font(.system(size: 9))
-                                .foregroundStyle(GameTheme.text)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                        }
-                        .frame(minWidth: 44)
-                    }
-                    .disabled(model.isBusy)
-                }
-
-                Button {
-                    model.showToolsSheet = true
-                } label: {
-                    headerAction("Инструменты", systemImage: "wrench.and.screwdriver")
-                }
-                .disabled(model.isBusy)
+                Spacer(minLength: 8)
 
                 Button {
                     Task { await model.refreshLevel() }
                 } label: {
-                    headerAction("Обновить", systemImage: "arrow.clockwise")
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 19))
+                        .foregroundStyle(.white.opacity(0.4))
                 }
                 .disabled(model.isBusy)
+                .accessibilityLabel("Обновить")
 
-                NavigationLink(value: AppRoute.statistics(Int64(game.gameID))) {
-                    headerAction("Статистика", systemImage: "chart.bar")
-                }
-
-                NavigationLink(value: AppRoute.codes) {
-                    codesHeaderAction(pendingCount: model.queue.pending.count)
-                }
+                headerMenu(game: game)
             }
+            .frame(height: 28)
+
+            levelServiceLine(game: game, level: level)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(GameTheme.panel)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+        .background(GameTheme.background)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(GameTheme.hairline)
+                .frame(height: 1)
+        }
     }
 
-    private func codesHeaderAction(pendingCount: Int) -> some View {
-        VStack(spacing: 2) {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: "list.bullet.rectangle")
-                    .font(.body)
-                if pendingCount > 0 {
-                    Text("\(pendingCount)")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(3)
-                        .background(Color.orange, in: Circle())
-                        .offset(x: 8, y: -8)
+    private func headerIdentityLine(game: GameModel) -> String {
+        let title = game.gameTitle.isEmpty ? "Игра #\(game.gameID)" : game.gameTitle
+        return ([title] + [game.login, game.teamName].filter { !$0.isEmpty })
+            .joined(separator: " · ")
+    }
+
+    private func headerMenu(game: GameModel) -> some View {
+        Menu {
+            Button {
+                Task { await model.refreshLevel() }
+            } label: {
+                Label("Обновить", systemImage: "arrow.clockwise")
+            }
+            .disabled(model.isBusy)
+
+            if !previousCodeDraft.isEmpty {
+                Button {
+                    repeatPreviousCodeDraft()
+                } label: {
+                    Label("Повторить код «\(previousCodeDraft)»", systemImage: "arrow.uturn.backward")
                 }
             }
-            Text("Коды")
-                .font(.system(size: 9))
-                .lineLimit(1)
-        }
-        .foregroundStyle(GameTheme.text)
-        .frame(minWidth: 44)
-    }
 
-    private func headerAction(_ title: String, systemImage: String) -> some View {
-        VStack(spacing: 2) {
-            Image(systemName: systemImage)
-                .font(.body)
-            Text(title)
-                .font(.system(size: 9))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .foregroundStyle(GameTheme.text)
-        .frame(minWidth: 44)
-    }
-
-    private func levelProgress(game: GameModel, level: Level) -> some View {
-        let title = currentLevelTitle(game: game, level: level)
-
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                if !game.teamName.isEmpty || !game.login.isEmpty {
-                    Text([game.login, game.teamName].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(GameTheme.muted)
-                        .lineLimit(1)
+            if model.agentSettings.enabled {
+                Button {
+                    model.showAgentSheet = true
+                } label: {
+                    Label("Ассистент", systemImage: "sparkles")
                 }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 4) {
-                    HStack(spacing: 4) {
-                        Text("Уровень")
-                            .foregroundStyle(GameTheme.muted)
-                        Text("\(level.number)")
-                            .fontWeight(.bold)
-                            .foregroundStyle(GameTheme.accent)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(GameTheme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-                        Text("из \(max(game.levels.count, level.number))")
-                            .foregroundStyle(GameTheme.muted)
-                    }
-                    .font(.subheadline)
+                .disabled(model.isBusy)
+            }
 
+            Button {
+                model.showToolsSheet = true
+            } label: {
+                Label("Инструменты", systemImage: "wrench.and.screwdriver")
+            }
+            .disabled(model.isBusy)
+
+            Button {
+                model.navigationPath.append(.statistics(Int64(game.gameID)))
+            } label: {
+                Label("Статистика", systemImage: "chart.bar")
+            }
+
+            Button {
+                model.navigationPath.append(.codes)
+            } label: {
+                Label(codesMenuTitle, systemImage: "list.bullet.rectangle")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 19))
+                .foregroundStyle(.white.opacity(0.4))
+        }
+        .accessibilityLabel("Ещё")
+    }
+
+    private var codesMenuTitle: String {
+        let pending = model.queue.pending.count
+        return pending > 0 ? "Коды · в очереди \(pending)" : "Коды"
+    }
+
+    private func levelServiceLine(game: GameModel, level: Level) -> some View {
+        let title = currentLevelTitle(game: game, level: level)
+        let total = level.displaySectorsTotal
+
+        return HStack(spacing: 10) {
+            Text(title.isEmpty ? "Ур. \(level.number)" : "Ур. \(level.number) · \(title)")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(GameTheme.text)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
+
+            LevelSegmentedProgressBar(total: total, closed: level.passedSectorsCount)
+                .frame(minWidth: 24, maxWidth: .infinity)
+
+            HStack(spacing: 4) {
+                Text(verbatim: "\(level.passedSectorsCount)/\(total)")
+
+                if level.timeoutSecondsRemain > 0 {
+                    Text(verbatim: "·")
                     LevelDrainCountdown(remainSeconds: level.timeoutSecondsRemain) {
                         Task { await model.refreshLevelSilently() }
                     }
                 }
             }
-
-            Text(title.isEmpty ? "Уровень \(level.number)" : "Ур. \(level.number): \(title)")
-                .font(.headline)
-                .foregroundStyle(GameTheme.text)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if let progress = sectorsProgressCaption(level: level) {
-                Text(progress)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(GameTheme.accent)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(GameTheme.accent)
+            .monospacedDigit()
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(.horizontal, 14)
-        .padding(.bottom, 8)
     }
 
     private func currentLevelTitle(game: GameModel, level: Level) -> String {
@@ -633,20 +621,44 @@ struct LevelPlayView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    private func sectorsProgressCaption(level: Level) -> String? {
-        if level.requiredSectorsCount > 0 {
-            let remaining = level.sectorsLeftToClose > 0
-                ? level.sectorsLeftToClose
-                : max(0, level.requiredSectorsCount - level.passedSectorsCount)
-            if remaining > 0 {
-                return "Для прохождения: \(level.passedSectorsCount) из \(level.requiredSectorsCount) · осталось \(remaining)"
+}
+
+private extension Level {
+    /// Sectors needed to pass the level; falls back to the sector count when the engine omits the rule.
+    var displaySectorsTotal: Int {
+        requiredSectorsCount > 0 ? requiredSectorsCount : sectors.count
+    }
+}
+
+/// Compact five-segment sector progress indicator for the service line.
+private struct LevelSegmentedProgressBar: View {
+    let total: Int
+    let closed: Int
+
+    private var segmentCount: Int {
+        guard total > 0 else { return 5 }
+        return min(total, 5)
+    }
+
+    private var filledCount: Int {
+        guard total > 0, closed > 0 else { return 0 }
+        if total <= 5 {
+            return min(closed, segmentCount)
+        }
+        let scaled = Int((Double(closed) / Double(total) * Double(segmentCount)).rounded())
+        return min(max(scaled, 1), segmentCount)
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(Array(0..<segmentCount), id: \.self) { index in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(index < filledCount ? GameTheme.accent : GameTheme.trackEmpty)
+                    .frame(height: 3)
             }
-            return "Для прохождения: \(level.passedSectorsCount) из \(level.requiredSectorsCount)"
         }
-        if level.sectorsLeftToClose > 0 {
-            return "Осталось закрыть: \(level.sectorsLeftToClose) \(LevelPlayWordForms.sector(level.sectorsLeftToClose))"
-        }
-        return nil
+        .animation(.easeOut(duration: 0.25), value: filledCount)
+        .accessibilityHidden(true)
     }
 }
 
@@ -690,13 +702,10 @@ private struct LevelDrainCountdown: View {
                     remainSeconds: remainSeconds,
                     syncedAt: syncedAt
                 ),
-                label: GameDurationFormatter.levelDrainLabel
+                label: GameDurationFormatter.compactDrain(seconds:)
             )
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(GameTheme.accent)
             .lineLimit(1)
-            // Keep the full "До слива: …" text; let the login·team line on the left truncate instead.
-            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityLabel("До слива уровня")
             .onAppear { syncedAt = Date() }
             .onChange(of: remainSeconds) { _, _ in
                 syncedAt = Date()
@@ -714,18 +723,18 @@ private struct LevelDrainCountdown: View {
 
 private struct LevelCodeInputBar: View {
     @Binding var text: String
-    var previousText: String
     var canSubmitLevel: Bool
-    var canSubmitBonus: Bool
+    var showsBonusAction: Bool
     var levelBlockDuration: Int
     var isFocused: FocusState<Bool>.Binding
-    var onRepeatPrevious: () -> Void
     var onSubmitLevel: () -> Void
     var onSubmitBonus: () -> Void
     var onLevelBlockExpired: () -> Void
 
+    private let fieldFont = Font.system(size: 20, weight: .semibold, design: .monospaced)
+
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             if levelBlockDuration > 0 {
                 LevelAnswerBlockCountdown(
                     remainSeconds: levelBlockDuration,
@@ -733,58 +742,81 @@ private struct LevelCodeInputBar: View {
                 )
             }
 
-            HStack(spacing: 10) {
-                TextField("Введите ответ или код и нажмите Enter", text: $text)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.send)
-                    .focused(isFocused)
-                    .onSubmit(onSubmitLevel)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(GameTheme.border, lineWidth: 1)
-                    }
-                    .foregroundStyle(GameTheme.text)
+            HStack(spacing: 8) {
+                codeField
 
-                if !previousText.isEmpty {
-                    Button(action: onRepeatPrevious) {
-                        Image(systemName: "arrow.uturn.backward")
-                            .frame(width: 40, height: 40)
-                            .background(GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
-                            .foregroundStyle(GameTheme.text)
-                    }
-                    .accessibilityLabel("Повторить предыдущий код")
-                    .accessibilityHint("Вернуть предыдущий код в поле ввода для правки")
-                }
-
-                if canSubmitBonus {
+                if showsBonusAction {
                     Button(action: onSubmitBonus) {
                         Text("Бонус")
-                            .font(.caption.weight(.semibold))
-                            .frame(height: 40)
-                            .padding(.horizontal, 10)
-                            .background(GameTheme.bonusTitle, in: RoundedRectangle(cornerRadius: 8))
-                            .foregroundStyle(.white)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(GameTheme.bonusTitle)
+                            .frame(height: 56)
+                            .padding(.horizontal, 14)
+                            .background(
+                                GameTheme.bonusTitle.opacity(0.16),
+                                in: RoundedRectangle(cornerRadius: 14)
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(GameTheme.bonusTitle.opacity(0.45), lineWidth: 1)
+                            }
                     }
                     .accessibilityHint("Отправить как ответ на бонусное задание")
                 }
 
                 Button(action: onSubmitLevel) {
                     Image(systemName: "paperplane.fill")
-                        .frame(width: 40, height: 40)
-                        .background(canSubmitLevel ? GameTheme.accent : GameTheme.inputBackground, in: RoundedRectangle(cornerRadius: 8))
+                        .font(.system(size: 25))
                         .foregroundStyle(.white)
+                        .frame(width: 56, height: 56)
+                        .background(
+                            canSubmitLevel ? GameTheme.accent : GameTheme.fieldFill,
+                            in: RoundedRectangle(cornerRadius: 14)
+                        )
                 }
                 .disabled(!canSubmitLevel)
+                .accessibilityLabel("Отправить")
                 .accessibilityHint("Отправить как ответ на уровень")
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(GameTheme.background)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(GameTheme.hairline)
+                .frame(height: 1)
+        }
+    }
+
+    private var codeField: some View {
+        ZStack(alignment: .leading) {
+            if text.isEmpty {
+                Text("КОД")
+                    .font(fieldFont)
+                    .tracking(1.2)
+                    .foregroundStyle(.white.opacity(0.32))
+                    .allowsHitTesting(false)
+            }
+
+            TextField("", text: $text)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.send)
+                .focused(isFocused)
+                .onSubmit(onSubmitLevel)
+                .font(fieldFont)
+                .tracking(1.2)
+                .foregroundStyle(GameTheme.text)
+                .accessibilityLabel("Код")
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 56)
+        .background(GameTheme.fieldFill, in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(GameTheme.fieldStroke, lineWidth: 1)
+        }
     }
 }
 
@@ -798,7 +830,7 @@ private struct LevelAnswerBlockCountdown: View {
             countdown: SyncedSecondsCountdown(remainSeconds: remainSeconds, syncedAt: syncedAt),
             label: { "Ответы на уровень через \($0) сек. · бонусы доступны" }
         )
-        .font(.caption.weight(.semibold))
+        .font(.system(size: 12, weight: .semibold))
         .foregroundStyle(GameTheme.sectionHeader)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { syncedAt = Date() }
@@ -810,7 +842,6 @@ private struct LevelAnswerBlockCountdown: View {
         }
     }
 }
-
 private struct LevelPlayScrollBody: View {
     let model: EncounterViewModel
     let statusMessage: String
@@ -818,7 +849,7 @@ private struct LevelPlayScrollBody: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 if !statusMessage.isEmpty {
                     Text(statusMessage)
                         .font(.caption)
@@ -826,57 +857,84 @@ private struct LevelPlayScrollBody: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
+                taskSection
+
                 if !level.sectors.isEmpty {
                     sectorsSection
                 }
-
-                taskSection
 
                 if !level.helps.isEmpty || !level.penaltyHelps.isEmpty {
                     helpsSection
                 }
 
-                if !level.messages.isEmpty {
-                    messagesSection
-                }
-
                 if !level.bonuses.isEmpty {
                     bonusesSection
                 }
+
+                if !level.messages.isEmpty {
+                    messagesSection
+                }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.top, 12)
         }
     }
 
-    private var sectorsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            GameSectionHeader(title: sectorsSectionTitle)
-
-            ForEach(level.sectors.sortedForDisplay) { sector in
-                Text(sectorLine(sector))
-                    .font(.body)
-                    .foregroundStyle(sector.isAnswered ? GameTheme.accent : GameTheme.text)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+    /// One flat block: hairline separator, uppercase label with optional right-aligned counter, content.
+    @ViewBuilder
+    private func block<Content: View>(
+        _ title: String,
+        tint: Color = GameTheme.sectionHeader,
+        trailing: String? = nil,
+        showsDivider: Bool = true,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if showsDivider {
+                Divider()
+                    .overlay(GameTheme.hairline)
             }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title)
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.1)
+                    .textCase(.uppercase)
+                    .foregroundStyle(tint)
+
+                Spacer(minLength: 4)
+
+                if let trailing {
+                    Text(trailing)
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.45))
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+            .padding(.top, showsDivider ? 12 : 0)
+
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 10)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var taskSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            GameSectionHeader(title: "Задание")
-
-            if let task = level.task {
-                taskView(task)
-            }
-
-            ForEach(Array(level.tasks.enumerated()), id: \.offset) { index, task in
-                if level.tasks.count > 1 || level.task == nil {
-                    Text("Задание \(index + 1)")
-                        .font(.caption)
-                        .foregroundStyle(GameTheme.muted)
+        block("Задание", showsDivider: false) {
+            VStack(alignment: .leading, spacing: 10) {
+                if let task = level.task {
+                    taskView(task)
                 }
-                taskView(task)
+
+                ForEach(Array(level.tasks.enumerated()), id: \.offset) { index, task in
+                    if level.tasks.count > 1 || level.task == nil {
+                        Text("Задание \(index + 1)")
+                            .font(.caption)
+                            .foregroundStyle(GameTheme.muted)
+                    }
+                    taskView(task)
+                }
             }
         }
     }
@@ -885,133 +943,309 @@ private struct LevelPlayScrollBody: View {
     private func taskView(_ task: LevelTask) -> some View {
         let html = task.formattedText.isEmpty ? task.taskText : task.formattedText
         if html.contains("<") {
-            EncounterHTMLView(html: html)
+            // The task is the only large text on this screen; the web view needs the size passed in.
+            EncounterHTMLView(html: html, fontSize: 19, lineHeight: 1.38)
         } else {
             CoordinateText(text: task.displayText)
-                .font(.body)
+                .font(.system(size: 19))
+                .lineSpacing(7)
                 .foregroundStyle(GameTheme.text)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private var messagesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            GameSectionHeader(title: "Сообщения")
-            ForEach(level.messages) { message in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(message.ownerLogin)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(GameTheme.bonusTitle)
-                    CoordinateText(text: message.displayText)
-                        .font(.body)
-                        .foregroundStyle(GameTheme.text)
+    private var sectorsSection: some View {
+        block("Секторы", trailing: sectorsProgressCaption) {
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 6),
+                    GridItem(.flexible(), spacing: 6)
+                ],
+                spacing: 6
+            ) {
+                ForEach(level.sectors.sortedForDisplay) { sector in
+                    sectorChip(sector)
                 }
+            }
+        }
+    }
+
+    private var sectorsProgressCaption: String {
+        let total = level.displaySectorsTotal
+        let closed = level.passedSectorsCount
+        let remaining = level.sectorsLeftToClose > 0
+            ? level.sectorsLeftToClose
+            : max(0, total - closed)
+        if remaining > 0 {
+            return "закрыто \(closed) из \(total) · осталось \(remaining)"
+        }
+        return "закрыто \(closed) из \(total)"
+    }
+
+    private func sectorChip(_ sector: Sector) -> some View {
+        HStack(spacing: 8) {
+            if sector.isAnswered {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(GameTheme.accent)
+
+                Text(verbatim: sectorChipCode(sector))
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(GameTheme.accent)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            } else {
+                Text(verbatim: "— — —")
+                    .font(.system(size: 14, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.28))
+            }
+
+            Spacer(minLength: 4)
+
+            Text(verbatim: "\(sector.displayOrder)")
+                .font(.system(size: 10))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.35))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            if sector.isAnswered {
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(GameTheme.accent.opacity(0.12))
+            } else {
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(
+                        GameTheme.sectorEmptyStroke,
+                        style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                    )
+            }
+        }
+        .animation(.easeOut(duration: 0.25), value: sector.isAnswered)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func sectorChipCode(_ sector: Sector) -> String {
+        let answer = sector.answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !answer.isEmpty {
+            return answer
+        }
+        return sector.name.isEmpty ? "Сектор \(sector.displayOrder)" : sector.name
+    }
+
+    private var helpsSection: some View {
+        block("Подсказки") {
+            LevelPlayHelpsList(
+                helps: level.helps,
+                penaltyHelps: level.penaltyHelps
+            ) { help in
+                Task { await model.requestPenaltyHelp(help) }
             }
         }
     }
 
     private var bonusesSection: some View {
-        let unansweredBonuses = level.bonuses
-            .filter { !$0.isAnswered }
-            .sorted { $0.number < $1.number }
-
-        // `help` is the reward the engine reveals once a bonus is taken, so it only ever arrives on
-        // answered bonuses. Listing this section as unanswered-only therefore hid every reward the
-        // player had already earned.
-        let solvedRewards = level.bonuses
-            .filter { $0.isAnswered && !$0.help.isEmpty }
-            .sorted { $0.number < $1.number }
-
-        return VStack(alignment: .leading, spacing: 10) {
-            GameSectionHeader(
-                title: "На уровне \(level.bonuses.count) \(LevelPlayWordForms.bonus(level.bonuses.count)) (Выполненные — \(level.passedBonusesCount))"
-            )
-
-            ForEach(unansweredBonuses) { bonus in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Бонус \(bonus.number): \(bonus.name)")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(GameTheme.bonusTitle)
-
-                    if !bonus.task.isEmpty {
-                        bonusContent(bonus.task)
-                    }
-                    if !bonus.help.isEmpty {
-                        bonusContent(bonus.help)
-                    }
+        block(
+            "Бонусы",
+            tint: GameTheme.bonusTitle,
+            trailing: "выполнен \(level.passedBonusesCount) из \(level.bonuses.count)"
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(level.bonuses.sorted { $0.number < $1.number }) { bonus in
+                    bonusParagraph(bonus)
+                        .lineSpacing(6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
                 }
             }
+        }
+    }
 
-            ForEach(solvedRewards) { bonus in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Бонус \(bonus.number): \(bonus.name) ✓")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(GameTheme.accent)
+    /// One flowing paragraph per bonus: optional checkmark, run-in title, then task and reward text.
+    private func bonusParagraph(_ bonus: Bonus) -> Text {
+        var paragraph = Text(verbatim: "")
 
-                    bonusContent(bonus.help)
+        if bonus.isAnswered {
+            paragraph = Text(Image(systemName: "checkmark"))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(GameTheme.accent)
+                + Text(verbatim: " ")
+        }
+
+        paragraph = paragraph + Text(verbatim: "Бонус \(bonus.number): \(bonus.name). ")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(bonus.isAnswered ? GameTheme.accent : GameTheme.bonusTitle)
+
+        return paragraph + Text(verbatim: bonusBodyText(bonus))
+            .font(.system(size: 16))
+            .foregroundStyle(.white.opacity(0.85))
+    }
+
+    private func bonusBodyText(_ bonus: Bonus) -> String {
+        [bonus.task, bonus.help]
+            .map { $0.strippingHTML().trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    private var messagesSection: some View {
+        block("Сообщения оргов", tint: .white.opacity(0.45)) {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(level.messages) { message in
+                    (
+                        Text(verbatim: "\(messageAuthor(message)): ")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(GameTheme.bonusTitle)
+                            + Text(verbatim: message.displayText)
+                            .font(.system(size: 16))
+                            .foregroundStyle(GameTheme.text)
+                    )
+                    .lineSpacing(6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
                 }
             }
+        }
+    }
+
+    private func messageAuthor(_ message: AdminMessage) -> String {
+        let login = message.ownerLogin.trimmingCharacters(in: .whitespacesAndNewlines)
+        return login.isEmpty ? "орг" : login
+    }
+}
+
+/// Inline hints list for the play screen. Unlock countdown and penalty-request logic are the same as
+/// `LevelHelpsSection`; only the presentation is flat rows instead of panels.
+private struct LevelPlayHelpsList: View {
+    let helps: [Help]
+    let penaltyHelps: [Help]
+    var onRequestPenaltyHelp: ((Help) -> Void)?
+
+    @State private var syncedAt = Date()
+    @State private var pendingPenaltyHelp: Help?
+
+    private var syncKey: String {
+        (helps + penaltyHelps)
+            .sorted { $0.helpID < $1.helpID }
+            .map { "\($0.helpID):\($0.remainSeconds):\($0.helpText ?? "")" }
+            .joined(separator: "|")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(helps.sorted { $0.number < $1.number }) { help in
+                helpRow(help, isPenalty: false)
+            }
+
+            ForEach(penaltyHelps.sorted { $0.number < $1.number }) { help in
+                helpRow(help, isPenalty: true)
+            }
+        }
+        .onAppear { syncedAt = Date() }
+        .onChange(of: syncKey) { _, _ in
+            syncedAt = Date()
+        }
+        .confirmationDialog(
+            "Открыть штрафную подсказку?",
+            isPresented: Binding(
+                get: { pendingPenaltyHelp != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingPenaltyHelp = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let help = pendingPenaltyHelp {
+                Button("Открыть со штрафом \(GameDurationFormatter.minutesAndSeconds(help.penalty))", role: .destructive) {
+                    onRequestPenaltyHelp?(help)
+                    pendingPenaltyHelp = nil
+                }
+            }
+            Button("Отмена", role: .cancel) {
+                pendingPenaltyHelp = nil
+            }
+        } message: {
+            Text(pendingPenaltyHelp?.penaltyMessage ?? "После открытия подсказки команда получит штраф.")
+        }
+    }
+
+    private func helpRow(_ help: Help, isPenalty: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(verbatim: "\(help.number)")
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(GameTheme.sectionHeader)
+                .frame(width: 14, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 6) {
+                if isPenalty, help.penalty > 0 {
+                    Text(verbatim: "Штраф \(GameDurationFormatter.minutesAndSeconds(help.penalty))")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(GameTheme.muted)
+                }
+
+                helpBody(help, isPenalty: isPenalty)
+
+                if help.canRequestPenalty, onRequestPenaltyHelp != nil {
+                    Button {
+                        if help.requestConfirm {
+                            pendingPenaltyHelp = help
+                        } else {
+                            onRequestPenaltyHelp?(help)
+                        }
+                    } label: {
+                        Label("Открыть штрафную подсказку", systemImage: "exclamationmark.triangle")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     @ViewBuilder
-    private func bonusContent(_ text: String) -> some View {
+    private func helpBody(_ help: Help, isPenalty: Bool) -> some View {
+        if let text = help.unlockedText {
+            helpContent(text)
+        } else if help.remainSeconds > 0 {
+            TickingCountdownText(
+                countdown: SyncedSecondsCountdown(
+                    remainSeconds: help.remainSeconds,
+                    syncedAt: syncedAt
+                ),
+                label: GameDurationFormatter.helpUnlockLabel
+            )
+            .font(.system(size: 16))
+            .foregroundStyle(GameTheme.muted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if isPenalty, let fallback = help.penaltyMessage, !fallback.isEmpty {
+            helpContent(fallback)
+        } else if isPenalty {
+            helpContent("Требуется запрос")
+        } else {
+            Text("Открывается…")
+                .font(.system(size: 16))
+                .foregroundStyle(GameTheme.muted)
+        }
+    }
+
+    @ViewBuilder
+    private func helpContent(_ text: String) -> some View {
         if text.contains("<") {
-            EncounterHTMLView(html: text)
+            EncounterHTMLView(html: text, fontSize: 16, lineHeight: 1.4)
         } else {
             CoordinateText(text: text.strippingHTML())
-                .font(.body)
+                .font(.system(size: 16))
+                .lineSpacing(6)
                 .foregroundStyle(GameTheme.text)
-        }
-    }
-
-    private var helpsSection: some View {
-        LevelHelpsSection(helps: level.helps, penaltyHelps: level.penaltyHelps) { help in
-            Task { await model.requestPenaltyHelp(help) }
-        }
-    }
-
-    private var sectorsSectionTitle: String {
-        let total = level.sectors.count
-        var title = "На уровне \(total) \(LevelPlayWordForms.sector(total))"
-        if level.requiredSectorsCount > 0 {
-            title += " · для прохождения \(level.passedSectorsCount) из \(level.requiredSectorsCount)"
-        } else if level.sectorsLeftToClose > 0 {
-            title += " · осталось \(level.sectorsLeftToClose)"
-        }
-        return title
-    }
-
-    private func sectorLine(_ sector: Sector) -> String {
-        let name = sector.name.isEmpty ? "Сектор \(sector.displayOrder)" : sector.name
-        if sector.isAnswered {
-            return "\(name): \(sector.answer)"
-        }
-        return "\(name): код не введён"
-    }
-}
-
-private enum LevelPlayWordForms {
-    static func sector(_ count: Int) -> String {
-        let mod10 = count % 10
-        let mod100 = count % 100
-        if mod100 >= 11 && mod100 <= 14 { return "секторов" }
-        switch mod10 {
-        case 1: return "сектор"
-        case 2...4: return "сектора"
-        default: return "секторов"
-        }
-    }
-
-    static func bonus(_ count: Int) -> String {
-        let mod10 = count % 10
-        let mod100 = count % 100
-        if mod100 >= 11 && mod100 <= 14 { return "бонусов" }
-        switch mod10 {
-        case 1: return "бонус"
-        case 2...4: return "бонуса"
-        default: return "бонусов"
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

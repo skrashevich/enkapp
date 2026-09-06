@@ -10,6 +10,11 @@ enum GameTheme {
     static let bonusTitle = Color(red: 0.35, green: 0.85, blue: 0.95)
     static let accent = Color(red: 0.2, green: 0.72, blue: 0.35)
     static let inputBackground = Color(white: 0.12)
+    static let hairline = Color(white: 0.11)
+    static let fieldStroke = Color(white: 0.20)
+    static let fieldFill = Color(white: 0.102)
+    static let trackEmpty = Color(white: 0.169)
+    static let sectorEmptyStroke = Color(white: 0.184)
 }
 
 enum GameDurationFormatter {
@@ -61,6 +66,14 @@ enum GameDurationFormatter {
             return String(format: "До начала: %d:%02d", minutes, remainder)
         }
         return "До начала: \(remainder) сек."
+    }
+
+    /// Compact `m:ss` countdown label, e.g. `52:40`, `1:05`, `0:00`.
+    nonisolated static func compactDrain(seconds: Int) -> String {
+        let total = max(0, seconds)
+        let minutes = total / 60
+        let secs = total % 60
+        return String(format: "%d:%02d", minutes, secs)
     }
 }
 
