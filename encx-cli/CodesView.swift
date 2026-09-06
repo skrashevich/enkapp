@@ -434,12 +434,12 @@ struct CodesView: View {
             ZStack(alignment: .leading) {
                 if codeDraft.isEmpty {
                     Text("КОД")
-                        .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 17, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.32))
                 }
 
                 TextField("", text: $codeDraft)
-                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 17, weight: .semibold, design: .monospaced))
                     .foregroundStyle(GameTheme.text)
                     .tint(GameTheme.accent)
                     .textInputAutocapitalization(.never)
@@ -449,21 +449,21 @@ struct CodesView: View {
                     .onSubmit(submitCodeDraft)
             }
             .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56)
-            .background(GameTheme.fieldFill, in: RoundedRectangle(cornerRadius: 14))
+            .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
+            .background(GameTheme.fieldFill, in: RoundedRectangle(cornerRadius: 12))
             .overlay {
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: 12)
                     .stroke(GameTheme.fieldStroke, lineWidth: 1)
             }
 
             Button(action: submitCodeDraft) {
                 Image(systemName: "paperplane.fill")
-                    .font(.system(size: 25))
+                    .font(.system(size: 19))
                     .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
+                    .frame(width: 44, height: 44)
                     .background(
                         canSubmitCode ? GameTheme.accent : GameTheme.fieldFill,
-                        in: RoundedRectangle(cornerRadius: 14)
+                        in: RoundedRectangle(cornerRadius: 12)
                     )
             }
             .buttonStyle(.plain)

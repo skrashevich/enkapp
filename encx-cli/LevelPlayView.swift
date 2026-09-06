@@ -318,25 +318,35 @@ struct LevelPlayView: View {
         }
         .background(GameTheme.background)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            LevelCodeInputBar(
-                text: $codeDraft,
-                canSubmitLevel: canSubmitCode(level: level, kind: .level),
-                showsBonusAction: model.canSubmitBonusCode(on: level),
-                levelBlockDuration: level.canSubmitLevelAnswer() ? 0 : level.blockDuration,
-                isFocused: $codeFieldFocused,
-                onSubmitLevel: { submitCodeDraft(kind: .level) },
-                onSubmitBonus: { submitCodeDraft(kind: .bonus) },
-                onLevelBlockExpired: {
-                    Task { await model.refreshLevelSilently() }
+            // The toast lives inside the same bottom inset as the input bar so it always
+            // stacks above the field instead of overlapping it.
+            VStack(spacing: 0) {
+                if let result = codeResultToast {
+                    codeResultToastView(result)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 8)
+                        .padding(.bottom, 2)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-            )
-        }
-        .overlay(alignment: .bottom) {
-            if let result = codeResultToast {
-                codeResultToastView(result)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 64)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+
+                LevelCodeInputBar(
+                    text: $codeDraft,
+                    canSubmitLevel: canSubmitCode(level: level, kind: .level),
+                    showsBonusAction: model.canSubmitBonusCode(on: level),
+                    levelBlockDuration: level.canSubmitLevelAnswer() ? 0 : level.blockDuration,
+                    isFocused: $codeFieldFocused,
+                    onSubmitLevel: { submitCodeDraft(kind: .level) },
+                    onSubmitBonus: { submitCodeDraft(kind: .bonus) },
+                    onLevelBlockExpired: {
+                        Task { await model.refreshLevelSilently() }
+                    }
+                )
+            }
+            .background(GameTheme.background)
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(GameTheme.hairline)
+                    .frame(height: 1)
             }
         }
         .animation(.easeOut(duration: 0.25), value: codeResultToast)
@@ -368,11 +378,11 @@ struct LevelPlayView: View {
 
     private func codeResultToastView(_ result: CodeResultFeedback) -> some View {
         Text(result.message)
-            .font(.subheadline.weight(.medium))
+            .font(.footnote.weight(.medium))
             .foregroundStyle(codeResultColor(for: result.verdict))
             .multilineTextAlignment(.center)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity)
             .background(GameTheme.panel, in: RoundedRectangle(cornerRadius: 10))
             .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
@@ -731,10 +741,12 @@ private struct LevelCodeInputBar: View {
     var onSubmitBonus: () -> Void
     var onLevelBlockExpired: () -> Void
 
-    private let fieldFont = Font.system(size: 20, weight: .semibold, design: .monospaced)
+    private let fieldFont = Font.system(size: 17, weight: .semibold, design: .monospaced)
+    private let controlHeight: CGFloat = 44
+    private let controlRadius: CGFloat = 12
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             if levelBlockDuration > 0 {
                 LevelAnswerBlockCountdown(
                     remainSeconds: levelBlockDuration,
@@ -750,14 +762,14 @@ private struct LevelCodeInputBar: View {
                         Text("Бонус")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(GameTheme.bonusTitle)
-                            .frame(height: 56)
+                            .frame(height: controlHeight)
                             .padding(.horizontal, 14)
                             .background(
                                 GameTheme.bonusTitle.opacity(0.16),
-                                in: RoundedRectangle(cornerRadius: 14)
+                                in: RoundedRectangle(cornerRadius: controlRadius)
                             )
                             .overlay {
-                                RoundedRectangle(cornerRadius: 14)
+                                RoundedRectangle(cornerRadius: controlRadius)
                                     .stroke(GameTheme.bonusTitle.opacity(0.45), lineWidth: 1)
                             }
                     }
@@ -766,12 +778,12 @@ private struct LevelCodeInputBar: View {
 
                 Button(action: onSubmitLevel) {
                     Image(systemName: "paperplane.fill")
-                        .font(.system(size: 25))
+                        .font(.system(size: 19))
                         .foregroundStyle(.white)
-                        .frame(width: 56, height: 56)
+                        .frame(width: controlHeight, height: controlHeight)
                         .background(
                             canSubmitLevel ? GameTheme.accent : GameTheme.fieldFill,
-                            in: RoundedRectangle(cornerRadius: 14)
+                            in: RoundedRectangle(cornerRadius: controlRadius)
                         )
                 }
                 .disabled(!canSubmitLevel)
@@ -780,13 +792,7 @@ private struct LevelCodeInputBar: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(GameTheme.background)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(GameTheme.hairline)
-                .frame(height: 1)
-        }
+        .padding(.vertical, 8)
     }
 
     private var codeField: some View {
@@ -810,11 +816,11 @@ private struct LevelCodeInputBar: View {
                 .foregroundStyle(GameTheme.text)
                 .accessibilityLabel("Код")
         }
-        .padding(.horizontal, 16)
-        .frame(height: 56)
-        .background(GameTheme.fieldFill, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 14)
+        .frame(height: controlHeight)
+        .background(GameTheme.fieldFill, in: RoundedRectangle(cornerRadius: controlRadius))
         .overlay {
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: controlRadius)
                 .stroke(GameTheme.fieldStroke, lineWidth: 1)
         }
     }

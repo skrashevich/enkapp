@@ -46,10 +46,12 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
     @Binding var contentHeight: CGFloat
     var onImageTap: (URL) -> Void
 
+    /// Expression yielding the content height, or 0 while the document has no usable layout width
+    /// (a zero-width layout wraps every word and reports a wildly inflated height).
     private static let measureHeightJS = """
     (() => {
         const body = document.body;
-        if (!body) { return 0; }
+        if (!body || body.clientWidth <= 0) { return 0; }
 
         const bodyTop = body.getBoundingClientRect().top;
         const computedBody = window.getComputedStyle(body);
@@ -65,6 +67,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
         for (const element of body.querySelectorAll('*')) {
             const style = window.getComputedStyle(element);
             if (style.display === 'none' || style.visibility === 'hidden') { continue; }
+            if (style.position === 'fixed') { continue; }
 
             const rect = element.getBoundingClientRect();
             if (rect.width > 0 || rect.height > 0) {
@@ -73,6 +76,47 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
         }
 
         return Math.ceil(bottom + parseFloat(computedBody.paddingBottom || '0'));
+    })()
+    """
+
+    /// Keeps the native frame in sync with the document: a one-shot measurement after `didFinish`
+    /// goes stale as soon as the layout width changes (rotation, late SwiftUI sizing) or images and
+    /// web fonts land, which is what leaves the block either inner-scrolling or padded with blank space.
+    private static let heightReportJS = """
+    (() => {
+        let lastReported = -1;
+        let scheduled = false;
+
+        function report() {
+            scheduled = false;
+            const height = \(measureHeightJS);
+            if (height <= 0 || Math.abs(height - lastReported) < 0.5) { return; }
+            lastReported = height;
+            window.webkit.messageHandlers.contentHeight.postMessage(height);
+        }
+
+        function schedule() {
+            if (scheduled) { return; }
+            scheduled = true;
+            requestAnimationFrame(report);
+            // rAF is throttled while the web view is off-screen; the timer guarantees a report.
+            setTimeout(report, 250);
+        }
+
+        new ResizeObserver(schedule).observe(document.body);
+        new MutationObserver(schedule).observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true
+        });
+        window.addEventListener('resize', schedule);
+        document.addEventListener('load', schedule, true);
+        document.addEventListener('error', schedule, true);
+        if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(schedule);
+        }
+        schedule();
     })()
     """
 
@@ -85,6 +129,14 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: "imageTapped")
         controller.add(context.coordinator, name: "imageContextRequested")
+        controller.add(context.coordinator, name: "contentHeight")
+        controller.addUserScript(
+            WKUserScript(
+                source: Self.heightReportJS,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            )
+        )
         controller.addUserScript(
             WKUserScript(
                 source: Self.imageTapJS,
@@ -105,7 +157,11 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
-        webView.scrollView.isScrollEnabled = true
+        // The block is sized to its content and lives inside the screen's own ScrollView, so the web
+        // view must never scroll on its own — an inner scroll here hides part of the task text.
+        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.bounces = false
+        webView.scrollView.alwaysBounceVertical = false
         webView.scrollView.alwaysBounceHorizontal = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.navigationDelegate = context.coordinator
@@ -227,6 +283,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "imageTapped")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "imageContextRequested")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "contentHeight")
     }
 
     private func wrappedHTML(_ body: String) -> String {
@@ -246,8 +303,12 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
             font: \(fontSize)px/\(lineHeight) -apple-system, BlinkMacSystemFont, sans-serif;
             overflow: visible;
           }
-          body { padding-bottom: 12px; box-sizing: border-box; }
-          table { border-collapse: collapse; width: 100%; color: #fff; }
+          body {
+            box-sizing: border-box;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+          }
+          table { border-collapse: collapse; width: 100%; color: #fff; table-layout: fixed; }
           td, th { border: 1px solid #444; padding: 6px 8px; vertical-align: middle; }
           img {
             max-width: 100%;
@@ -282,6 +343,11 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
+            if message.name == "contentHeight" {
+                applyHeight(Self.height(from: message.body))
+                return
+            }
+
             guard let src = message.body as? String else { return }
 
             switch message.name {
@@ -386,13 +452,18 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
 
         private func measureHeight(in webView: WKWebView) {
             webView.evaluateJavaScript(EncounterHTMLWebView.measureHeightJS) { result, _ in
-                let measured = Self.height(from: result)
-                guard measured > 0 else { return }
-                let padded = measured + 16
-                DispatchQueue.main.async {
-                    if abs(self.contentHeight - padded) > 0.5 {
-                        self.contentHeight = padded
-                    }
+                self.applyHeight(Self.height(from: result))
+            }
+        }
+
+        /// `measured` is the exact content bottom; the extra point absorbs fractional rounding so the
+        /// last line never gets clipped, without leaving a visible gap before the next section.
+        private func applyHeight(_ measured: CGFloat) {
+            guard measured > 0 else { return }
+            let target = measured + 1
+            DispatchQueue.main.async {
+                if abs(self.contentHeight - target) > 0.5 {
+                    self.contentHeight = target
                 }
             }
         }
