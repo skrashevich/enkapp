@@ -174,6 +174,7 @@ and cannot react to them. The last one is reported only if the wait runs out.
  * AcceptTeamInvitation accepts a team invitation.
  */
 - (BOOL)acceptTeamInvitation:(int64_t)teamID error:(NSError* _Nullable* _Nullable)error;
+- (BOOL)adminCreateGame:(NSString* _Nullable)paramsJSON ret0_:(int64_t* _Nullable)ret0_ error:(NSError* _Nullable* _Nullable)error;
 /**
  * ClearHAR removes all captured HAR entries.
  */
