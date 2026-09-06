@@ -94,6 +94,14 @@ enum EncounterSessionStore {
         EncounterSharedStorage.set(data, forKey: sessionCookiesKey)
     }
 
+    static func clearSessionCookies() {
+        EncounterSharedStorage.removeObject(forKey: sessionCookiesKey)
+        // `loadSessionCookies()` falls back to the legacy per-domain key and re-saves what it finds,
+        // so leaving it in place would resurrect the session right after a logout.
+        let domain = loadSettings().domain
+        EncounterSharedStorage.removeObject(forKey: "encx.cookies.\(domain.lowercased())")
+    }
+
     static func hasStoredCredentials(settings: DomainSettings, login: String) -> Bool {
         let trimmedLogin = login.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedLogin.isEmpty else { return false }

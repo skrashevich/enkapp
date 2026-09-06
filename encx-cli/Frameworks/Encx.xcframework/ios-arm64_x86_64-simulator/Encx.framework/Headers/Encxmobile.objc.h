@@ -34,6 +34,15 @@ notification is delivered asynchronously and can outlive its turn.
 event shapes.
  */
 - (void)onEvent:(NSString* _Nullable)eventJSON;
+/**
+ * OnLocationRequest asks the host for the device's current GPS position. The
+host must answer exactly once by calling ResolveLocation or FailLocation
+with the same requestID; until then the tool call is blocked.
+
+turn plays the same role as in OnConfirmationRequest: a host that queues
+requests should drop those from a turn that has already ended.
+ */
+- (void)onLocationRequest:(NSString* _Nullable)requestID turn:(int64_t)turn;
 @end
 
 /**
@@ -68,6 +77,12 @@ string for sessions that authenticate with an API key.
  */
 - (NSString* _Nonnull)codexCredentialJSON:(NSError* _Nullable* _Nullable)error;
 /**
+ * FailLocation reports that the host cannot provide a position — permission
+denied, location services off, or no fix. The message reaches the model, so
+it should say why in plain words.
+ */
+- (BOOL)failLocation:(NSString* _Nullable)requestID message:(NSString* _Nullable)message error:(NSError* _Nullable* _Nullable)error;
+/**
  * HistoryJSON returns the remembered transcript as a JSON array of
 {"role","content"} objects.
  */
@@ -84,6 +99,12 @@ string for sessions that authenticate with an API key.
  * ResolveConfirmation delivers the host's decision for a mutating call.
  */
 - (BOOL)resolveConfirmation:(NSString* _Nullable)callID approved:(BOOL)approved error:(NSError* _Nullable* _Nullable)error;
+/**
+ * ResolveLocation delivers the device position for a pending location request.
+locationJSON is passed to the model verbatim; the host decides the fields
+(latitude, longitude, accuracy and so on).
+ */
+- (BOOL)resolveLocation:(NSString* _Nullable)requestID locationJSON:(NSString* _Nullable)locationJSON error:(NSError* _Nullable* _Nullable)error;
 /**
  * SendMessage runs one agent turn and returns the assistant's reply.
 
@@ -381,6 +402,13 @@ FOUNDATION_EXPORT NSString* _Nonnull EncxmobileEventText(int64_t code);
 FOUNDATION_EXPORT BOOL EncxmobileIsAntiSpamError(NSError* _Nullable err);
 
 /**
+ * IsGameNotFoundError reports whether err says the domain does not host the requested game
+(wrong game id, or a game that lives on another domain). This is permanent: retrying or
+re-logging in cannot make the game appear, so the app should point at the domain instead.
+ */
+FOUNDATION_EXPORT BOOL EncxmobileIsGameNotFoundError(NSError* _Nullable err);
+
+/**
  * IsUndecodableAcceptedError reports whether err is an unreadable reply from a 2xx response, i.e.
 the request reached the engine and only the reply could not be parsed.
 
@@ -453,6 +481,15 @@ notification is delivered asynchronously and can outlive its turn.
 event shapes.
  */
 - (void)onEvent:(NSString* _Nullable)eventJSON;
+/**
+ * OnLocationRequest asks the host for the device's current GPS position. The
+host must answer exactly once by calling ResolveLocation or FailLocation
+with the same requestID; until then the tool call is blocked.
+
+turn plays the same role as in OnConfirmationRequest: a host that queues
+requests should drop those from a turn that has already ended.
+ */
+- (void)onLocationRequest:(NSString* _Nullable)requestID turn:(int64_t)turn;
 @end
 
 #endif

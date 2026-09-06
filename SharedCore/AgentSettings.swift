@@ -126,6 +126,9 @@ nonisolated struct AgentSettings: Codable, Equatable {
     var maxSteps = AgentSettings.defaultMaxSteps
     /// Lets the assistant search the web (DuckDuckGo) and read pages.
     var webToolsEnabled = true
+    /// Lets the assistant read the device's GPS position. The iOS permission
+    /// prompt still gates the actual fix, so this only offers the tool.
+    var locationToolsEnabled = true
 
     init() {}
 
@@ -138,6 +141,7 @@ nonisolated struct AgentSettings: Codable, Equatable {
         case fullAccessUnlocked
         case maxSteps
         case webToolsEnabled
+        case locationToolsEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -164,6 +168,7 @@ nonisolated struct AgentSettings: Codable, Equatable {
         }
         maxSteps = try container.decodeIfPresent(Int.self, forKey: .maxSteps) ?? Self.defaultMaxSteps
         webToolsEnabled = try container.decodeIfPresent(Bool.self, forKey: .webToolsEnabled) ?? true
+        locationToolsEnabled = try container.decodeIfPresent(Bool.self, forKey: .locationToolsEnabled) ?? true
     }
 
     /// Switches provider and resets the model and endpoint to that provider's defaults.
@@ -195,6 +200,7 @@ nonisolated struct AgentSettings: Codable, Equatable {
             // The Go side reads a negative budget as "no cap".
             "max_iterations": maxSteps > 0 ? maxSteps : -1,
             "web_tools": webToolsEnabled,
+            "location_tools": locationToolsEnabled,
         ]
 
         if provider.usesSubscriptionLogin {

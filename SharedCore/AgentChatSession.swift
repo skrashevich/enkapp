@@ -33,6 +33,7 @@ nonisolated func agentToolTitle(_ tool: String) -> String {
     case "enc_send_bonus_code": return "Отправка бонуса"
     case "enc_take_penalty_hint": return "Штрафная подсказка"
     case "enc_enter_game": return "Заявка на игру"
+    case "enc_device_location": return "Геолокация"
     default: return tool
     }
 }
@@ -94,6 +95,11 @@ final class AgentChatSession {
     private let session: EncxmobileAgentSession
     private var delegate: AgentDelegateBridge?
     #endif
+
+    /// Created on the first location request so a chat that never asks for the
+    /// position does not instantiate CLLocationManager. @Observable does not
+    /// track lazy storage, and nothing in the UI observes it anyway.
+    @ObservationIgnored private lazy var locationProvider = AgentLocationProvider()
 
     /// - Parameters:
     ///   - client: the authenticated Encounter client the agent plays through.
@@ -289,6 +295,34 @@ final class AgentChatSession {
         ))
     }
 
+    fileprivate func handleLocationRequest(requestID: String, turn: Int64) {
+        #if canImport(Encx)
+        let session = self.session
+        // Same staleness rule as confirmations: the notification crosses actors,
+        // so it can land after its turn ended. A GPS fix for a dead turn would
+        // raise the permission prompt for nothing.
+        guard turn > lastFinishedTurn else {
+            try? session.failLocation(requestID, message: "the request is stale: its turn has already ended")
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else {
+                try? session.failLocation(requestID, message: "the chat was dismissed")
+                return
+            }
+            do {
+                let payload = try await self.locationProvider.currentLocationJSON()
+                // The Go side answers with an error when the turn timed the
+                // request out meanwhile; there is nobody left to tell.
+                try? session.resolveLocation(requestID, locationJSON: payload)
+            } catch {
+                try? session.failLocation(requestID, message: error.localizedDescription)
+            }
+        }
+        #endif
+    }
+
     /// Renders tool arguments as `ключ: значение` lines for the UI.
     static func describe(argsJSON: String) -> String {
         guard let data = argsJSON.data(using: .utf8),
@@ -335,6 +369,13 @@ private final class AgentDelegateBridge: NSObject, EncxmobileAgentDelegateProtoc
                 tool: toolName,
                 argsJSON: argsJSON ?? "{}"
             )
+        }
+    }
+
+    func onLocationRequest(_ requestID: String?, turn: Int64) {
+        guard let requestID else { return }
+        Task { @MainActor [weak owner] in
+            owner?.handleLocationRequest(requestID: requestID, turn: turn)
         }
     }
 }
