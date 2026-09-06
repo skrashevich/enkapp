@@ -1084,8 +1084,9 @@ private struct LevelPlayScrollBody: View {
                 Text(verbatim: sectorChipTitle(sector))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(sector.isAnswered ? GameTheme.accent : GameTheme.text)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 4)
 
