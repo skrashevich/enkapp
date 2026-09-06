@@ -32,6 +32,42 @@ If `VIEW_PASSWORD` is not set, viewer endpoints fail closed with HTTP 503.
 The service expects TLS to be terminated by the public reverse proxy for
 `https://telemetry.enkapp.svk.app/api/har`.
 
+## Docker Compose
+
+From the repository root:
+
+```sh
+cd analytics-server/har
+cp .env.example .env
+```
+
+Set `VIEW_PASSWORD` in `.env` to a strong password (for example, generate one
+with `openssl rand -hex 32`). Compose refuses to start with an empty password.
+Then build and start the service:
+
+```sh
+docker compose up -d --build
+docker compose logs -f telemetry
+```
+
+The viewer is available at `http://127.0.0.1:8080` with the credentials from
+`.env`. By default the published port is accessible only on the Docker host.
+Configure the host's HTTPS reverse proxy for `telemetry.enkapp.svk.app` to
+forward to `http://127.0.0.1:8080`, preserving `Host` and setting
+`X-Forwarded-Proto: https`. Allow request bodies of at least 25 MiB for HAR
+uploads. If the proxy runs in a container, attach it to the Compose network
+and use `http://telemetry:8080` as its upstream instead.
+
+`PORT` and `BIND_ADDRESS` in `.env` override the published port and interface.
+Use `BIND_ADDRESS=0.0.0.0` only when direct network access is intended.
+
+Captures and share links persist in the `telemetry-data` named volume across
+container rebuilds and `docker compose down`. Back up this volume; running
+`docker compose down -v` deletes its data.
+
+To update after pulling repository changes, run `docker compose up -d --build`
+again. To stop the service, run `docker compose down`.
+
 ## Large session viewer
 
 Session detail pages load entry summaries in batches of 50. Opening Request or
