@@ -57,6 +57,8 @@ struct ContentView: View {
                 LevelPlayView(model: model)
             case .team:
                 TeamManagementView(model: model)
+            case .tools:
+                ToolsHubContent()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -64,7 +66,7 @@ struct ContentView: View {
         .navigationTitle(model.selectedScreen.title)
         .toolbar(model.selectedScreen == .game ? .hidden : .visible, for: .navigationBar)
         .toolbar {
-            if model.selectedScreen != .game {
+            if model.selectedScreen != .game && model.selectedScreen != .tools {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 16) {
                         Button {
@@ -187,6 +189,8 @@ struct ContentView: View {
             return .games
         case .game:
             return .game
+        case .tools:
+            return .tools
         case .team:
             return nil
         }
@@ -205,7 +209,8 @@ struct ContentView: View {
                 model.navigationPath.append(.codes)
             }
         case .tools:
-            model.showToolsSheet = true
+            model.navigationPath.removeAll()
+            model.selectedScreen = .tools
         }
     }
 
@@ -217,6 +222,8 @@ struct ContentView: View {
             await model.refreshLevel()
         case .team:
             await model.refreshTeam()
+        case .tools:
+            break
         }
     }
 }

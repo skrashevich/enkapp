@@ -6,12 +6,14 @@ enum AppScreen: Hashable {
     case games
     case game
     case team
+    case tools
 
     var title: String {
         switch self {
         case .games: return "Игры"
         case .game: return "Игра"
         case .team: return "Команда"
+        case .tools: return "Инструменты"
         }
     }
 }
