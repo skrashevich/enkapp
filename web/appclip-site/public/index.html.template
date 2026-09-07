@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>enkapp — Encounter на iPhone</title>
-  <meta name="description" content="Нативное iOS-приложение для игр Encounter: уровни, очередь кодов, Live Activity, уведомления и игровые инструменты.">
-  <meta name="theme-color" content="#090b0d">
+  <meta name="description" content="Нативный iOS-клиент Encounter: экран уровня целиком, очередь кодов при плохой связи, уведомления и игровые инструменты.">
+  <meta name="theme-color" content="#07080a">
   <meta name="color-scheme" content="dark">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://enkapp.svk.app/">
@@ -15,7 +15,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="enkapp">
   <meta property="og:title" content="enkapp — Encounter на iPhone">
-  <meta property="og:description" content="Уровни, очередь кодов, Live Activity и игровые инструменты — в нативном iOS-приложении.">
+  <meta property="og:description" content="Экран уровня целиком, очередь кодов, уведомления и игровые инструменты — в нативном iOS-приложении.">
   <meta property="og:url" content="https://enkapp.svk.app/">
   <meta property="og:image" content="https://enkapp.svk.app/og.png">
   <meta property="og:image:secure_url" content="https://enkapp.svk.app/og.png">
@@ -32,7 +32,7 @@
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "enkapp",
-      "description": "Нативное iOS-приложение для игр Encounter: уровни, очередь кодов, Live Activity, уведомления и игровые инструменты.",
+      "description": "Нативное iOS-приложение для игр Encounter: уровни, очередь кодов, уведомления и игровые инструменты.",
       "applicationCategory": "GameApplication",
       "operatingSystem": "iOS 18.6 or later",
       "downloadUrl": "${ENKAPP_TESTFLIGHT_URL}",
@@ -46,6 +46,9 @@
     }
   </script>
   ${ENKAPP_SMART_APP_BANNER}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&amp;family=Onest:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -53,177 +56,279 @@
   <header class="site-header">
     <div class="container header-inner">
       <a class="brand" href="#top" aria-label="enkapp — на главную">
-        <img src="/assets/app-icon.webp" alt="" width="40" height="40">
+        <img src="/assets/app-icon.webp" alt="" width="38" height="38">
         <span>enkapp</span>
       </a>
       <nav class="main-nav" aria-label="Основная навигация">
         <a href="#features">Возможности</a>
-        <a href="#screenshots">Интерфейс</a>
-        <a class="nav-download" href="${ENKAPP_TESTFLIGHT_URL}">Скачать</a>
+        <a href="#shots">Скриншоты</a>
+        <a href="#how">Начало работы</a>
+        <a href="#oss">Исходный код</a>
+        <a class="nav-download" href="${ENKAPP_TESTFLIGHT_URL}">TestFlight</a>
       </nav>
     </div>
   </header>
 
   <main id="main">
-    <section class="hero" id="top">
-      <div class="container hero-grid">
-        <div class="hero-copy">
-          <p class="eyebrow"><span class="status-dot" aria-hidden="true">&#8203;</span> Нативный клиент для Encounter</p>
-          <h1>Игра — в фокусе.<br>Браузер — в прошлом.</h1>
-          <p class="hero-lead">Уровни, коды, подсказки и таймеры в одном быстром iOS-приложении. enkapp помогает команде не терять секунды — даже когда связь пропадает.</p>
-          <div class="hero-actions">
-            <a class="button button-primary" href="${ENKAPP_TESTFLIGHT_URL}">Установить через TestFlight <span aria-hidden="true">↗</span></a>
-            <a class="button button-secondary" href="https://dawnl.ink/skrashevich/enkapp/workflows/ios-unsigned-ipa/main/encx-cli-unsigned-ipa">Скачать IPA</a>
+    <div class="hero-switch" id="heroSwitch" data-hero="phones">
+      <div class="container hero-toggle-row">
+        <div class="hero-toggle" role="tablist" aria-label="Вид демонстрации">
+          <button type="button" class="hero-toggle-btn" data-hero-target="phones" role="tab" aria-selected="true">Телефоны</button>
+          <button type="button" class="hero-toggle-btn" data-hero-target="terminal" role="tab" aria-selected="false">Терминал</button>
+        </div>
+      </div>
+
+      <section class="hero" id="top" data-variant="phones">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow"><span class="status-dot" aria-hidden="true">&#8203;</span> Нативный клиент Encounter</p>
+            <h1>Encounter на iPhone, <br>а не мобильная <br>вёрстка сайта.</h1>
+            <p class="hero-lead">enkapp показывает уровень целиком: сектора, задание, подсказки и время до слива. Код вводится с обычной клавиатуры, ответ приходит сразу в приложение — без перезагрузок страницы и промахов по мелким кнопкам.</p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="${ENKAPP_TESTFLIGHT_URL}">Установить из TestFlight</a>
+              <a class="button button-secondary" href="#how">Что внутри</a>
+            </div>
+            <ul class="hero-facts" aria-label="Основная информация">
+              <li>iOS 18.6+</li><li>SwiftUI</li><li>без аналитики</li><li>любой домен Encounter</li>
+            </ul>
           </div>
-          <ul class="hero-facts" aria-label="Основная информация">
-            <li>iOS 18.6+</li><li>Бесплатно</li><li>Открытый код</li>
-          </ul>
+          <div class="hero-product" aria-label="Интерфейс приложения enkapp">
+            <figure class="phone phone-back"><img src="/assets/screenshots/games.webp" alt="Список игр домена в enkapp" width="1284" height="2778"></figure>
+            <figure class="phone phone-front"><img src="/assets/screenshots/game.webp" alt="Экран уровня Encounter в enkapp" width="1284" height="2778"></figure>
+            <div class="route-mark route-mark-one">сектор 1 · принят</div>
+            <div class="route-mark route-mark-two">до слива 52:39</div>
+          </div>
         </div>
+      </section>
 
-        <div class="hero-product" aria-label="Интерфейс приложения enkapp">
-          <div class="route-mark route-mark-one">EN841</div>
-          <div class="route-mark route-mark-two">52:39</div>
-          <figure class="phone phone-back"><img src="/assets/screenshots/games.webp" alt="Список активных и предстоящих игр в enkapp" width="1284" height="2778"></figure>
-          <figure class="phone phone-front"><img src="/assets/screenshots/game.webp" alt="Экран уровня с заданием, секторами и подсказками" width="1284" height="2778"></figure>
+      <section class="hero" data-variant="terminal">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow eyebrow-orange"><span class="status-dot status-dot-orange" aria-hidden="true">&#8203;</span> Уровень 4 из 5 · закрыто 2 сектора</p>
+            <h1>Сектора, коды и время — <br>на одном экране.</h1>
+            <p class="hero-lead">Статус каждого сектора, задание и подсказки видны сразу. Код отправляется одним нажатием, а если связь пропала — ждёт в очереди и уходит автоматически.</p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="${ENKAPP_TESTFLIGHT_URL}">Установить из TestFlight</a>
+              <a class="button button-secondary" href="#shots">Посмотреть экраны</a>
+            </div>
+          </div>
+          <div class="hero-terminal" aria-hidden="true">
+            <div class="term-card">
+              <div class="term-head">
+                <span>moscow.en.cx · Межрег в екенях</span>
+                <span class="term-timer" id="termTimer">до слива 52:39</span>
+              </div>
+              <div class="term-rows" id="termRows">
+                <div class="term-row"><span>сектор 1</span><code>EN841</code><b class="is-ok">ПРИНЯТ</b></div>
+                <div class="term-row"><span>сектор 2</span><code>CLOCK</code><b class="is-ok">ПРИНЯТ</b></div>
+                <div class="term-row"><span>сектор 3</span><code>— — —</code><b class="is-input">ВВОД</b></div>
+                <div class="term-row"><span>сектор 4</span><code>— — —</code><b class="is-wait">ЖДЁМ</b></div>
+                <div class="term-row"><span>сектор 5</span><code>— — —</code><b class="is-wait">ЖДЁМ</b></div>
+              </div>
+              <div class="term-input">
+                <div class="term-field"><span id="termTyped">EN12</span><span class="term-caret" aria-hidden="true">&#8203;</span></div>
+                <div class="term-send" aria-hidden="true">&#8593;</div>
+              </div>
+            </div>
+            <div class="term-queue">
+              <span class="term-queue-ic" aria-hidden="true">&#8801;</span>
+              <span>Связи нет — коды встают в очередь и отправляются автоматически.</span>
+              <b>2 В ОЧЕРЕДИ</b>
+            </div>
+          </div>
         </div>
-      </div>
-    </section>
-
-    <section class="proof-strip" aria-label="Ключевые возможности">
-      <div class="container proof-grid">
-        <p><strong>7</strong><span>игровых инструментов</span></p>
-        <p><strong>1</strong><span>очередь для нестабильной связи</span></p>
-        <p><strong>1</strong><span>экран для всего уровня</span></p>
-      </div>
-    </section>
+      </section>
+    </div>
 
     <section class="section" id="features">
       <div class="container">
         <div class="section-heading">
-          <p class="eyebrow">Главное на маршруте</p>
-          <h2>Меньше переключений.<br>Больше игры.</h2>
-          <p>enkapp собирает всё, что обычно приходится искать по вкладкам браузера, системным экранам и отдельным утилитам.</p>
+          <p class="eyebrow">Возможности</p>
+          <h2>Всё нужное на уровне — в одном месте</h2>
+          <p>Приложение сделано под условия реальной игры: телефон в одной руке, ты висишь на трёшке и связь никакая.</p>
         </div>
         <div class="feature-grid">
           <article class="feature-card feature-card-wide">
-            <div class="feature-copy">
+            <div>
               <span class="feature-index">01</span>
-              <h3>Очередь кодов не боится плохой связи</h3>
-              <p>Если движок или сеть не отвечают, код сохраняется на устройстве. Приложение продолжит отправку, когда соединение вернётся.</p>
+              <h3>Экран уровня</h3>
+              <p>Сектора, задание, подсказки и сообщения организаторов обновляются сами. Сколько секторов осталось закрыть и сколько времени до слива — видно всегда.</p>
             </div>
-            <div class="queue-demo" aria-label="Пример очереди кодов">
-              <div class="queue-status"><span aria-hidden="true">&#8203;</span> Связь восстановлена</div>
-              <div class="code-row"><code>EN841</code><b>Отправлен</b></div>
-              <div class="code-row"><code>CLOCK</code><b>Отправлен</b></div>
-              <div class="code-row pending"><code>TOWER</code><b>В очереди</b></div>
+            <div class="mini-mock" aria-hidden="true">
+              <div class="mini-mock-head"><span>УРОВЕНЬ 4 ИЗ 5</span><span>до слива 52:39</span></div>
+              <div class="mini-mock-row"><code>EN841</code><b class="is-ok">ПРИНЯТ</b></div>
+              <div class="mini-mock-row"><code>CLOCK</code><b class="is-ok">ПРИНЯТ</b></div>
+              <div class="mini-mock-row"><code class="is-dim">сектор 3</code><b class="is-pending">НЕ ВВЕДЁН</b></div>
             </div>
           </article>
 
           <article class="feature-card">
-            <span class="feature-index">02</span>
-            <h3>Весь уровень перед глазами</h3>
-            <p>Задание, секторы, бонусы, подсказки, сообщения и история кодов — без лишней навигации.</p>
-            <div class="mini-progress" aria-label="Пройдено 2 сектора из 5"><span class="done" aria-hidden="true">&#8203;</span><span class="done" aria-hidden="true">&#8203;</span><span aria-hidden="true">&#8203;</span><span aria-hidden="true">&#8203;</span><span aria-hidden="true">&#8203;</span></div>
+            <div>
+              <span class="feature-index">02</span>
+              <h3>Уведомления</h3>
+              <p>Push приходит при смене уровня и новом сообщении организаторов. Из уведомления попадаете сразу на нужный экран.</p>
+            </div>
+            <div class="notif-row" aria-hidden="true">
+              <span class="notif-ic">EN</span>
+              <span>Открылся уровень 5<small>Межрег в екенях · сейчас</small></span>
+            </div>
           </article>
 
           <article class="feature-card">
-            <span class="feature-index">03</span>
-            <h3>Статус на экране блокировки</h3>
-            <p>Live Activity и Dynamic Island показывают уровень, таймеры, прогресс и очередь без открытия приложения.</p>
-            <div class="live-pill"><span>4</span><b>52:39</b><em>3 сектора</em></div>
-          </article>
-
-          <article class="feature-card feature-tools">
-            <span class="feature-index">04</span>
-            <h3>Инструменты уже внутри</h3>
-            <p>Анаграммайзер, Цезарь, Виженер, Морзе, Атбаш, A1Z26 и исправление раскладки работают прямо поверх игры.</p>
-            <div class="tool-tags" aria-label="Игровые инструменты"><span>АБВ</span><span>··· — — — ···</span><span>A1Z26</span><span>QWERTY → ЙЦУКЕН</span></div>
+            <div>
+              <span class="feature-index">03</span>
+              <h3>Встроенные инструменты</h3>
+              <p>Анаграммы, подстановки и классические шифры внутри приложения — не нужно искать сторонние сайты.</p>
+            </div>
+            <div class="tool-tags" aria-hidden="true">
+              <span>анаграммы</span><span>Цезарь</span><span>азбука Морзе</span><span>клавиатурный сдвиг</span><span>числа → буквы</span>
+            </div>
           </article>
 
           <article class="feature-card">
-            <span class="feature-index">05</span>
-            <h3>Команда и статистика</h3>
-            <p>Смотри позицию в игре, управляй составом и приглашениями — без перехода в браузер.</p>
-            <p class="rank"><b>3</b><span>место команды</span></p>
+            <div>
+              <span class="feature-index">04</span>
+              <h3>Команда</h3>
+              <p>Видно, кто из команды в игре и какие коды уже приняты. «Какой чудак это пробил?» больше не надо спрашивать в рацию.</p>
+            </div>
+            <div class="stat-line" aria-hidden="true">
+              <b>404</b><span>команда · 6 игроков на уровне</span>
+            </div>
           </article>
 
           <article class="feature-card">
-            <span class="feature-index">06</span>
-            <h3>Shortcuts и виджет</h3>
-            <p>Отправляй код, проверяй статус игры и сбрасывай очередь через «Команды» iOS.</p>
-            <div class="shortcut-row"><span>⌁</span><b>Отправить код</b><em>Готово</em></div>
+            <div>
+              <span class="feature-index">05</span>
+              <h3>Домены и вход</h3>
+              <p>Работает с любым доменом Encounter. Вход обычным аккаунтом: логин и пароль хранятся в Keychain на устройстве.</p>
+            </div>
+            <div class="domain-row" aria-hidden="true">
+              <span>https://</span><span>moscow.en.cx</span><em>ПОДКЛЮЧЁН</em>
+            </div>
           </article>
         </div>
       </div>
     </section>
 
-    <section class="section screenshots-section" id="screenshots">
+    <section class="section shots-section" id="shots">
       <div class="container">
         <div class="section-heading section-heading-center">
-          <p class="eyebrow">Знакомый iOS. Никакого веб-компромисса.</p>
-          <h2>Создано для ночной игры</h2>
-          <p>Контрастный тёмный интерфейс, крупные цели касания и важная информация там, где её ожидаешь.</p>
+          <p class="eyebrow eyebrow-orange">Экраны</p>
+          <h2>Как выглядит приложение</h2>
         </div>
-        <div class="screenshot-gallery">
+        <div class="shot-gallery">
           <figure>
-            <div class="phone gallery-phone"><img src="/assets/screenshots/games.webp" alt="Игры выбранного домена Encounter" width="1284" height="2778" loading="lazy"></div>
-            <figcaption><b>Все игры</b><span>Активные, предстоящие и игры домена</span></figcaption>
+            <div class="shot-frame"><img src="/assets/screenshots/game.webp" alt="Экран уровня Encounter" width="1284" height="2778" loading="lazy"></div>
+            <figcaption><b>Уровень</b><span>сектора, задание, подсказки, сообщения организаторов</span></figcaption>
           </figure>
-          <figure class="featured-shot">
-            <div class="phone gallery-phone"><img src="/assets/screenshots/game.webp" alt="Активный уровень игры Encounter" width="1284" height="2778" loading="lazy"></div>
-            <figcaption><b>Активный уровень</b><span>Задание, секторы, подсказки и коды</span></figcaption>
-          </figure>
-          <figure>
-            <div class="phone gallery-phone"><img src="/assets/screenshots/settings.webp" alt="Настройки домена и аккаунта в enkapp" width="1284" height="2778" loading="lazy"></div>
-            <figcaption><b>Гибкие настройки</b><span>Любой домен Encounter и безопасный вход</span></figcaption>
+          <figure class="offset">
+            <div class="shot-frame"><img src="/assets/screenshots/games.webp" alt="Список игр домена Encounter" width="1284" height="2778" loading="lazy"></div>
+            <figcaption><b>Игры домена</b><span>активные, предстоящие и завершённые игры домена</span></figcaption>
           </figure>
           <figure>
-            <div class="phone gallery-phone"><img src="/assets/screenshots/onboarding.webp" alt="Первоначальная настройка enkapp после установки" width="1284" height="2778" loading="lazy"></div>
-            <figcaption><b>Настройка за минуту</b><span>Домен, вход и оповещения шаг за шагом</span></figcaption>
+            <div class="shot-frame"><img src="/assets/screenshots/tools.webp" alt="Инструменты игрока в enkapp" width="1284" height="2778" loading="lazy"></div>
+            <figcaption><b>Инструменты</b><span>разбор кодов без выхода из игры</span></figcaption>
           </figure>
           <figure>
-            <div class="phone gallery-phone"><img src="/assets/screenshots/team.webp" alt="Управление командой в enkapp" width="1284" height="2778" loading="lazy"></div>
-            <figcaption><b>Команда под рукой</b><span>Состав, приглашения и заявки</span></figcaption>
+            <div class="shot-frame"><img src="/assets/screenshots/anagramizer.webp" alt="Анаграммайзер enkapp" width="1284" height="2778" loading="lazy"></div>
+            <figcaption><b>Анаграммы</b><span>перестановки букв и подбор вариантов</span></figcaption>
+          </figure>
+          <figure class="offset">
+            <div class="shot-frame"><img src="/assets/screenshots/team.webp" alt="Экран команды в enkapp" width="1284" height="2778" loading="lazy"></div>
+            <figcaption><b>Команда</b><span>состав команды и принятые коды</span></figcaption>
           </figure>
           <figure>
-            <div class="phone gallery-phone"><img src="/assets/screenshots/tools.webp" alt="Инструменты игрока в enkapp" width="1284" height="2778" loading="lazy"></div>
-            <figcaption><b>Инструменты игрока</b><span>Шифры, журнал кодов и утилиты</span></figcaption>
-          </figure>
-          <figure>
-            <div class="phone gallery-phone"><img src="/assets/screenshots/anagramizer.webp" alt="Анаграмайзер enkapp" width="1284" height="2778" loading="lazy"></div>
-            <figcaption><b>Анаграмайзер</b><span>Разбор анаграмм по буквам и шаблону</span></figcaption>
+            <div class="shot-frame"><img src="/assets/screenshots/settings.webp" alt="Настройки enkapp" width="1284" height="2778" loading="lazy"></div>
+            <figcaption><b>Настройки</b><span>домен, вход, уведомления и поведение ввода</span></figcaption>
           </figure>
         </div>
       </div>
     </section>
 
-    <section class="section install-section" id="download">
-      <div class="container install-card">
-        <div class="install-copy">
-          <p class="eyebrow">Готов к следующей игре?</p>
-          <h2>Установи enkapp<br>за пару минут.</h2>
-          <p>Самый простой способ — TestFlight. Открой ссылку на iPhone и следуй инструкциям Apple.</p>
-          <div class="hero-actions">
-            <a class="button button-primary" href="${ENKAPP_TESTFLIGHT_URL}">Установить через TestFlight <span aria-hidden="true">↗</span></a>
-            <a class="text-link" href="https://dawnl.ink/skrashevich/enkapp/workflows/ios-unsigned-ipa/main/encx-cli-unsigned-ipa">Или скачать unsigned IPA →</a>
+    <section class="section" id="how">
+      <div class="container">
+        <div class="section-heading">
+          <p class="eyebrow">Начало работы</p>
+          <h2>Четыре шага до первого кода</h2>
+        </div>
+        <div class="steps-grid">
+          <div class="step-card">
+            <span class="step-num">1</span>
+            <h3>Установите из TestFlight</h3>
+            <p>Открытая бета, приглашение не требуется.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">2</span>
+            <h3>Укажите домен</h3>
+            <p>Например moscow.en.cx. Список игр доступен и без входа.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">3</span>
+            <h3>Войдите в Encounter</h3>
+            <p>Данные отправляются только на выбранный домен и хранятся в Keychain.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">4</span>
+            <h3>Введите код</h3>
+            <p>Результат приходит в приложение. Без связи код ждёт в очереди и уходит сам.</p>
           </div>
         </div>
-        <div class="install-mark" aria-hidden="true"><img src="/assets/app-icon.webp" alt="" width="512" height="512" loading="lazy"></div>
       </div>
-      <p class="container disclaimer">enkapp — независимый неофициальный клиент. Приложение не связано с администрацией платформы Encounter.</p>
+    </section>
+
+    <section class="section oss-section" id="oss">
+      <div class="container">
+        <div class="oss-card">
+          <div>
+            <p class="eyebrow eyebrow-cyan">Исходный код</p>
+            <h2>Код открыт — видно, что делает приложение</h2>
+            <p>Приложение и этот сайт лежат в одном репозитории на GitHub. Нужен другой инструмент или нашлась ошибка — заводите issue или присылайте pull request.</p>
+            <div class="oss-actions">
+              <a class="button button-light" href="https://github.com/skrashevich/enkapp">Открыть на GitHub</a>
+              <a class="button button-ghost" href="https://github.com/skrashevich/enkapp/issues">Сообщить об ошибке</a>
+            </div>
+          </div>
+          <div class="code-panel" aria-hidden="true">
+            <div class="code-panel-head">skrashevich/enkapp</div>
+            <div class="code-panel-body">
+              <div><span class="k-green">Swift</span> · SwiftUI · iOS 18.6+</div>
+              <div><span class="k-orange">web/</span>appclip-site — сайт enkapp.svk.app</div>
+              <div><span class="k-cyan">App Clip</span> — игра открывается по ссылке без установки</div>
+              <div class="prompt">$ git clone github.com/skrashevich/enkapp<span class="caret"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section cta-section" id="download">
+      <div class="container">
+        <div class="cta-card">
+          <img src="/assets/app-icon.webp" alt="" width="84" height="84" loading="lazy">
+          <h2>Попробуйте на следующей игре</h2>
+          <p>Бесплатно, без рекламы и без сбора данных. Нужен только аккаунт Encounter.</p>
+          <a class="button button-primary" href="${ENKAPP_TESTFLIGHT_URL}">Установить из TestFlight</a>
+          <span class="cta-note">iOS 18.6 и новее · требуется аккаунт Encounter</span>
+        </div>
+      </div>
     </section>
   </main>
 
   <footer class="site-footer">
     <div class="container footer-inner">
-      <div class="brand footer-brand"><img src="/assets/app-icon.webp" alt="" width="32" height="32" loading="lazy"><span>enkapp</span></div>
-      <p>Сделано для тех, кто играет.</p>
+      <div class="footer-brand">
+        <img src="/assets/app-icon.webp" alt="" width="30" height="30" loading="lazy">
+        <span>enkapp</span>
+      </div>
+      <p>Неофициальный клиент. Encounter — торговая марка правообладателей.</p>
       <nav aria-label="Ссылки в подвале">
-        <a href="https://github.com/skrashevich/enkapp">GitHub</a>
-        <a href="https://github.com/skrashevich/enkapp/issues">Поддержка</a>
         <a href="/privacy.html">Конфиденциальность</a>
+        <a href="https://github.com/skrashevich/enkapp">GitHub</a>
+        <a href="mailto:svk@svk.su">svk@svk.su</a>
       </nav>
     </div>
   </footer>
+
+  <script src="/landing.js" defer></script>
 </body>
 </html>
