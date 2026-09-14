@@ -1180,17 +1180,43 @@ private struct LevelPlayScrollBody: View {
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(level.bonuses.sorted { $0.number < $1.number }) { bonus in
-                    bonusParagraph(bonus)
-                        .lineSpacing(6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+                    VStack(alignment: .leading, spacing: 6) {
+                        bonusTitle(bonus)
+                        ForEach(Array([bonus.task, bonus.help].enumerated()), id: \.offset) { _, text in
+                            if !text.isEmpty {
+                                bonusBody(text)
+                            }
+                        }
+                    }
+                    .lineSpacing(6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
                 }
             }
         }
     }
 
-    /// One flowing paragraph per bonus: optional checkmark, run-in title, then task and reward text.
-    private func bonusParagraph(_ bonus: Bonus) -> Text {
+    /// Most bonus bodies are plain text — a level here carries up to 33 of them, so routing every one
+    /// through a web view would stack dozens of them and lose the bare newlines the engine sends.
+    @ViewBuilder
+    private func bonusBody(_ text: String) -> some View {
+        if EncounterHTMLContent.containsMarkup(text) {
+            EncounterHTMLView(
+                html: EncounterHTMLContent.renderableBody(text),
+                fontSize: 16,
+                lineHeight: 1.4,
+                onSubmitAnswer: submitEmbeddedAnswer
+            )
+        } else {
+            CoordinateText(text: text.strippingHTML())
+                .font(.system(size: 16))
+                .foregroundStyle(.white.opacity(0.85))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func bonusTitle(_ bonus: Bonus) -> Text {
         var paragraph = Text(verbatim: "")
 
         if bonus.isAnswered {
@@ -1204,16 +1230,7 @@ private struct LevelPlayScrollBody: View {
             .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(bonus.isAnswered ? GameTheme.accent : GameTheme.bonusTitle)
 
-        return paragraph + Text(verbatim: bonusBodyText(bonus))
-            .font(.system(size: 16))
-            .foregroundStyle(.white.opacity(0.85))
-    }
-
-    private func bonusBodyText(_ bonus: Bonus) -> String {
-        [bonus.task, bonus.help]
-            .map { $0.strippingHTML().trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+        return paragraph
     }
 
     private var messagesSection: some View {
