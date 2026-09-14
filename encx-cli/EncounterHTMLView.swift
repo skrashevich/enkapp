@@ -7,6 +7,7 @@ struct EncounterHTMLView: View {
     /// caller passes the size the surrounding design calls for (level task 19/1.38, hints 16/1.4).
     var fontSize: CGFloat = 15
     var lineHeight: CGFloat = 1.45
+    var onSubmitAnswer: ((String) -> Void)?
     @State private var height: CGFloat = 80
     @State private var zoomImage: ZoomImageTarget?
 
@@ -15,7 +16,8 @@ struct EncounterHTMLView: View {
             html: html,
             fontSize: fontSize,
             lineHeight: lineHeight,
-            contentHeight: $height
+            contentHeight: $height,
+            onSubmitAnswer: onSubmitAnswer
         ) { url in
             zoomImage = ZoomImageTarget(url: url)
         }
@@ -44,6 +46,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
     let fontSize: CGFloat
     let lineHeight: CGFloat
     @Binding var contentHeight: CGFloat
+    var onSubmitAnswer: ((String) -> Void)?
     var onImageTap: (URL) -> Void
 
     /// Expression yielding the content height, or 0 while the document has no usable layout width
@@ -121,7 +124,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
     """
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(contentHeight: $contentHeight, onImageTap: onImageTap)
+        Coordinator(contentHeight: $contentHeight, onImageTap: onImageTap, onSubmitAnswer: onSubmitAnswer)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -130,6 +133,12 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: "imageTapped")
         controller.add(context.coordinator, name: "imageContextRequested")
         controller.add(context.coordinator, name: "contentHeight")
+        controller.add(context.coordinator, name: "answerSubmitted")
+        controller.addUserScript(WKUserScript(
+            source: EncounterHTMLContent.answerBridgeJS,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        ))
         controller.addUserScript(
             WKUserScript(
                 source: Self.heightReportJS,
@@ -274,6 +283,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
     """
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        context.coordinator.onSubmitAnswer = onSubmitAnswer
         guard context.coordinator.lastHTML != html else { return }
         context.coordinator.lastHTML = html
         context.coordinator.resetHeight()
@@ -284,6 +294,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "imageTapped")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "imageContextRequested")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "contentHeight")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "answerSubmitted")
     }
 
     private func wrappedHTML(_ body: String) -> String {
@@ -293,6 +304,7 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
         <html>
         <head>
         <meta charset="utf-8">
+        <meta http-equiv="Content-Security-Policy" content="script-src 'none'">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
           html, body {
@@ -331,12 +343,14 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         @Binding var contentHeight: CGFloat
         let onImageTap: (URL) -> Void
+        var onSubmitAnswer: ((String) -> Void)?
         var lastHTML = ""
         private var contextImageURL: URL?
 
-        init(contentHeight: Binding<CGFloat>, onImageTap: @escaping (URL) -> Void) {
+        init(contentHeight: Binding<CGFloat>, onImageTap: @escaping (URL) -> Void, onSubmitAnswer: ((String) -> Void)?) {
             _contentHeight = contentHeight
             self.onImageTap = onImageTap
+            self.onSubmitAnswer = onSubmitAnswer
         }
 
         func userContentController(
@@ -351,6 +365,9 @@ private struct EncounterHTMLWebView: UIViewRepresentable {
             guard let src = message.body as? String else { return }
 
             switch message.name {
+            case "answerSubmitted":
+                guard message.frameInfo.isMainFrame else { return }
+                onSubmitAnswer?(src)
             case "imageTapped":
                 guard let url = URL(string: src) else { return }
                 onImageTap(url)

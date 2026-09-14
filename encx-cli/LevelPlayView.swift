@@ -1033,7 +1033,7 @@ private struct LevelPlayScrollBody: View {
     private func taskView(_ task: LevelTask) -> some View {
         let html = task.formattedText.isEmpty ? task.taskText : task.formattedText
         if html.contains("<") {
-            EncounterHTMLView(html: html, fontSize: 16, lineHeight: 1.4)
+            EncounterHTMLView(html: html, fontSize: 16, lineHeight: 1.4, onSubmitAnswer: submitEmbeddedAnswer)
         } else {
             CoordinateText(text: task.displayText)
                 .font(.system(size: 16))
@@ -1042,6 +1042,11 @@ private struct LevelPlayScrollBody: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func submitEmbeddedAnswer(_ answer: String) {
+        guard model.currentModel?.level?.levelID == level.levelID else { return }
+        model.submitCode(answer, kind: .level)
     }
 
     private var sectorsSection: some View {
@@ -1158,10 +1163,12 @@ private struct LevelPlayScrollBody: View {
         block("Подсказки") {
             LevelPlayHelpsList(
                 helps: level.helps,
-                penaltyHelps: level.penaltyHelps
-            ) { help in
-                Task { await model.requestPenaltyHelp(help) }
-            }
+                penaltyHelps: level.penaltyHelps,
+                onRequestPenaltyHelp: { help in
+                    Task { await model.requestPenaltyHelp(help) }
+                },
+                onSubmitAnswer: submitEmbeddedAnswer
+            )
         }
     }
 
@@ -1241,6 +1248,7 @@ private struct LevelPlayHelpsList: View {
     let helps: [Help]
     let penaltyHelps: [Help]
     var onRequestPenaltyHelp: ((Help) -> Void)?
+    var onSubmitAnswer: ((String) -> Void)?
 
     @State private var syncedAt = Date()
     @State private var pendingPenaltyHelp: Help?
@@ -1356,7 +1364,7 @@ private struct LevelPlayHelpsList: View {
     @ViewBuilder
     private func helpContent(_ text: String) -> some View {
         if text.contains("<") {
-            EncounterHTMLView(html: text, fontSize: 16, lineHeight: 1.4)
+            EncounterHTMLView(html: text, fontSize: 16, lineHeight: 1.4, onSubmitAnswer: onSubmitAnswer)
         } else {
             CoordinateText(text: text.strippingHTML())
                 .font(.system(size: 16))
