@@ -41,7 +41,7 @@ final class AnagramizerViewModel {
         case .letters:
             return useAllLetters ? .anagram : .subword
         case .pattern:
-            let hasPool = !poolLetters.trimmingCharacters(in: .whitespaces).isEmpty
+            let hasPool = !poolLetters.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             return hasPool ? .combined : .pattern
         }
     }
@@ -50,6 +50,15 @@ final class AnagramizerViewModel {
     /// как пул для джокеров (`.combined`), поэтому подставляем `poolLetters`.
     var effectiveLetters: String {
         uiMode == .pattern ? poolLetters : letters
+    }
+
+    var hasInput: Bool {
+        switch uiMode {
+        case .letters:
+            return !letters.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || blankCount > 0
+        case .pattern:
+            return !pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 
     // MARK: - Фильтры
@@ -130,6 +139,7 @@ final class AnagramizerViewModel {
                 await MainActor.run {
                     self.engine = loaded
                     self.dictionaryState = .ready
+                    if self.hasInput { self.scheduleSearch() }
                 }
             } catch {
                 await MainActor.run {
@@ -144,7 +154,8 @@ final class AnagramizerViewModel {
     /// Вызывается при изменении полей ввода. Планирует поиск через 300мс,
     /// отменяя предыдущий запланированный поиск.
     func scheduleSearch() {
-        searchTask?.cancel()
+        invalidateSearch()
+        guard hasInput else { clearResults(); return }
         searchTask = Task {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
@@ -154,7 +165,8 @@ final class AnagramizerViewModel {
 
     /// Немедленный поиск (кнопка «Найти»).
     func searchNow() {
-        searchTask?.cancel()
+        invalidateSearch()
+        guard hasInput else { clearResults(); return }
         searchTask = Task {
             await runSearch(offset: 0)
         }
@@ -177,15 +189,30 @@ final class AnagramizerViewModel {
         }
     }
 
+    private func invalidateSearch() {
+        searchTask?.cancel()
+        searchGeneration += 1
+        isSearching = false
+        hasMore = false
+    }
+
+    private func clearResults() {
+        words = []
+        totalCount = 0
+        hasMore = false
+        hasSearched = false
+        searchErrorMessage = nil
+    }
+
     private func runSearch(offset: Int) async {
-        guard let engine else { return }
+        guard !Task.isCancelled, let engine else { return }
 
         searchGeneration += 1
         let generation = searchGeneration
 
         let query = AnagramQuery(
             mode: effectiveMode,
-            pattern: pattern,
+            pattern: pattern.trimmingCharacters(in: .whitespacesAndNewlines),
             letters: effectiveLetters,
             minLength: minLength,
             maxLength: maxLength,
@@ -197,15 +224,21 @@ final class AnagramizerViewModel {
         isSearching = true
         searchErrorMessage = nil
 
-        let result: Result<AnagramResultPage, Error> = await Task.detached(priority: .userInitiated) {
+        let pageLimit = self.pageLimit
+        let worker = Task.detached(priority: .userInitiated) { () -> Result<AnagramResultPage, Error> in
             do {
-                return .success(try engine.search(query, limit: self.pageLimit, offset: offset))
+                return .success(try engine.search(query, limit: pageLimit, offset: offset))
             } catch {
                 return .failure(error)
             }
-        }.value
+        }
+        let result = await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
 
-        guard generation == searchGeneration else { return }
+        guard !Task.isCancelled, generation == searchGeneration else { return }
         isSearching = false
         hasSearched = true
 
@@ -240,7 +273,14 @@ final class AnagramizerViewModel {
         case .dictionaryCorrupt:
             return "Словарь повреждён и не может быть загружен."
         case .invalidQuery(let detail):
-            return detail.isEmpty ? "Некорректный запрос." : detail
+            switch detail {
+            case "empty letter set":
+                return "Введите русские буквы. Анаграмайзер использует русский словарь."
+            case "empty or invalid pattern":
+                return "Введите шаблон из русских букв и символов _, ., ? или *."
+            default:
+                return "Некорректный запрос. Проверьте буквы, шаблон и ограничения длины."
+            }
         }
     }
 }

@@ -76,7 +76,7 @@ struct AnagramizerView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(GameTheme.accent)
-            .disabled(model.dictionaryState != .ready)
+            .disabled(model.dictionaryState != .ready || !model.hasInput)
         }
         .sectionPanel()
     }
@@ -93,6 +93,10 @@ struct AnagramizerView: View {
                 .onChange(of: model.letters) { _, _ in
                     model.scheduleSearch()
                 }
+
+            Text("Русский словарь. Введите буквы кириллицей; пробелы и знаки препинания не учитываются.")
+                .font(.caption)
+                .foregroundStyle(GameTheme.muted)
 
             DashboardSettingsRow(
                 title: "Использовать все буквы",
