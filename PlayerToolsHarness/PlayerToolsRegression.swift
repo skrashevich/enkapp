@@ -72,6 +72,40 @@ struct PlayerToolsRegression {
         try await waitForSearch(model)
         precondition(model.words.contains("кот"), "Trimmed pattern must find кот")
 
+        // `*` alone matches the whole 3.18M-word dictionary, which the engine materialises
+        // before paging and then caches: on device that is an out-of-memory kill.
+        model.pattern = "*"
+        model.searchNow()
+        try await waitForSearch(model)
+        precondition(model.searchErrorMessage?.contains("Уточните шаблон") == true,
+                     "A star with no letter and no length cap must be refused")
+        precondition(model.words.isEmpty && model.totalCount == 0)
+        model.maxLength = 4
+        model.searchNow()
+        try await waitForSearch(model)
+        precondition(model.searchErrorMessage == nil && !model.words.isEmpty,
+                     "A length cap makes the same star pattern searchable")
+        precondition(model.words.allSatisfy { $0.count <= 4 })
+        model.maxLength = nil
+        model.pattern = "*ая"
+        model.searchNow()
+        try await waitForSearch(model)
+        precondition(model.searchErrorMessage == nil && !model.words.isEmpty
+                     && model.words.allSatisfy { $0.hasSuffix("ая") },
+                     "A star with a fixed letter stays bounded and searchable")
+        model.pattern = "__"
+        model.searchNow()
+        try await waitForSearch(model)
+        precondition(model.searchErrorMessage == nil && model.words.allSatisfy { $0.count == 2 },
+                     "Placeholders without a star fix the length and need no cap")
+        model.poolLetters = "кот"
+        model.pattern = "*"
+        model.searchNow()
+        try await waitForSearch(model)
+        precondition(model.searchErrorMessage == nil,
+                     "Combined mode is bounded by the pool, so a star needs no cap there")
+        model.poolLetters = ""
+
         model.uiMode = .letters
         model.letters = "abc123"
         model.searchNow()

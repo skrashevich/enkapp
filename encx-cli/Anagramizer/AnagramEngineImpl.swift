@@ -220,6 +220,14 @@ public nonisolated final class AnagramEngineImpl: AnagramEngine, @unchecked Send
         // Минимальная длина слова = число нестар-токенов (каждый занимает 1 позицию).
         let minLen = tokens.reduce(0) { $0 + ($1 == .star ? 0 : 1) }
 
+        // `*` без единой конкретной буквы и без потолка длины совпадает со всем словарём:
+        // 3.18M матчей материализуются до пагинации и остаются в кэше. В `.combined` этого
+        // не случается — там длину ограничивает пул букв.
+        let hasFixedLetter = tokens.contains { if case .fixed = $0 { return true } else { return false } }
+        guard !hasStar || hasFixedLetter || query.maxLength != nil else {
+            throw AnagramEngineError.invalidQuery("pattern too broad")
+        }
+
         // Без `*` длина слова фиксирована длиной шаблона; со `*` — диапазон до maxLen.
         // Фильтры min/max могут отсечь весь диапазон.
         let hi = hasStar ? reader.maxLen : minLen
