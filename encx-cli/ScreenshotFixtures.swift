@@ -16,8 +16,45 @@ extension EncounterViewModel {
         } else {
             screen = .games
         }
-        return screenshotModel(selectedScreen: screen)
+        let model = screenshotModel(selectedScreen: screen)
+        #if DEBUG
+        if arguments.contains("--screenshot-rendering-regressions") {
+            model.applyRenderingRegressionFixture(mediaOnly: arguments.contains("--screenshot-media-only"))
+        }
+        #endif
+        return model
     }
+
+    #if DEBUG
+    /// Minimal public scenario fragments; no session cookies or player data from the HAR.
+    private func applyRenderingRegressionFixture(mediaOnly: Bool) {
+        var game = try! JSONSerialization.jsonObject(with: Data(Self.gameJSON.utf8)) as! [String: Any]
+        var level = game["Level"] as! [String: Any]
+        level["Name"] = "Проверка сценария"
+        level["Tasks"] = [["TaskText": "Проверка отображения сценария", "TaskTextFormatted": #"Проверка отображения сценария<script>document.getElementById('3513945').style.color='red'; document.getElementById('3513946').style.color='#2A52BE';</script>"#]]
+        level["HasAnswerBlockRule"] = false
+        level["BlockDuration"] = 0
+        level["Sectors"] = mediaOnly ? [] : [
+            ["SectorId": 3513945, "Order": 1, "Name": "3+14. 3 уже нашли своего обладателя, а кто, согласно фразе, должен обладать 14? ФО: словам или слово", "IsAnswered": false, "Answer": ""],
+            ["SectorId": 3513946, "Order": 2, "Name": "Промежуточный сектор с длинным названием, которое должно переноситься полностью", "IsAnswered": true, "Answer": "код"]
+        ]
+        level["RequiredSectorsCount"] = mediaOnly ? 0 : 2
+        level["PassedSectorsCount"] = mediaOnly ? 0 : 1
+        level["SectorsLeftToClose"] = mediaOnly ? 0 : 1
+        level["PassedBonusesCount"] = 0
+        level["Messages"] = []
+        level["Helps"] = [["HelpId": 2239722, "Number": 1,
+            "HelpText": mediaOnly ? #"<button onclick="$('#Answer').val('го').parent('form').submit()">Продолжить</button>"# : #"<img src="https://d1.endata.cx/data/games/80715/z_paseka.jpg">"#,
+            "IsPenalty": false, "Penalty": 0, "RequestConfirm": false,
+            "PenaltyHelpState": 0, "RemainSeconds": 0]]
+        level["Bonuses"] = mediaOnly ? [["BonusId": 2419176, "Number": 9, "Name": "Мемный",
+            "Task": #"<img src="https://d1.endata.cx/data/games/80715/z1_903486.png"><br>Назовите либо то, что в задании, либо то, что на месте...<br>Формат ответа: два слова"#,
+            "IsAnswered": false]] : []
+        game["Level"] = level
+        currentModel = try! JSONDecoder().decode(GameModel.self, from: JSONSerialization.data(withJSONObject: game))
+        selectedScreen = .game
+    }
+    #endif
 
     static func screenshotModel(selectedScreen: AppScreen) -> EncounterViewModel {
         let model = EncounterViewModel()
