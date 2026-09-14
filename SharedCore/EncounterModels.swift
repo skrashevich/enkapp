@@ -862,7 +862,10 @@ nonisolated struct Help: Decodable, Identifiable, Hashable {
     var unlockedText: String? {
         guard let text = helpText, !text.isEmpty else { return nil }
         let stripped = text.strippingHTML()
-        guard !stripped.isEmpty, !Self.isUnlockPlaceholder(stripped) else { return nil }
+        let hasMedia = text.removingHTMLScriptAndStyleBlocks().range(
+            of: #"(?i)<(?:img|video|audio|iframe)\b"#, options: .regularExpression
+        ) != nil
+        guard hasMedia || (!stripped.isEmpty && !Self.isUnlockPlaceholder(stripped)) else { return nil }
         return text
     }
 
