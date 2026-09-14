@@ -1046,6 +1046,7 @@ private struct LevelPlayScrollBody: View {
 
     private var sectorsSection: some View {
         block("Секторы", trailing: sectorsProgressCaption) {
+            let colors = sectorTitleColors
             LazyVGrid(
                 columns: [
                     GridItem(.flexible(), spacing: 6),
@@ -1054,7 +1055,7 @@ private struct LevelPlayScrollBody: View {
                 spacing: 6
             ) {
                 ForEach(level.sectors.sortedForDisplay) { sector in
-                    sectorChip(sector)
+                    sectorChip(sector, colors: colors)
                 }
             }
         }
@@ -1072,9 +1073,22 @@ private struct LevelPlayScrollBody: View {
         return "закрыто \(closed) из \(total)"
     }
 
-    private func sectorChip(_ sector: Sector) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
+    private var sectorTitleColors: [Int: UInt32] {
+        let tasks = (level.task.map { [$0] } ?? []) + level.tasks
+        return tasks.reduce(into: [:]) { colors, task in
+            let html = task.formattedText.isEmpty ? task.taskText : task.formattedText
+            colors.merge(SectorTitleStyle.colors(in: html)) { _, latest in latest }
+        }
+    }
+
+    private func sectorChip(_ sector: Sector, colors: [Int: UInt32]) -> some View {
+        let titleColor = colors[sector.sectorID].map { rgb in
+            Color(.sRGB, red: Double((rgb >> 16) & 255) / 255,
+                  green: Double((rgb >> 8) & 255) / 255,
+                  blue: Double(rgb & 255) / 255, opacity: 1)
+        } ?? (sector.isAnswered ? GameTheme.accent : GameTheme.text)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 6) {
                 if sector.isAnswered {
                     Image(systemName: "checkmark")
                         .font(.system(size: 12, weight: .semibold))
@@ -1083,9 +1097,8 @@ private struct LevelPlayScrollBody: View {
 
                 Text(verbatim: sectorChipTitle(sector))
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(sector.isAnswered ? GameTheme.accent : GameTheme.text)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
+                    .foregroundStyle(titleColor)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 4)
