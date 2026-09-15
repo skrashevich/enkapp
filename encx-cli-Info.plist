@@ -17,12 +17,6 @@
 			</array>
 		</dict>
 	</array>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Геолокация нужна, чтобы ассистент мог отвечать на вопросы о местах и маршрутах рядом с вами. Координаты запрашиваются только когда ассистент вызывает инструмент геолокации.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Микрофон нужен, чтобы диктовать сообщения ассистенту. Запись обрабатывается только на устройстве и никуда не отправляется.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Распознавание речи нужно, чтобы надиктовывать сообщения ассистенту. Оно выполняется только на устройстве, без отправки звука на серверы Apple.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
