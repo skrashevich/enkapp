@@ -1,7 +1,7 @@
 import Foundation
 
 struct AppClipInvocation: Equatable {
-    private nonisolated static let fallbackDomain = "encounter.exe.xyz"
+    private nonisolated static let fallbackDomain = DomainSettings.defaultDomain
     nonisolated static let webHost = "enkapp.svk.app"
 
     var domain: String

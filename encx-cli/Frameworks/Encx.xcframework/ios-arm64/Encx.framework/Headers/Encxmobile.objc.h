@@ -430,6 +430,13 @@ Set insecureTLS to true to skip TLS certificate verification (e.g. for tech.en.c
 FOUNDATION_EXPORT EncxmobileEncClient* _Nullable EncxmobileNewClient(NSString* _Nullable domain, BOOL insecureTLS);
 
 /**
+ * NewClientWithAPIOptions configures an explicit new-engine API host before
+any requests or engine detection. Empty apiBaseURL preserves normal detection.
+The caller must trust this host: it receives authentication credentials.
+ */
+FOUNDATION_EXPORT EncxmobileEncClient* _Nullable EncxmobileNewClientWithAPIOptions(NSString* _Nullable domain, BOOL insecureTLS, BOOL useHTTP, int64_t timeoutSeconds, NSString* _Nullable lang, NSString* _Nullable apiBaseURL);
+
+/**
  * NewClientWithOptions creates a client with extended configuration.
 timeoutSeconds: HTTP client timeout (0 = default 15s). lang: API language (empty = "ru").
  */

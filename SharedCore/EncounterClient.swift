@@ -41,8 +41,8 @@ nonisolated struct LiveActivityDisplayOptions: Codable, Equatable {
 }
 
 nonisolated struct DomainSettings: Codable, Equatable {
-    /// Default Encounter host for development (public mock at https://encounter.exe.xyz).
-    static let defaultDomain = "encounter.exe.xyz"
+    /// Default Encounter host for development (public mock at https://encounter.svk.bar).
+    static let defaultDomain = "encounter.svk.bar"
     static let defaultHARUploadEndpoint = "https://telemetry.enkapp.svk.app/api/har"
     static let defaultHARRecordingEnabled = false
     static let defaultHARUploadEnabled = false
@@ -63,6 +63,13 @@ nonisolated struct DomainSettings: Codable, Equatable {
     /// Sends captured HAR traffic to the developer diagnostics endpoint.
     var harUploadEnabled = DomainSettings.defaultHARUploadEnabled
     var harUploadEndpoint = DomainSettings.defaultHARUploadEndpoint
+
+    /// The public mock serves the REST API on the same host. Other domains use library discovery.
+    var encounterAPIBaseURL: String {
+        let host = domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard host == Self.defaultDomain else { return "" }
+        return "\(useHTTP ? "http" : "https")://\(host)"
+    }
 
     var harCaptureEnabled: Bool {
         harRecordingEnabled || harUploadEnabled
@@ -193,12 +200,13 @@ nonisolated final class EncounterClient {
     init(settings: DomainSettings) throws {
         self.settings = settings
         #if canImport(Encx)
-        guard let client = EncxmobileNewClientWithOptions(
+        guard let client = EncxmobileNewClientWithAPIOptions(
             settings.domain,
             settings.insecureTLS,
             settings.useHTTP,
             EncounterTimeouts.httpSeconds,
-            "ru"
+            "ru",
+            settings.encounterAPIBaseURL
         ) else {
             throw EncounterClientError.clientCreationFailed
         }

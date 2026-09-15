@@ -29,6 +29,12 @@ enum EncounterSessionStore {
               var decoded = try? JSONDecoder().decode(DomainSettings.self, from: data) else {
             return DomainSettings()
         }
+        // Move installations using either retired mock host to the current mock.
+        let domain = decoded.domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if ["encounter.exe.xyz", "encounter.exe.dev"].contains(domain) {
+            decoded.domain = DomainSettings.defaultDomain
+            saveSettings(decoded)
+        }
         // Existing installations retain the retired endpoint even after the default changes.
         let endpoint = decoded.harUploadEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         if URL(string: endpoint)?.host?.lowercased() == "enkapp-telemetry.exe.xyz" {
