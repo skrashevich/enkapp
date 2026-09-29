@@ -196,6 +196,8 @@ and cannot react to them. The last one is reported only if the wait runs out.
  */
 - (BOOL)acceptTeamInvitation:(int64_t)teamID error:(NSError* _Nullable* _Nullable)error;
 - (BOOL)adminCreateGame:(NSString* _Nullable)paramsJSON ret0_:(int64_t* _Nullable)ret0_ error:(NSError* _Nullable* _Nullable)error;
+- (NSString* _Nonnull)adminGetLevelSequence:(int64_t)gameID error:(NSError* _Nullable* _Nullable)error;
+- (BOOL)adminSetLevelSequence:(int64_t)gameID sequenceID:(int64_t)sequenceID error:(NSError* _Nullable* _Nullable)error;
 /**
  * ClearHAR removes all captured HAR entries.
  */
