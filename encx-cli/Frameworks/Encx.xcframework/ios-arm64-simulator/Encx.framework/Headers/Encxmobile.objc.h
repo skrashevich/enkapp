@@ -330,6 +330,11 @@ entries captured during the upload are preserved.
  */
 - (BOOL)requestTeamMembership:(NSString* _Nullable)teamName error:(NSError* _Nullable* _Nullable)error;
 /**
+ * ResolveEngine returns engine and definitive as JSON. Only confirmed auto
+selections may be persisted; a temporary legacy fallback must remain retryable.
+ */
+- (NSString* _Nonnull)resolveEngine:(NSError* _Nullable* _Nullable)error;
+/**
  * SendBonusCode submits a bonus answer via BonusAction.Answer. Returns updated GameModel JSON.
  */
 - (NSString* _Nonnull)sendBonusCode:(int64_t)gameID levelID:(int64_t)levelID levelNumber:(int64_t)levelNumber code:(NSString* _Nullable)code error:(NSError* _Nullable* _Nullable)error;
@@ -419,6 +424,12 @@ Returns false for non-2xx bodies, where a proxy may have answered instead and th
 never have arrived — those must stay retryable.
  */
 FOUNDATION_EXPORT BOOL EncxmobileIsUndecodableAcceptedError(NSError* _Nullable err);
+
+/**
+ * LevelSectorProgress returns total, done, required and remaining as JSON for a
+Level JSON object. A null level or no answer requirement has remaining=null.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull EncxmobileLevelSectorProgress(NSString* _Nullable levelJSON, NSError* _Nullable* _Nullable error);
 
 /**
  * LoginErrorText returns a human-readable login error description.
